@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>小狐狸 see me — Foxy 键盘布局可视化编辑器</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>小狐狸 see me</h1>
+    <h2>Foxy 键盘布局可视化编辑器 · 匹配 <code>foxy.keyboard-layout</code> JSON 格式（仿
+      <a href="https://github.com/SandyYuR/f5a-see-me" target="_blank" rel="noopener noreferrer">f5a-see-me</a>）</h2>
+  </header>
+
+  <main>
+    <!-- ===================== 布局预览 ===================== -->
+    <details class="panel preview-panel" open>
+      <summary>布局预览（实时渲染，点击按键即可编辑）</summary>
+      <div class="preview-toolbar">
+        <div class="layout-tabs" id="layout-tabs"></div>
+        <div class="preview-toggles">
+          <label class="check"><input type="checkbox" id="pt-shift"> Shift</label>
+          <label class="check"><input type="checkbox" id="pt-composing"> 组字</label>
+          <label class="check"><input type="checkbox" id="pt-ascii"> ASCII</label>
+          <label class="check"><input type="checkbox" id="pt-disabled"> 停用</label>
+          <label class="mini-label">状态标签示例 <input id="pt-status-text" type="text" class="mini-input" size="8" value="朙月拼音"></label>
+          <select id="pt-theme" class="mini-select" aria-label="预览配色">
+            <option value="dark">深色键盘</option>
+            <option value="light">浅色键盘</option>
+          </select>
+        </div>
+      </div>
+      <div class="preview-stage">
+        <div id="preview-kb" class="kb kb-dark"></div>
+      </div>
+      <div class="preview-legend">
+        角标说明：<span class="lg-lp">右上蓝色 = 长按提示</span>（longPress.label，如 ⌫、⇪）·
+        <span class="lg-hold">右上橙色 = 按住提示</span>（hold.label，如语音）·
+        上/下/左/右灰色小字 = 滑动提示 ·
+        <span class="lg-broken">红色虚线框 = 引用无法解析</span> ·
+        <span class="lg-sel">黄色框 = 选中按键</span>
+      </div>
+      <div id="preview-meta" class="status"></div>
+    </details>
+
+    <!-- ===================== 标签页 ===================== -->
+    <div class="tabs" role="tablist" aria-label="编辑器功能">
+      <button type="button" class="tab active" data-tab="tab-layout" aria-controls="tab-layout" aria-selected="true">布局编辑</button>
+      <button type="button" class="tab" data-tab="tab-keys" aria-controls="tab-keys" aria-selected="false">按键定义</button>
+      <button type="button" class="tab" data-tab="tab-actions" aria-controls="tab-actions" aria-selected="false">动作与宏</button>
+      <button type="button" class="tab" data-tab="tab-json" aria-controls="tab-json" aria-selected="false">JSON</button>
+    </div>
+
+    <!-- ===================== 布局编辑 ===================== -->
+    <section class="tabpanel active" id="tab-layout" role="tabpanel">
+      <div class="workbench">
+        <div class="col-main">
+          <details class="card" open>
+            <summary>布局编辑</summary>
+            <div class="toolbar">
+              <select id="layout-select" class="mini-select wide" aria-label="命名布局"></select>
+              <button id="layout-add" class="mini-button">新建</button>
+              <button id="layout-dup" class="mini-button">复制</button>
+              <button id="layout-rename" class="mini-button">重命名</button>
+              <button id="layout-del" class="mini-button danger">删除</button>
+            </div>
+            <div id="layout-settings" class="settings-block">
+              <div class="mini-title">布局高度覆盖（可选，百分比 10–90）</div>
+              <div class="form-grid-2">
+                <div class="form-row form-inline">
+                  <label class="mini-label">竖屏 %</label>
+                  <input id="ls-height-p" type="number" min="10" max="90" step="1" class="mini-input" placeholder="空=跟随全局">
+                </div>
+                <div class="form-row form-inline">
+                  <label class="mini-label">横屏 %</label>
+                  <input id="ls-height-landscape" type="number" min="10" max="90" step="1" class="mini-input" placeholder="空=跟随全局">
+                </div>
+              </div>
+              <div class="mini-title">布局变体（状态条件 → 使用其他命名布局）</div>
+              <div id="layout-variants"></div>
+            </div>
+            <div id="layout-sections"></div>
+          </details>
+
+          <details class="card" open>
+            <summary>布局与文件操作</summary>
+            <div class="toolbar">
+              <button id="op-import" class="mini-button">导入 JSON</button>
+              <input id="op-import-file" type="file" accept="application/json,.json" hidden>
+              <button id="op-export" class="mini-button">导出 JSON</button>
+              <select id="op-example" class="mini-select wide"></select>
+              <button id="op-load-example" class="mini-button">加载示例</button>
+              <button id="op-undo" class="mini-button" disabled>↶ 撤销</button>
+              <button id="op-redo" class="mini-button" disabled>↷ 重做</button>
+            </div>
+            <div class="form-row form-inline">
+              <label class="mini-label">作者 author</label>
+              <input id="op-author" type="text" class="mini-input wide" placeholder="显示在方案选择器中">
+              <label class="check"><input type="checkbox" id="op-type" checked> 导出时包含 type 字段</label>
+            </div>
+            <div id="op-status" class="status"></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 按键定义 ===================== -->
+    <section class="tabpanel" id="tab-keys" role="tabpanel">
+      <details class="card" open>
+        <summary>按键定义（keys）— 可复用按键与手势</summary>
+        <div class="toolbar">
+          <input id="keys-filter" type="text" class="mini-input wide" placeholder="搜索：名称 / 引用">
+          <button id="keys-add" class="mini-button">+ 新建按键定义</button>
+        </div>
+        <div id="keys-list"></div>
+      </details>
+    </section>
+
+    <!-- ===================== 动作与宏 ===================== -->
+    <section class="tabpanel" id="tab-actions" role="tabpanel">
+      <details class="card" open>
+        <summary>动作定义（actions）</summary>
+        <div id="actions-list"></div>
+      </details>
+      <details class="card" open>
+        <summary>宏（macros）</summary>
+        <div id="macros-list"></div>
+      </details>
+    </section>
+
+    <!-- ===================== JSON ===================== -->
+    <section class="tabpanel" id="tab-json" role="tabpanel">
+      <details class="card" open>
+        <summary>布局 JSON（实时同步；可直接编辑后“应用”）</summary>
+        <div class="toolbar">
+          <button id="json-apply" class="mini-button primary">应用</button>
+          <button id="json-format" class="mini-button">格式化</button>
+          <button id="json-copy" class="mini-button">复制</button>
+        </div>
+        <textarea id="json-editor" class="json-editor" spellcheck="false"></textarea>
+        <div id="json-status" class="status"></div>
+      </details>
+    </section>
+  </main>
+
+  <footer class="footnote">
+    <p>格式依据 Foxy Layout File v0.0.1（<code>foxy.keyboard-layout</code>）。布局文件请放置于
+      <code>&lt;外部存储&gt;/foxy/frontend/layouts/&lt;profile&gt;.json</code> 后在 Foxy 设置中选择。</p>
+  </footer>
+
+  <script src="./js/data.js"></script>
+  <script src="./js/default-profile.js"></script>
+  <script src="./js/examples-bundle.js"></script>
+  <script src="./js/app.js"></script>
+  <script src="./js/key-dialog.js"></script>
+</body>
+</html>
