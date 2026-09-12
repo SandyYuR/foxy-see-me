@@ -44,7 +44,14 @@ var state = {
   sel: null,              // 选中按键 {s, r, k}
   validation: { errors: [], warnings: [] },
   history: [],
-  future: []
+  future: [],
+  splitMode: false,       // 分体键盘：预览与区段编辑作用于 split 片段
+  portraitW: null,      // 竖屏基准宽度（分体横屏预览时记住，切回后恢复）
+  popupProfile: null,     // 弹出菜单 profile（foxy.popup-profile JSON，由 popup-editor.js 管理）
+  popupFileName: 'popups.json',
+  popupSchema: 'default', // 弹出菜单当前编辑的 schema
+  popupSelKey: null,      // 弹出菜单预览选中的 popupKey
+  popupShifted: false     // 弹出菜单预览使用 shifted 候选
 };
 FE.state = state;
 FE.NEUTRAL_STATUS = NEUTRAL_STATUS;
@@ -507,9 +514,34 @@ FE.validateProfile = function (profile) {
           }
         });
       }
-      if (!Array.isArray(L.sections) || !L.sections.length) { err('布局 “' + ln + '” 缺少有效的 sections'); return; }
-      L.sections.forEach(function (s, si) {
-        if (!isPlainObject(s)) { err('布局 “' + ln + '” 的区段 ' + si + ' 不是对象'); return; }
+      if (!Array.isArray(L.sections) || !L.sections.length) {
+        err('布局 “' + ln + '” 缺少有效的 sections');
+      } else {
+        validateSectionsArr(L.sections, ln, false);
+      }
+
+      /* ---- 分体片段（split） ---- */
+      if (L.split !== undefined) {
+        if (!isPlainObject(L.split)) {
+          err('布局 “' + ln + '” 的 split 必须是对象');
+        } else if (!Array.isArray(L.split.sections) || !L.split.sections.length) {
+          err('布局 “' + ln + '” 的 split 片段缺少有效的 sections');
+        } else {
+          validateSectionsArr(L.split.sections, ln, true);
+          var unSplit = FE.layoutHeightUnits(L), usSplit = FE.layoutHeightUnits(L.split);
+          if (Math.abs(unSplit - usSplit) > 0.01) {
+            warn('布局 “' + ln + '” 常规(' + (Math.round(unSplit * 100) / 100) +
+              ') 与分体(' + (Math.round(usSplit * 100) / 100) + ')高度单位不一致');
+          }
+        }
+      }
+    });
+
+    /* 校验一个 sections 数组（常规或分体片段共用） */
+    function validateSectionsArr(sections, ln, isSplit) {
+      var pfx = '布局 “' + ln + '”' + (isSplit ? ' 分体片段' : '');
+      sections.forEach(function (s, si) {
+        if (!isPlainObject(s)) { err(pfx + ' 的区段 ' + si + ' 不是对象'); return; }
         if (s.type === 'rows') {
           FE.rowsOfSection(s).forEach(function (row, ri) {
             var hasAuto = false, fixedSum = 0;
@@ -518,49 +550,49 @@ FE.validateProfile = function (profile) {
               if (w === 'auto') hasAuto = true; else fixedSum += (Number(w) || 0);
             });
             if (hasAuto && row.totalWeight == null) {
-              err('布局 “' + ln + '” 区段 ' + si + ' 行 ' + ri + ' 使用了 weight:"auto" 但未提供 totalWeight');
+              err(pfx + ' 区段 ' + si + ' 行 ' + ri + ' 使用了 weight:"auto" 但未提供 totalWeight');
             } else if (hasAuto && row.totalWeight <= fixedSum + 1e-9) {
-              err('布局 “' + ln + '” 区段 ' + si + ' 行 ' + ri + ' 的 totalWeight(' + row.totalWeight + ') 不足以分配 auto 权重');
+              err(pfx + ' 区段 ' + si + ' 行 ' + ri + ' 的 totalWeight(' + row.totalWeight + ') 不足以分配 auto 权重');
             }
             row.keys.forEach(function (k, ki) {
-              checkPlacement(k, ln, si, '行 ' + ri + ' 按键 ' + ki);
+              checkPlacement(k, pfx, si, '行 ' + ri + ' 按键 ' + ki);
             });
           });
         } else if (s.type === 'grid') {
           var cols = s.columns, rws = s.rows;
-          if (!Number.isInteger(cols) || cols < 1) err('布局 “' + ln + '” 区段 ' + si + ' 的 columns 无效');
-          if (!Number.isInteger(rws) || rws < 1) err('布局 “' + ln + '” 区段 ' + si + ' 的 rows 无效');
-          if (s.rowHeights != null && !Array.isArray(s.rowHeights)) err('布局 “' + ln + '” 区段 ' + si + ' 的 rowHeights 必须是数组');
+          if (!Number.isInteger(cols) || cols < 1) err(pfx + ' 区段 ' + si + ' 的 columns 无效');
+          if (!Number.isInteger(rws) || rws < 1) err(pfx + ' 区段 ' + si + ' 的 rows 无效');
+          if (s.rowHeights != null && !Array.isArray(s.rowHeights)) err(pfx + ' 区段 ' + si + ' 的 rowHeights 必须是数组');
           var C = Number.isInteger(cols) ? cols : 1, R = Number.isInteger(rws) ? rws : 1;
           var occ = {};
           (Array.isArray(s.keys) ? s.keys : []).forEach(function (k, ki) {
-            if (!isPlainObject(k)) { err('布局 “' + ln + '” 区段 ' + si + ' 网格按键 ' + ki + ' 不是对象'); return; }
+            if (!isPlainObject(k)) { err(pfx + ' 区段 ' + si + ' 网格按键 ' + ki + ' 不是对象'); return; }
             var c = k.column, r = k.row, cs = k.columnSpan != null ? k.columnSpan : 1, rs = k.rowSpan != null ? k.rowSpan : 1;
             var label = refNameOf(k);
-            if (!Number.isInteger(c) || !Number.isInteger(r)) { err('布局 “' + ln + '” 网格按键 ' + label + ' 缺少整数 column/row'); }
+            if (!Number.isInteger(c) || !Number.isInteger(r)) { err(pfx + ' 网格按键 ' + label + ' 缺少整数 column/row'); }
             else {
-              if (cs < 1 || rs < 1) err('布局 “' + ln + '” 网格按键 ' + label + ' 的跨距必须 ≥1');
-              if (c < 0 || r < 0 || c + cs > C || r + rs > R) err('布局 “' + ln + '” 网格按键 ' + label + ' 超出网格范围');
+              if (cs < 1 || rs < 1) err(pfx + ' 网格按键 ' + label + ' 的跨距必须 ≥1');
+              if (c < 0 || r < 0 || c + cs > C || r + rs > R) err(pfx + ' 网格按键 ' + label + ' 超出网格范围');
               var limC = Math.min(c + cs, C), limR = Math.min(r + rs, R);
               for (var y = Math.max(0, r); y < limR; y++) {
                 for (var x = Math.max(0, c); x < limC; x++) {
                   var id = x + ',' + y;
-                  if (occ[id] != null) err('布局 “' + ln + '” 网格按键 ' + label + ' 与 ' + occ[id] + ' 在单元格 (' + id + ') 重叠');
+                  if (occ[id] != null) err(pfx + ' 网格按键 ' + label + ' 与 ' + occ[id] + ' 在单元格 (' + id + ') 重叠');
                   else occ[id] = label;
                 }
               }
             }
-            checkPlacement(k, ln, si, '网格按键 ' + label);
+            checkPlacement(k, pfx, si, '网格按键 ' + label);
           });
         } else {
-          err('布局 “' + ln + '” 区段 ' + si + ' 的 type 必须是 rows 或 grid');
+          err(pfx + ' 区段 ' + si + ' 的 type 必须是 rows 或 grid');
         }
       });
-    });
+    }
 
-    function checkPlacement(k, ln, si, where) {
-      if (!isPlainObject(k)) { err('布局 “' + ln + '” ' + where + ' 不是对象'); return; }
-      var full = '布局 “' + ln + '” ' + where;
+    function checkPlacement(k, pfx, si, where) {
+      if (!isPlainObject(k)) { err(pfx + ' ' + where + ' 不是对象'); return; }
+      var full = pfx + ' ' + where;
       if (k.ref != null && typeof k.ref !== 'string') err(full + ' 的 ref 必须是字符串');
       else if (typeof k.ref === 'string' && k.ref && !lookupDef(k.ref)) err(full + ' 的 ref 无法解析: ' + k.ref);
       var ev = FE.evalPlacement(k, NEUTRAL_STATUS);
@@ -866,7 +898,9 @@ function appendKids(el, kid) {
 function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
 /* ---------------- 历史与变更 ---------------- */
-function snapshot() { return FE.serializeProfile(state.profile); }
+function snapshot() {
+  return JSON.stringify({ layout: state.profile, popup: state.popupProfile || null });
+}
 function pushHistory() {
   state.history.push(snapshot());
   if (state.history.length > 100) state.history.shift();
@@ -877,17 +911,33 @@ function mutate(fn) {
   fn();
   afterChange();
 }
+function restoreSnapshot(s) {
+  var o;
+  try { o = JSON.parse(s); } catch (e) { return false; }
+  state.profile = FE.normalizeProfile(o.layout || {});
+  state.popupProfile = o.popup != null ? o.popup : null;
+  if (state.popupProfile != null && FE.normalizePopupProfile) {
+    state.popupProfile = FE.normalizePopupProfile(state.popupProfile);
+  }
+  state.jsonDirty = false;
+  var names = Object.keys(state.profile.layouts);
+  if (!state.profile.layouts[state.layoutName]) {
+    state.layoutName = state.profile.layouts['default'] ? 'default' : (names[0] || null);
+  }
+  if (state.popupProfile && !state.popupProfile.schemas[state.popupSchema]) state.popupSchema = 'default';
+  state.sel = null;
+  afterChange();
+  return true;
+}
 function undo() {
   if (!state.history.length) return;
   state.future.push(snapshot());
-  var prev = state.history.pop();
-  applyProfileText(prev, { keepHistory: true });
+  restoreSnapshot(state.history.pop());
 }
 function redo() {
   if (!state.future.length) return;
   state.history.push(snapshot());
-  var next = state.future.pop();
-  applyProfileText(next, { keepHistory: true });
+  restoreSnapshot(state.future.pop());
 }
 function afterChange() {
   state.validation = FE.validateProfile(state.profile);
@@ -901,7 +951,9 @@ FE.renderAll = function () { renderAll(); };
 function autosave() {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({
-      profile: state.profile, layoutName: state.layoutName, fileName: state.fileName
+      profile: state.profile, layoutName: state.layoutName, fileName: state.fileName,
+      popupProfile: state.popupProfile || null, popupFileName: state.popupFileName,
+      splitMode: state.splitMode
     }));
   } catch (e) { /* 忽略存储失败 */ }
 }
@@ -1221,8 +1273,9 @@ function activateTab(id) {
   document.querySelectorAll('.tabpanel').forEach(function (p) { p.classList.remove('active'); });
   var panel = document.getElementById(id);
   if (panel) panel.classList.add('active');
-  if (id === 'tab-json') renderJsonTab();
+  if (id === 'tab-layout-json') renderJsonTab();
   if (id === 'tab-keys') renderKeysTab();
+  if (id === 'tab-popup' && FE.renderPopupTab) FE.renderPopupTab();
 }
 FE.activateTab = activateTab;
 
@@ -1230,9 +1283,36 @@ FE.activateTab = activateTab;
 function curLayout() {
   return (state.profile && state.layoutName && state.profile.layouts[state.layoutName]) || null;
 }
+/* 当前编辑模式（常规 / 分体）下的 sections；split 模式且片段缺失时返回 [] */
 function curSections() {
   var L = curLayout();
-  return (L && Array.isArray(L.sections)) ? L.sections : [];
+  if (!L) return [];
+  if (state.splitMode) {
+    if (!isPlainObject(L.split)) return [];
+    return Array.isArray(L.split.sections) ? L.split.sections : [];
+  }
+  return Array.isArray(L.sections) ? L.sections : [];
+}
+/* 同 curSections，但确保容器存在（split 片段缺失时创建），用于增删类操作 */
+function ensureCurSections() {
+  var L = curLayout();
+  if (!L) return null;
+  if (state.splitMode) {
+    if (!isPlainObject(L.split)) L.split = {};
+    if (!Array.isArray(L.split.sections)) L.split.sections = [];
+    return L.split.sections;
+  }
+  if (!Array.isArray(L.sections)) L.sections = [];
+  return L.sections;
+}
+/* 预览使用的布局片段：先解析命名布局（含状态变体），split 模式再取其 split */
+function previewFragment() {
+  var L = curLayout();
+  if (!L) return null;
+  var resolvedName = FE.resolvePreviewLayout(state.profile, state.layoutName, state.status);
+  var RL = state.profile.layouts[resolvedName] || L;
+  if (state.splitMode) return isPlainObject(RL.split) ? RL.split : null;
+  return RL;
 }
 
 /* ================================================================
@@ -1311,6 +1391,15 @@ function placementTooltip(ev, placement) {
     var gi = FE.gestureInfo(g, state.status);
     lines.push((f === 'longPress' ? '长按' : f === 'hold' ? '按住' : '双击') + ': ' + (gi && gi.action ? gi.action.display : '') + (gi && gi.label ? ' 「' + gi.label + '」' : ''));
   });
+  var pkTip = isPlainObject(ev.eff.longPress) ? ev.eff.longPress.popupKey : null;
+  if (pkTip != null && pkTip !== '') {
+    var tipLine = '长按弹出: popupKey=' + pkTip;
+    if (state.popupProfile && FE.popupCandidates) {
+      var pc = FE.popupCandidates(state.popupProfile, 'default', String(pkTip), state.status.shift);
+      tipLine += pc ? ' · ' + pc.length + ' 个候选' : ' · 弹出菜单未定义';
+    }
+    lines.push(tipLine);
+  }
   if (ev.unresolved) lines.push('⚠ 引用无法解析: ' + ev.unresolved);
   return lines.join('\n');
 }
@@ -1318,6 +1407,11 @@ function placementTooltip(ev, placement) {
 function buildPreviewKey(placement, ctx) {
   var ev = FE.evalPlacement(placement, state.status);
   var eff = ev.eff;
+  // 全链路只用一个 unit（竖屏口径）：行高、字号、图标、提示全部由此算。
+  // 分体的"变宽"只靠容器 kb-split + flex 拉伸，绝不在这里乘系数。
+  // 兼容旧调用：若有人传 {x,y} 对象，取 y（行高口径）为准。
+  var unit = (ctx.unit && typeof ctx.unit === 'object')
+    ? (ctx.unit.y != null ? ctx.unit.y : ctx.unit.x) : ctx.unit;
   var el = h('div', {
     class: 'kb-key' + (eff.keyType ? ' kt-' + String(eff.keyType).toLowerCase() : '') +
       (ev.unresolved || ev.cycle ? ' kb-key-broken' : '') +
@@ -1344,7 +1438,7 @@ function buildPreviewKey(placement, ctx) {
       if (state.status.shift) wrap.classList.add('kb-icon-active');
     }
     wrap.innerHTML = svg;
-    var iw = clamp(ctx.unit * 0.52, 14, 40);
+    var iw = clamp(unit * 0.52, 14, 40);
     wrap.style.width = iw + 'px';
     wrap.style.height = iw + 'px';
     el.appendChild(wrap);
@@ -1353,7 +1447,7 @@ function buildPreviewKey(placement, ctx) {
     if (label !== '' && label != null) {
       el.appendChild(h('span', {
         class: 'kb-label',
-        style: { fontSize: keyFontPx(eff, ctx.unit) + 'px' }
+        style: { fontSize: keyFontPx(eff, unit) + 'px' }
       }, label));
     }
   }
@@ -1368,19 +1462,29 @@ function buildPreviewKey(placement, ctx) {
       if (!txt) return;
       el.appendChild(h('span', {
         class: 'kb-hint kb-hint-' + d,
-        style: { fontSize: hintFontPx(eff, d, ctx.unit) + 'px' }
+        style: { fontSize: hintFontPx(eff, d, unit) + 'px' }
       }, txt));
     });
   }
   /* 长按徽标 */
   if (eff.longPress != null) {
     var lp = FE.gestureInfo(eff.longPress, state.status);
-    if (lp && lp.label) el.appendChild(h('span', { class: 'kb-badge-lp', style: { fontSize: hintFontPx(eff, 'up', ctx.unit) + 'px' } }, lp.label));
+    if (lp && lp.label) el.appendChild(h('span', { class: 'kb-badge-lp', style: { fontSize: hintFontPx(eff, 'up', unit) + 'px' } }, lp.label));
   }
   /* 按住徽标 */
   if (eff.hold != null) {
     var hd = FE.gestureInfo(eff.hold, state.status);
-    if (hd && hd.label) el.appendChild(h('span', { class: 'kb-badge-lp kb-badge-hold', style: { fontSize: hintFontPx(eff, 'up', ctx.unit) + 'px' } }, hd.label));
+    if (hd && hd.label) el.appendChild(h('span', { class: 'kb-badge-lp kb-badge-hold', style: { fontSize: hintFontPx(eff, 'up', unit) + 'px' } }, hd.label));
+  }
+  /* 长按弹出菜单徽标（键下方中央的 ⌄） */
+  var pk = isPlainObject(eff.longPress) ? eff.longPress.popupKey : null;
+  if (pk != null && pk !== '') {
+    var pkTitle = '长按弹出菜单 popupKey: ' + pk;
+    if (state.popupProfile && FE.popupCandidates) {
+      var cands = FE.popupCandidates(state.popupProfile, 'default', String(pk), state.status.shift);
+      pkTitle += cands ? '（' + cands.length + ' 个候选）' : '（当前弹出菜单未定义该键）';
+    }
+    el.appendChild(h('span', { class: 'kb-badge-popup', title: pkTitle }, '⌄'));
   }
 
   el.addEventListener('pointerdown', function () { el.classList.add('pressed'); applyKeyColors(el, eff, true); });
@@ -1458,24 +1562,48 @@ function renderPreview() {
   var host = $('preview-kb');
   if (!host) return;
   clearEl(host);
-  host.className = 'kb ' + (state.theme === 'light' ? 'kb-light' : 'kb-dark');
+  host.className = 'kb ' + (state.theme === 'light' ? 'kb-light' : 'kb-dark') +
+    (state.splitMode ? ' kb-split' : '');
   var L = curLayout();
   if (!L) {
     host.appendChild(h('div', { class: 'kb-empty' }, '当前没有布局，请在“布局编辑”中添加。'));
     renderMeta();
     return;
   }
-  var resolvedName = FE.resolvePreviewLayout(state.profile, state.layoutName, state.status);
-  var RL = state.profile.layouts[resolvedName] || L;
-  var W = host.clientWidth || 380;
-  var unit = W / 10;
-  var sections = Array.isArray(RL.sections) ? RL.sections : [];
+  var frag = previewFragment();
+  if (!frag) {
+    host.appendChild(h('div', { class: 'kb-empty' },
+      '布局 “' + state.layoutName + '” 没有分体（split）片段。',
+      h('div', { class: 'status' }, '在“布局编辑”底部的区段工具栏切换到「分体布局」并生成片段。')));
+    renderMeta();
+    return;
+  }
+  var rawW = host.clientWidth;
+  var W = rawW || 380;
+  // 分体 = 横屏宽键盘：容器本身已放宽（kb-split），按键靠 flex 自动拉宽；
+  // 这里只求一个"竖屏口径"的 unit（行高、字号、提示全用它），几何自然不动。
+  // 注意：.kb 的 max-width 不能加 transition，否则切回竖屏那一帧量到的还是
+  // 收缩中的宽值，portraitW 被污染后字和行高一起变大。另这里只在真实可见
+  // （rawW>0）时记忆竖屏宽度，避免隐藏面板时的 0/回退值污染。
+  if (!state.splitMode) {
+    if (rawW > 0) state.portraitW = rawW;
+    else if (state.portraitW == null) state.portraitW = 380;
+  } else if (state.portraitW == null) {
+    // 首次打开就处在分体模式（草稿恢复）：宽容器约是竖屏 2 倍，反推回去。
+    // 注意只做这一次：不能每帧都 W/2，否则窗口/面板每次重排都会抖。
+    state.portraitW = W / 2;
+  }
+  var unit = state.portraitW / 10;
+  var sections = Array.isArray(frag.sections) ? frag.sections : [];
   sections.forEach(function (s, si) {
     if (!isPlainObject(s)) return;
     if (s.type === 'rows') host.appendChild(buildRowsSection(s, si, unit));
     else if (s.type === 'grid') host.appendChild(buildGridSection(s, si, unit));
   });
-  if (!sections.length) host.appendChild(h('div', { class: 'kb-empty' }, '布局没有区段。'));
+  if (!sections.length) {
+    host.appendChild(h('div', { class: 'kb-empty' },
+      state.splitMode ? '分体片段没有区段。' : '布局没有区段。'));
+  }
   renderMeta();
 }
 
@@ -1488,21 +1616,41 @@ function renderMeta() {
     var resolvedName = FE.resolvePreviewLayout(state.profile, state.layoutName, state.status);
     parts.push(h('b', null, state.layoutName));
     if (resolvedName !== state.layoutName) parts.push(' → 实际渲染 ' + resolvedName + '（状态变体）');
-    var units = FE.layoutHeightUnits(L);
-    parts.push(' · 高度 ' + (Math.round(units * 100) / 100) + ' 单位');
+    if (state.splitMode) {
+      parts.push(h('span', { class: 'st-split' }, ' · 分体 split'));
+      var hasSplit = L && isPlainObject(L.split);
+      if (!hasSplit) {
+        parts.push(h('span', { class: 'st-warn' }, ' · 无分体片段（回退渲染提示）'));
+        meta.appendChild(h('span', null, parts));
+        appendValidationDetails(meta);
+        return;
+      }
+      var usN = FE.layoutHeightUnits(L), usS = FE.layoutHeightUnits(L.split);
+      parts.push(' · 高度 ' + (Math.round(usS * 100) / 100) + ' 单位（常规 ' + (Math.round(usN * 100) / 100) + '）');
+    } else {
+      parts.push(' · 高度 ' + (Math.round(FE.layoutHeightUnits(L) * 100) / 100) + ' 单位');
+    }
+    var frag = previewFragment();
     var keyCount = 0;
-    (Array.isArray(L.sections) ? L.sections : []).forEach(function (s) {
-      if (s.type === 'rows') FE.rowsOfSection(s).forEach(function (r) { keyCount += r.keys.length; });
-      else if (s.type === 'grid' && Array.isArray(s.keys)) keyCount += s.keys.length;
-    });
+    if (frag) {
+      (Array.isArray(frag.sections) ? frag.sections : []).forEach(function (s) {
+        if (s.type === 'rows') FE.rowsOfSection(s).forEach(function (r) { keyCount += r.keys.length; });
+        else if (s.type === 'grid' && Array.isArray(s.keys)) keyCount += s.keys.length;
+      });
+    }
     parts.push(' · ' + keyCount + ' 键');
   }
-  var v = state.validation;
-  if (v.errors.length) parts.push(h('span', { class: 'st-error' }, ' ✗ ' + v.errors.length + ' 个错误'));
-  if (v.warnings.length) parts.push(h('span', { class: 'st-warn' }, ' ⚠ ' + v.warnings.length + ' 个警告'));
-  if (!v.errors.length && !v.warnings.length) parts.push(h('span', { class: 'st-ok' }, ' ✓ 校验通过'));
   meta.appendChild(h('span', null, parts));
+  appendValidationDetails(meta);
+}
 
+function appendValidationDetails(meta) {
+  var v = state.validation;
+  var vparts = [];
+  if (v.errors.length) vparts.push(h('span', { class: 'st-error' }, ' ✗ ' + v.errors.length + ' 个错误'));
+  if (v.warnings.length) vparts.push(h('span', { class: 'st-warn' }, ' ⚠ ' + v.warnings.length + ' 个警告'));
+  if (!v.errors.length && !v.warnings.length) vparts.push(h('span', { class: 'st-ok' }, ' ✓ 校验通过'));
+  meta.appendChild(h('span', null, vparts));
   var det = h('details', { class: 'meta-details' });
   var sum = h('summary', null, '校验详情');
   det.appendChild(sum);
@@ -1615,6 +1763,71 @@ function renderLayoutSettings() {
 function renderSectionsEditor() {
   var host = $('layout-sections');
   clearEl(host);
+  var L = curLayout();
+  var hasSplit = !!(L && isPlainObject(L.split));
+
+  /* 模式横幅：常规 / 分体（切换后等一帧重渲染，见分体开关注释） */
+  function setSplitMode(v) {
+    state.splitMode = v;
+    state.sel = null;
+    renderAll();
+    requestAnimationFrame(function () { renderPreview(); });
+  }
+  var banner = h('div', { class: 'split-banner' });
+  banner.appendChild(h('button', {
+    class: 'pill' + (!state.splitMode ? ' active' : ''),
+    onclick: function () { setSplitMode(false); }
+  }, '常规布局'));
+  banner.appendChild(h('button', {
+    class: 'pill' + (state.splitMode ? ' active' : '') + (hasSplit ? '' : ' pill-dim'),
+    title: '分体键盘（split）片段：由 Foxy 的分体设置选择，不经 switch_layout 切换',
+    onclick: function () { setSplitMode(true); }
+  }, '分体布局 split'));
+  if (state.splitMode && !hasSplit && L) {
+    banner.appendChild(h('span', { class: 'status warn' }, '当前布局没有 split 片段'));
+    banner.appendChild(h('button', {
+      class: 'mini-button primary',
+      title: '复制常规区段，并在每行中间插入 foxy.Spacer 占位（含 weight:"auto" 的行除外）',
+      onclick: generateSplitFromNormal
+    }, '从常规布局生成'));
+    banner.appendChild(h('button', {
+      class: 'mini-button',
+      onclick: function () {
+        mutate(function () {
+          var l = curLayout();
+          if (!l) return;
+          l.split = { sections: [{ type: 'rows', rows: [[]] }] };
+        });
+      }
+    }, '空白片段'));
+  }
+  if (state.splitMode && hasSplit) {
+    var usN = FE.layoutHeightUnits(L), usS = FE.layoutHeightUnits(L.split);
+    banner.appendChild(h('span', {
+      class: 'status' + (Math.abs(usN - usS) > 0.01 ? ' warn' : '')
+    }, '高度 ' + (Math.round(usS * 100) / 100) + ' / 常规 ' + (Math.round(usN * 100) / 100) + ' 单位'));
+    banner.appendChild(h('button', {
+      class: 'mini-button',
+      title: '用常规区段重新生成分体片段（覆盖现有分体内容）',
+      onclick: generateSplitFromNormal
+    }, '重新生成'));
+    banner.appendChild(h('button', {
+      class: 'mini-button danger',
+      onclick: function () {
+        if (!confirm('删除分体片段？（可用撤销恢复）')) return;
+        mutate(function () { delete curLayout().split; });
+      }
+    }, '删除分体片段'));
+  }
+  host.appendChild(banner);
+
+  if (state.splitMode && !hasSplit) {
+    host.appendChild(h('div', { class: 'status' },
+      'Foxy 不会自动拆分行；分体片段需要显式编写（用 foxy.Spacer 或权重留出中间空隙）。',
+      h('div', null, '可「从常规布局生成」后，再把按键在两侧之间移动调整。')));
+    return;
+  }
+
   var sections = curSections();
   sections.forEach(function (s, si) {
     if (!isPlainObject(s)) { host.appendChild(sectionCardBroken(si)); return; }
@@ -1627,6 +1840,38 @@ function renderSectionsEditor() {
     h('button', { onclick: function () { addSection('grid'); } }, '+ 网格区段')
   ));
 }
+
+/* 从常规区段生成分体片段：每行中间插入 foxy.Spacer（weight 2），
+ * 含 weight:"auto" 的行（如空格行）与过短的行保持原样 */
+function generateSplitFromNormal() {
+  mutate(function () {
+    var L = curLayout();
+    if (!L) return;
+    var normal = Array.isArray(L.sections) ? deepClone(L.sections) : [];
+    normal.forEach(function (s) {
+      if (!isPlainObject(s) || s.type !== 'rows' || !Array.isArray(s.rows)) return;
+      s.rows = s.rows.map(function (r) {
+        var isObj = isPlainObject(r);
+        var keys = isObj ? (Array.isArray(r.keys) ? r.keys : []) : (Array.isArray(r) ? r : []);
+        var hasAuto = keys.some(function (k) { return isPlainObject(k) && k.weight === 'auto'; });
+        if (keys.length < 4 || hasAuto) return r;
+        var mid = Math.ceil(keys.length / 2);
+        var nr = keys.slice(0, mid)
+          .concat([{ ref: 'foxy.Spacer', weight: 2 }])
+          .concat(keys.slice(mid));
+        if (isObj) {
+          r.keys = nr;
+          if (typeof r.totalWeight === 'number') r.totalWeight += 2;
+          return r;
+        }
+        return nr;
+      });
+    });
+    L.split = { sections: normal };
+    state.splitMode = true;
+  });
+}
+FE.generateSplitFromNormal = generateSplitFromNormal;
 
 function sectionCardBroken(si) {
   return h('details', { class: 'card section-card', open: true },
@@ -1661,10 +1906,10 @@ function moveSection(si, delta) {
 
 function addSection(type) {
   mutate(function () {
-    var L = curLayout();
-    if (!Array.isArray(L.sections)) L.sections = [];
-    if (type === 'rows') L.sections.push({ type: 'rows', rows: [[]] });
-    else L.sections.push({ type: 'grid', columns: 4, rows: 3, keys: [] });
+    var arr = ensureCurSections();
+    if (!arr) return;
+    if (type === 'rows') arr.push({ type: 'rows', rows: [[]] });
+    else arr.push({ type: 'grid', columns: 4, rows: 3, keys: [] });
   });
 }
 
@@ -2236,6 +2481,7 @@ function renderAll() {
   renderJsonTab();
   renderOps();
   updateUndoButtons();
+  if (FE.renderPopupTab) FE.renderPopupTab();
 }
 
 function renderOps() {
@@ -2258,7 +2504,13 @@ function initTabs() {
     btn.addEventListener('click', function () {
       activateTab(btn.dataset.tab);
       var ta = $('json-editor');
-      if (btn.dataset.tab === 'tab-json' && ta) checkJsonText();
+      if (ta) {
+        // 布局类各页（布局编辑/按键定义/动作与宏）与布局 JSON 上下文联动；
+        // 弹出菜单是独立文档，不联动。
+        if (btn.dataset.tab === 'tab-layout-json') checkJsonText();
+        else if (btn.dataset.tab === 'tab-layout' || btn.dataset.tab === 'tab-keys' ||
+          btn.dataset.tab === 'tab-actions') renderJsonTab();
+      }
     });
   });
 }
@@ -2345,13 +2597,12 @@ function initToolbar() {
           setJsonStatus('✓ 已导入 ' + file.name + '，JSON 语法检查通过', 'ok');
         }
       } else {
-        /* 无法解析：把原文放进 JSON 页并展示问题 + 一键修复入口 */
-        activateTab('tab-json');
+        /* 无法解析：把原文放进布局 JSON 卡片（现位于布局编辑页底部），并展示问题 + 一键修复入口 */
         var ta = $('json-editor');
         if (ta) { ta.value = text; state.jsonDirty = true; }
         checkJsonText();
         var extra = rep.total ? '（检测到 ' + rep.total + ' 处可修复问题，可点击「一键修复并应用」）' : '';
-        setOpStatus('无法直接读取 ' + file.name + '：' + (state.lastParseError || 'JSON 语法错误') + extra + ' 已把原文载入 JSON 页', 'error');
+        setOpStatus('无法直接读取 ' + file.name + '：' + (state.lastParseError || 'JSON 语法错误') + extra + ' 已把原文载入布局 JSON 卡片', 'error');
         setJsonStatus('✗ ' + file.name + ' 无法解析: ' + (state.lastParseError || '') + extra, 'error');
       }
     };
@@ -2369,18 +2620,16 @@ function initToolbar() {
     setOpStatus('已导出 ' + a.download, 'ok');
   });
 
-  /* 示例（已打包进 js/examples-bundle.js，file:// 直开无需服务器） */
+  /* 示例（已打包进 js/examples-bundle.js，file:// 直开无需服务器）。
+   * 列表由 EXAMPLE_META 动态生成，弹出菜单类文件只在弹出菜单页出现 */
   var ex = $('op-example');
-  var EXAMPLES = [
-    ['内置默认布局（layout-variant）', '__builtin__'],
-    ['cc lite.json（全键盘·注音符号）', 'cc lite.json'],
-    ['default-with-edit.json（含编辑布局）', 'default-with-edit.json'],
-    ['layout-variant.json（仓颉变体示例）', 'layout-variant.json'],
-    ['number-row.json（数字行）', 'number-row.json'],
-    ['popup-ref-layout.json（长按弹出菜单）', 'popup-ref-layout.json'],
-    ['datadirsel-default.json', 'datadirsel-default.json']
-  ];
-  EXAMPLES.forEach(function (e2) { ex.appendChild(h('option', { value: e2[1] }, e2[0])); });
+  ex.appendChild(h('option', { value: '__builtin__' }, '内置默认布局（layout-variant）'));
+  if (FE.EXAMPLE_META) {
+    Object.keys(FE.EXAMPLE_META).sort().forEach(function (n) {
+      if (FE.EXAMPLE_META[n].kind === 'popup') return;
+      ex.appendChild(h('option', { value: n }, n));
+    });
+  }
   $('op-load-example').addEventListener('click', function () {
     var v = ex.value;
     if (!v) return;
@@ -2388,6 +2637,10 @@ function initToolbar() {
     if (v === '__builtin__') text = FE.DEFAULT_PROFILE_TEXT;
     else text = FE.EXAMPLE_FILES ? FE.EXAMPLE_FILES[v] : null;
     if (text == null) { setOpStatus('示例未找到: ' + v, 'error'); return; }
+    /* 弹出菜单文件误入布局下拉时自动路由 */
+    if (v !== '__builtin__' && FE.EXAMPLE_META && FE.EXAMPLE_META[v] && FE.EXAMPLE_META[v].kind === 'popup') {
+      if (FE.loadPopupProfileText && FE.loadPopupProfileText(text, v)) return;
+    }
     if (applyProfileText(text)) {
       state.fileName = (v === '__builtin__') ? 'layout-variant.json' : v;
       setOpStatus('已加载示例 ' + state.fileName, 'ok');
@@ -2517,6 +2770,16 @@ function initToolbar() {
   $('pt-disabled') && $('pt-disabled').addEventListener('change', function () { state.status.disabled = this.checked; renderPreview(); });
   $('pt-theme').addEventListener('change', function () { state.theme = this.value; renderPreview(); });
   $('pt-status-text').addEventListener('input', function () { state.statusSample = this.value; renderPreview(); });
+  $('pt-split') && $('pt-split').addEventListener('change', function () {
+    state.splitMode = this.checked;
+    state.sel = null;
+    // 分体↔竖屏切换时类名立即生效（.kb 无宽度动画），但浏览器 layout 未必
+    // 同步完成；等一帧再按最终宽度渲染，否则切回竖屏那一帧会量到收缩中的
+    // 宽值，portraitW 被污染后字和行高一起变大且回不来。
+    renderPreview();
+    renderLayoutTab();
+    requestAnimationFrame(function () { renderPreview(); });
+  });
 
   /* 预览 details 展开时重新测量 */
   var pd = document.querySelector('.preview-panel');
@@ -2642,6 +2905,18 @@ function boot() {
     state.profile = p;
     state.layoutName = 'default';
   }
+  /* 弹出菜单草稿与分体模式（popup-editor.js 随后加载时会再归一化） */
+  try {
+    var draft2 = localStorage.getItem(LS_KEY);
+    if (draft2) {
+      var d2 = JSON.parse(draft2);
+      if (d2 && d2.popupProfile) {
+        state.popupProfile = d2.popupProfile;
+        state.popupFileName = d2.popupFileName || 'popups.json';
+      }
+      if (d2 && d2.splitMode) state.splitMode = !!d2.splitMode;
+    }
+  } catch (e2) { /* 忽略 */ }
   state.validation = FE.validateProfile(state.profile);
   renderAll();
   setOpStatus('就绪。修改会实时渲染并自动保存到浏览器。', 'ok');

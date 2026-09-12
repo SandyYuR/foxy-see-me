@@ -24,6 +24,7 @@
           <label class="check"><input type="checkbox" id="pt-composing"> 组字</label>
           <label class="check"><input type="checkbox" id="pt-ascii"> ASCII</label>
           <label class="check"><input type="checkbox" id="pt-disabled"> 停用</label>
+          <label class="check" title="预览命名布局的 split 分体片段（由 Foxy 分体键盘设置选择）"><input type="checkbox" id="pt-split"> 分体</label>
           <label class="mini-label">状态标签示例 <input id="pt-status-text" type="text" class="mini-input" size="8" value="朙月拼音"></label>
           <select id="pt-theme" class="mini-select" aria-label="预览配色">
             <option value="dark">深色键盘</option>
@@ -37,6 +38,7 @@
       <div class="preview-legend">
         角标说明：<span class="lg-lp">右上蓝色 = 长按提示</span>（longPress.label，如 ⌫、⇪）·
         <span class="lg-hold">右上橙色 = 按住提示</span>（hold.label，如语音）·
+        <span class="lg-popup">底中 ⌄ = 长按弹出菜单</span>（longPress.popupKey，候选在「弹出菜单」页编辑）·
         上/下/左/右灰色小字 = 滑动提示 ·
         <span class="lg-broken">红色虚线框 = 引用无法解析</span> ·
         <span class="lg-sel">黄色框 = 选中按键</span>
@@ -49,13 +51,32 @@
       <button type="button" class="tab active" data-tab="tab-layout" aria-controls="tab-layout" aria-selected="true">布局编辑</button>
       <button type="button" class="tab" data-tab="tab-keys" aria-controls="tab-keys" aria-selected="false">按键定义</button>
       <button type="button" class="tab" data-tab="tab-actions" aria-controls="tab-actions" aria-selected="false">动作与宏</button>
-      <button type="button" class="tab" data-tab="tab-json" aria-controls="tab-json" aria-selected="false">JSON</button>
+      <button type="button" class="tab tab-popup" data-tab="tab-popup" aria-controls="tab-popup" aria-selected="false">弹出菜单</button>
     </div>
 
     <!-- ===================== 布局编辑 ===================== -->
     <section class="tabpanel active" id="tab-layout" role="tabpanel">
       <div class="workbench">
         <div class="col-main">
+          <details class="card" open>
+            <summary>布局与文件操作</summary>
+            <div class="toolbar">
+              <button id="op-import" class="mini-button">导入 JSON</button>
+              <input id="op-import-file" type="file" accept="application/json,.json" hidden>
+              <button id="op-export" class="mini-button">导出 JSON</button>
+              <select id="op-example" class="mini-select wide"></select>
+              <button id="op-load-example" class="mini-button">加载示例</button>
+              <button id="op-undo" class="mini-button" disabled>↶ 撤销</button>
+              <button id="op-redo" class="mini-button" disabled>↷ 重做</button>
+            </div>
+            <div class="form-row form-inline">
+              <label class="mini-label">作者 author</label>
+              <input id="op-author" type="text" class="mini-input wide" placeholder="显示在方案选择器中">
+              <label class="check"><input type="checkbox" id="op-type" checked> 导出时包含 type 字段</label>
+            </div>
+            <div id="op-status" class="status"></div>
+          </details>
+
           <details class="card" open>
             <summary>布局编辑</summary>
             <div class="toolbar">
@@ -84,22 +105,16 @@
           </details>
 
           <details class="card" open>
-            <summary>布局与文件操作</summary>
+            <summary>布局 JSON（实时同步；可直接编辑后“应用”）</summary>
             <div class="toolbar">
-              <button id="op-import" class="mini-button">导入 JSON</button>
-              <input id="op-import-file" type="file" accept="application/json,.json" hidden>
-              <button id="op-export" class="mini-button">导出 JSON</button>
-              <select id="op-example" class="mini-select wide"></select>
-              <button id="op-load-example" class="mini-button">加载示例</button>
-              <button id="op-undo" class="mini-button" disabled>↶ 撤销</button>
-              <button id="op-redo" class="mini-button" disabled>↷ 重做</button>
+              <button id="json-check" class="mini-button">检查语法</button>
+              <button id="json-apply" class="mini-button primary">应用</button>
+              <button id="json-format" class="mini-button">格式化并修复</button>
+              <button id="json-copy" class="mini-button">复制</button>
             </div>
-            <div class="form-row form-inline">
-              <label class="mini-label">作者 author</label>
-              <input id="op-author" type="text" class="mini-input wide" placeholder="显示在方案选择器中">
-              <label class="check"><input type="checkbox" id="op-type" checked> 导出时包含 type 字段</label>
-            </div>
-            <div id="op-status" class="status"></div>
+            <div id="json-issues" class="json-issues"></div>
+            <textarea id="json-editor" class="json-editor" spellcheck="false"></textarea>
+            <div id="json-status" class="status"></div>
           </details>
         </div>
       </div>
@@ -129,21 +144,49 @@
       </details>
     </section>
 
-    <!-- ===================== JSON ===================== -->
-    <section class="tabpanel" id="tab-json" role="tabpanel">
+    <!-- ===================== 弹出菜单 ===================== -->
+    <section class="tabpanel" id="tab-popup" role="tabpanel">
       <details class="card" open>
-        <summary>布局 JSON（实时同步；可直接编辑后“应用”）</summary>
+        <summary>弹出菜单文件</summary>
         <div class="toolbar">
-          <button id="json-check" class="mini-button">检查语法</button>
-          <button id="json-apply" class="mini-button primary">应用</button>
-          <button id="json-format" class="mini-button">格式化并修复</button>
-          <button id="json-copy" class="mini-button">复制</button>
+          <button id="popup-import" class="mini-button">导入 JSON</button>
+          <input id="popup-import-file" type="file" accept="application/json,.json" hidden>
+          <button id="popup-export" class="mini-button">导出 JSON</button>
+          <select id="popup-example" class="mini-select wide"></select>
+          <button id="popup-load-example" class="mini-button">加载示例</button>
         </div>
-        <div id="json-issues" class="json-issues"></div>
-        <textarea id="json-editor" class="json-editor" spellcheck="false"></textarea>
-        <div id="json-status" class="status"></div>
+        <div class="form-row form-inline">
+          <label class="mini-label">作者 author</label>
+          <input id="popup-author" type="text" class="mini-input" placeholder="显示在弹出菜单选择器中">
+        </div>
+        <div id="popup-status" class="status"></div>
+        <div class="status dim">文件请放置于 <code>&lt;外部存储&gt;/foxy/frontend/popups/&lt;profile&gt;.json</code></div>
       </details>
-    </section>
+      <details class="card" open>
+        <summary>弹出效果预览</summary>
+        <div id="popup-preview"></div>
+      </details>
+      <details class="card" open>
+        <summary>弹出菜单键定义（schemas）</summary>
+        <div class="form-row form-inline">
+          <label class="mini-label">schema</label>
+          <select id="popup-schema" class="mini-select"></select>
+          <button id="popup-schema-add" class="mini-button">+ 新增</button>
+          <button id="popup-schema-del" class="mini-button danger">删除</button>
+        </div>
+        <div id="popup-validation" class="status"></div>
+        <div id="popup-keys"></div>
+      </details>
+      <details class="card" open>
+        <summary>弹出菜单 JSON（实时同步；可直接编辑后“应用”）</summary>
+        <div class="toolbar">
+          <button id="popup-json-apply" class="mini-button primary">应用</button>
+          <button id="popup-json-format" class="mini-button">格式化并修复</button>
+        </div>
+        <textarea id="popup-json" class="json-editor" spellcheck="false"></textarea>
+        <div id="popup-json-status" class="status"></div>
+      </details>
+</section>
   </main>
 
   <footer class="footnote">
@@ -156,5 +199,6 @@
   <script src="./js/examples-bundle.js"></script>
   <script src="./js/app.js"></script>
   <script src="./js/key-dialog.js"></script>
+  <script src="./js/popup-editor.js"></script>
 </body>
 </html>

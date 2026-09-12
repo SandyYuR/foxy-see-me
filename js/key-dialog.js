@@ -30,6 +30,7 @@ function openModal(opts) {
   dlg.showModal();
   return { el: dlg, body: body, toolbar: toolbar, close: close };
 }
+FE.openModal = openModal;
 
 /* ================================================================
  * 按键选择器
@@ -354,6 +355,30 @@ FE.openGestureDialog = function (opts) {
         area.appendChild(h('div', { class: 'form-row form-inline' },
           h('label', { class: 'mini-label check' }, repeatChk, ' 连续重复'),
           h('label', { class: 'mini-label' }, '弹出菜单键', popupKeyInp)));
+        /* 弹出菜单联动：候选数提示 + 跳转编辑 */
+        var pkHint = h('span', { class: 'status' });
+        function updPkHint() {
+          var k = popupKeyInp.value.trim();
+          if (!k) { pkHint.textContent = '填写 popupKey 后可编辑其长按候选'; return; }
+          if (FE.state && FE.state.popupProfile && FE.popupCandidates) {
+            var c = FE.popupCandidates(FE.state.popupProfile, 'default', k, false);
+            pkHint.textContent = c ? '弹出菜单中该键有 ' + c.length + ' 个候选' : '弹出菜单未定义该键（可跳转补齐）';
+          } else {
+            pkHint.textContent = '候选在「弹出菜单」标签页编辑';
+          }
+        }
+        popupKeyInp.addEventListener('input', updPkHint);
+        updPkHint();
+        area.appendChild(h('div', { class: 'form-row form-inline' },
+          pkHint,
+          h('button', {
+            type: 'button', class: 'mini-button',
+            onclick: function () {
+              var k = popupKeyInp.value.trim();
+              if (!k) { alert('请先填写弹出菜单键 popupKey'); return; }
+              if (FE.jumpToPopupEditor) { modal.close(); FE.jumpToPopupEditor(k); }
+            }
+          }, '编辑弹出菜单候选 →')));
       }
       if (isHold) {
         startEditor = FE.buildActionEditor(startSpec);
@@ -936,6 +961,59 @@ FE.openKeyDialog = function (opts) {
       mcard.appendChild(mb);
       formHost.appendChild(mcard);
     }
+
+    /* 弹出菜单：与基本信息/手势/状态变体/按键颜色覆盖同级的独立折叠 section。
+     * 内容 = 弹出菜单标签页"弹出菜单键定义"卡片里对应按键的整键候选编辑
+     * （常规 / Shift，由 FE.buildPopupKeyEditor 共用渲染）。 */
+    var pcard = h('details', { class: 'card inner-card popup-section' });
+    pcard.appendChild(h('summary', null, '弹出菜单（长按弹出候选）'));
+    var pb = h('div', { class: 'inner-card-body' });
+    pcard.appendChild(pb);
+    formHost.appendChild(pcard);
+
+    /* 从 draft（含直接字段与继承链）解析出此按键的 popupKey */
+    function resolvePopupKey() {
+      var g = draft.longPress;
+      if (g != null && FE.isPlainObject(g) && g.popupKey != null && String(g.popupKey).trim() !== '') {
+        return String(g.popupKey).trim();
+      }
+      var eff = null;
+      try { eff = effObj(); } catch (e) { eff = null; }
+      var lp = eff && FE.isPlainObject(eff.longPress) ? eff.longPress.popupKey : null;
+      if (lp != null && String(lp).trim() !== '') return String(lp).trim();
+      return '';
+    }
+    function refreshPopupSection() {
+      clearEl(pb);
+      /* draft 可能在手势编辑后变化，每次重建时重算 */
+      var pk = resolvePopupKey();
+      if (!pk) {
+        pb.appendChild(h('div', { class: 'status' },
+          '此按键当前没有 longPress.popupKey。',
+          h('div', null, '请先在上方「手势 → 长按 longPress」中填写「弹出菜单键」，保存手势后再回来这里编辑候选。')));
+        return;
+      }
+      if (typeof FE.buildPopupKeyEditor !== 'function') {
+        pb.appendChild(h('div', { class: 'status' }, '弹出菜单模块未加载，请到「弹出菜单」标签页编辑。'));
+        return;
+      }
+      var schemaName = (FE.state && FE.state.popupSchema) || 'default';
+      pb.appendChild(h('div', { class: 'form-row form-inline' },
+        h('label', { class: 'mini-label' }, '弹出菜单键'),
+        h('code', null, pk),
+        h('span', { class: 'status' }, 'schema: ' + schemaName + '（在弹出菜单页切换）')));
+      pb.appendChild(FE.buildPopupKeyEditor(schemaName, pk, {
+        onChanged: function () { buildForm(); }
+      }).host);
+      pb.appendChild(h('div', { class: 'form-row form-inline' },
+        h('button', {
+          type: 'button', class: 'mini-button',
+          onclick: function () {
+            if (FE.jumpToPopupEditor) { modal.close(); FE.jumpToPopupEditor(pk); }
+          }
+        }, '到弹出菜单页编辑 →')));
+    }
+    refreshPopupSection();
   }
   buildForm();
 

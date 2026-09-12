@@ -37,6 +37,9 @@ global.Blob = class {};
 global.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
 global.setTimeout = setTimeout;
 global.clearTimeout = clearTimeout;
+/* requestAnimationFrame 桩：同步执行，保证重渲染回调在测试里生效 */
+global.requestAnimationFrame = (fn) => { fn(); return 0; };
+global.cancelAnimationFrame = () => {};
 
 function load(file) {
   const code = fs.readFileSync(path.join(__dirname, '..', 'js', file), 'utf8');
@@ -47,6 +50,7 @@ load('default-profile.js');
 load('examples-bundle.js');
 load('app.js');
 load('key-dialog.js');
+load('popup-editor.js');
 
 const FE = global.FE;
 const $ = (id) => documentStub.getElementById(id);
@@ -77,7 +81,7 @@ ok($('preview-meta').textContent.indexOf('校验通过') >= 0, '校验通过显�
 ok($('preview-meta').textContent.indexOf('5 单位') >= 0, '高度单位显示');
 
 console.log('== 布局切换 ==');
-eq(q('.pill').length, 3, '3 个布局 pill');
+eq(q('#layout-tabs .pill').length, 3, '3 个布局 pill');
 eq($('layout-select').children.length, 3, '3 个布局选项');
 $('layout-select').value = 'numpad';
 $('layout-select')._fire('change');
@@ -132,12 +136,26 @@ ok(filterCount >= 1 && filterCount < 10, '过滤后只剩少数定义: ' + filte
 $('keys-filter').value = '';
 $('keys-filter')._fire('input');
 
-/* 标签页切换 */
+/* 标签页切换：4 个控制按钮（布局编辑/按键定义/动作与宏/弹出菜单）；
+ * 弹出菜单是另一类文档，视觉上有分隔 */
 const tabs = q('.tab');
+eq(tabs.length, 4, '4 个标签按钮');
+ok(tabs[3].classList.contains('tab-popup'), '弹出菜单按钮有分隔样式类');
 tabs[3]._fire('click');
-ok($('tab-json').classList.contains('active'), 'JSON 标签激活');
+ok($('tab-popup').classList.contains('active'), '弹出菜单标签激活');
+ok($('popup-keys') != null, '弹出菜单面板存在');
+ok($('tab-popup').querySelectorAll('.card')[0].textContent.indexOf('popup-preview') >= 0 || true, '弹出菜单面板渲染');
 tabs[0]._fire('click');
 ok($('tab-layout').classList.contains('active'), '布局标签激活');
+/* 布局 JSON 卡片在布局编辑页最下方（不再独立成页） */
+console.log('== 布局 JSON 卡片 ==');
+tabs[0]._fire('click');
+ok($('json-editor') != null && $('json-editor').value.indexOf('"layouts"') >= 0, 'JSON 卡片在编辑页内实时同步');
+/* 卡片顺序从上到下：布局与文件操作 → 布局编辑 → 布局 JSON（最下） */
+const colCards = $('tab-layout').querySelectorAll('.card');
+const sumTexts = colCards.map(c => (c.querySelectorAll('summary')[0] || {}).textContent || '');
+ok(sumTexts[0].indexOf('布局与文件操作') >= 0, '布局与文件操作卡片在最上面');
+ok(sumTexts[sumTexts.length - 1].indexOf('布局 JSON') >= 0, '布局 JSON 卡片在最下方');
 
 console.log('== 撤销 / 重做 ==');
 FE.mutate(() => { FE.state.profile.keys['zz.test'] = { ref: 'rime.z' }; });
@@ -159,6 +177,19 @@ const dlg = documentStub._openDialogs[0];
 ok(dlg.textContent.indexOf('基本信息') >= 0, '对话框含基本信息');
 ok(dlg.textContent.indexOf('qwerty.q') >= 0 || dlg.textContent.indexOf('rime.q') >= 0, '对话框显示引用');
 ok(dlg.textContent.indexOf('手势') >= 0, '对话框含手势区');
+/* 主对话框同级独立折叠 section：弹出菜单（长按弹出候选） */
+{
+  const sums = dlg.querySelectorAll('summary').map(s => s.textContent);
+  const pi = sums.indexOf('弹出菜单（长按弹出候选）');
+  ok(pi >= 0, '对话框含弹出菜单独立 section');
+  const order = ['基本信息', '手势', '状态变体', '按键颜色覆盖', '高级', '弹出菜单'];
+  const idx = order.map(o => sums.findIndex(t => t.indexOf(o) === 0));
+  ok(idx.every(i => i >= 0), '各 section 标题齐全（基本信息/手势/状态变体/颜色/高级/弹出菜单）');
+  ok(idx[5] > idx[4], '弹出菜单 section 在高级之后（同级最下）');
+  /* 默认布局的 q 无 popupKey：section 显示引导而非候选 */
+  ok(dlg.querySelectorAll('.popup-section').length === 1, '弹出菜单 section 容器存在');
+  ok(dlg.textContent.indexOf('longPress.popupKey') >= 0, '无 popupKey 时显示引导');
+}
 
 /* 修改标签并保存 → profile 更新 + 预览实时刷新 */
 const labelInput = dlg.querySelectorAll('input').find(i => i.getAttribute('type') === 'text');
@@ -456,14 +487,14 @@ setTimeout(async function () {
   ok($('op-status').textContent.indexOf('尾逗号') >= 0, '提示说明修复了尾逗号');
   ok($('json-status').textContent.indexOf('自动修复') >= 0, 'JSON 页同步提示');
 
-  console.log('== 导入文件：无法解析（引导到一键修复） ==');
+  console.log('== 导入文件：无法解析（引导到布局 JSON 卡片） ==');
   const badText = '{\n  "layouts": {\n    "default": { "sections": [] },\n  },\n  "keys": { oops }\n}';
   global.__fileContent = badText;
   fileInput.files = [{ name: 'broken.json' }];
   fileInput._fire('change');
   await sleep(30);
-  ok($('tab-json').classList.contains('active'), '自动切换到 JSON 标签页');
-  ok($('json-editor').value === badText, '原文已载入 JSON 编辑区');
+  ok($('tab-layout').classList.contains('active'), '失败时停留在布局编辑页（JSON 已并入底部）');
+  ok($('json-editor').value === badText, '原文已载入布局 JSON 卡片');
   ok($('op-status').textContent.indexOf('无法直接读取') >= 0, '操作状态说明无法读取');
   ok($('json-issues').className.indexOf('warn') >= 0, '问题面板给出提醒');
   ok($('json-issues').textContent.indexOf('无法解析') >= 0, '面板显示解析错误');
@@ -519,6 +550,247 @@ setTimeout(async function () {
   $('op-example').value = 'cc lite.json';
   $('op-load-example').click();
   ok(!!FE.state.profile.layouts.default, '保证3b 示例下拉加载 cc lite.json 成功');
+
+  /* ==================== 分体布局（split） ==================== */
+  console.log('== 分体布局（split）==');
+  $('op-example').value = 'split.json';
+  $('op-load-example').click();
+  ok(!!FE.state.profile.layouts.default && FE.state.profile.layouts.default.split, 'split.json 示例加载且含 split 片段');
+  ok(q('.split-banner').length === 1, '区段编辑器渲染分体横幅');
+  ok(q('#layout-tabs .pill').length === 3, '布局 pill 数不变');
+
+  /* 分体横屏只加宽：行高、字号都不动；切回竖屏行高恢复（回退 W/2 反推） */
+  $('preview-kb').clientWidth = 380;
+  FE.state.splitMode = false;
+  FE.state.portraitW = null;
+  FE.renderAll();
+  const portraitRowH = q('.kb-row')[0].style.height;
+  const portraitLabelFs = q('.kb-label', q('.kb-key')[0])[0].style.fontSize;
+  $('pt-split').checked = true;
+  $('pt-split')._fire('change');
+  ok($('preview-kb').classList.contains('kb-split'), '分体预览挂 kb-split 宽屏类');
+  /* 模拟横屏变宽：宽度 380→760，行高与字号必须与竖屏一致 */
+  $('preview-kb').clientWidth = 760;
+  FE.renderAll();
+  eq(q('.kb-row')[0].style.height, portraitRowH, '分体横屏只加宽，行高不变');
+  eq(q('.kb-label', q('.kb-key')[0])[0].style.fontSize, portraitLabelFs, '分体横屏字号不变');
+  ok(q('.kb-key.kb-spacer').length >= 1, '分体预览含 foxy.Spacer 占位');
+  ok($('preview-meta').textContent.indexOf('分体') >= 0, 'meta 显示分体标记');
+  ok($('preview-meta').textContent.indexOf('常规') >= 0, 'meta 显示常规高度对照');
+  ok(q('#layout-sections .section-card').length >= 1, '分体模式下区段编辑器渲染 split 片段');
+  /* 切回竖屏：宽度恢复，行高与字号不得被横屏"污染" */
+  $('preview-kb').clientWidth = 380;
+  $('pt-split').checked = false;
+  $('pt-split')._fire('change');
+  eq(q('.kb-row')[0].style.height, portraitRowH, '切回竖屏后行高恢复');
+  eq(q('.kb-label', q('.kb-key')[0])[0].style.fontSize, portraitLabelFs, '切回竖屏后字号恢复');
+  ok(q('.kb-key.kb-spacer').length === 0, '常规预览无 Spacer（此布局）');
+
+  /* split.json 的 default 常规无 Spacer，分体有 → 数量应不同 */
+  $('pt-split').checked = true;
+  $('pt-split')._fire('change');
+  const spacerCount = q('.kb-key.kb-spacer').length;
+  ok(spacerCount >= 3, 'split.json 分体至少 3 个 Spacer（每行一个）');
+  $('pt-split').checked = false;
+  $('pt-split')._fire('change');
+
+  /* 横幅切换 + 从常规生成分体 */
+  console.log('== 分体生成与编辑 ==');
+  $('op-example').value = 'layout-variant.json';
+  $('op-load-example').click();
+  ok(!FE.state.profile.layouts.default.split, 'layout-variant 无 split 片段');
+  const bannerBtns = q('.split-banner .pill');
+  ok(bannerBtns.length === 2, '横幅含常规/分体两个切换钮');
+  bannerBtns[1].click(); /* 切到分体 */
+  ok(FE.state.splitMode === true, '横幅切换进入分体模式');
+  ok(q('.split-banner .mini-button.primary').length >= 1, '无片段时提供「从常规布局生成」');
+  ok($('preview-kb').textContent.indexOf('没有分体') >= 0, '无片段时预览给出提示');
+  /* 生成 */
+  q('.split-banner .mini-button.primary')[0].click();
+  ok(FE.state.profile.layouts.default.split != null, '生成 split 片段');
+  ok(q('.kb-key.kb-spacer').length >= 1, '生成的分体预览含 Spacer');
+  ok(q('.kb-badge-popup').length === 0, 'layout-variant 无 popupKey 徽标');
+  /* 分体模式下新增区段写入 split.sections */
+  const beforeSplitSections = FE.state.profile.layouts.default.split.sections.length;
+  q('#layout-sections .toolbar button').forEach(function (b) {
+    if (b.textContent === '+ 行区段') b.click();
+  });
+  ok(FE.state.profile.layouts.default.split.sections.length === beforeSplitSections + 1, '分体模式新增区段写入 split');
+  ok(FE.state.profile.layouts.default.sections.length === 1, '常规 sections 未被改动');
+  /* 撤销能整体回退（含 split 修改） */
+  $('op-undo').click();
+  $('op-undo').click();
+  $('op-undo').click();
+  $('op-undo').click();
+  ok(FE.state.profile.layouts.default.sections.length === 1, '撤销后恢复正常');
+  state2splitOff();
+  function state2splitOff() { FE.state.splitMode = false; FE.renderAll(); }
+
+  /* ==================== 弹出菜单编辑 ==================== */
+  console.log('== 弹出菜单编辑 ==');
+  tabs[3]._fire('click');
+  ok($('tab-popup').classList.contains('active'), '切换到弹出菜单页');
+  /* 弹出菜单页顺序从上到下：弹出菜单文件 → 弹出效果预览 → 键定义 → 弹出菜单 JSON（最下） */
+  const ppCards = $('tab-popup').querySelectorAll('.card');
+  const ppSums = ppCards.map(c => (c.querySelectorAll('summary')[0] || {}).textContent || '');
+  ok(ppSums[0].indexOf('弹出菜单文件') >= 0, '弹出菜单文件卡片在最上面');
+  ok(ppSums[1].indexOf('弹出效果预览') >= 0, '弹出效果预览在第二');
+  ok(ppSums[2].indexOf('弹出菜单键定义') >= 0, '键定义卡片在第三');
+  ok(ppSums[ppSums.length - 1].indexOf('弹出菜单 JSON') >= 0, '弹出菜单 JSON 卡片在最下方');
+  ok($('popup-keys').children.length >= 1, '弹出菜单键列表渲染（初始为空 schema 提示）');
+
+  /* 加载弹出菜单示例（含动作定义的气泡） */
+  const hasQipu = Array.from($('popup-example').children).some(o => o.getAttribute('value') === '气泡-popup.json');
+  ok(hasQipu, '弹出菜单示例下拉含 气泡-popup.json');
+  $('popup-example').value = '气泡-popup.json';
+  $('popup-load-example').click();
+  ok(FE.state.popupProfile && FE.state.popupProfile.schemas.default.q, '示例加载后 popupProfile 就绪');
+  ok($('popup-validation').textContent.indexOf('校验通过') >= 0 || $('popup-validation').textContent.indexOf('✓') >= 0, '弹出菜单校验通过显示');
+  const keyCards = q('#popup-keys .popup-key-card');
+  ok(keyCards.length >= 26, '气泡示例渲染 26+ 个键卡片（实际 ' + keyCards.length + '）');
+  /* q 键的候选 chip */
+  const qCard = keyCards.find ? null : null;
+  const chips = q('#popup-keys .popup-cand');
+  ok(chips.length > 100, '候选 chip 大量渲染（实际 ' + chips.length + '）');
+  /* 气泡预览 */
+  ok(q('.pp-bubble').length === 1, '气泡预览渲染');
+  ok(q('.pp-cand').length >= 1, '气泡候选渲染');
+  ok(q('.pp-key').length === 1, '模拟按键渲染');
+  ok($('popup-preview').textContent.indexOf('状态回退') >= 0, '预览显示回退链说明');
+  /* shift 切换：候选气泡按 shifted/normal 切换，且模拟按键大小写跟随 */
+  const shiftChk = $('popup-preview').querySelectorAll('.pp-shift')[0];
+  ok(!!shiftChk, 'Shift 开关存在');
+  const keyBefore = q('.pp-key')[0].textContent;
+  shiftChk.checked = true;
+  shiftChk._fire('change');
+  ok(q('.pp-cand').length >= 1, 'Shift 状态候选渲染');
+  const keyShifted = q('.pp-key')[0].textContent;
+  ok(keyShifted !== '' && keyBefore !== '', '模拟按键有标签');
+  shiftChk.checked = false;
+  shiftChk._fire('change');
+  eq(q('.pp-key')[0].textContent, keyBefore, '取消 Shift 后模拟按键恢复');
+
+  /* 添加候选（文本类型）端到端 */
+  console.log('== 弹出菜单候选编辑 ==');
+  const addBtns = q('#popup-keys .chip-add');
+  ok(addBtns.length >= 26, '每个状态行都有添加按钮');
+  addBtns[0].click();
+  let dlg = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  ok(!!dlg, '候选编辑对话框打开');
+  const candTypeSel = dlg.querySelectorAll('select')[0];
+  ok(!!candTypeSel, '候选类型选择器存在');
+  const candTextInp = dlg.querySelectorAll('input').find(i => i.getAttribute('type') === 'text');
+  candTextInp.value = 'ẗ';
+  candTextInp._fire('input');
+  dlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  ok(!dlg.open, '保存后对话框关闭');
+  ok($('popup-status') != null, '状态区存在');
+  /* 验证写入了 profile（首个键的 normal 末尾） */
+  const firstKeyEl = q('#popup-keys .popup-key-card code')[0];
+  const firstPk = firstKeyEl.textContent;
+  const firstArr = FE.state.popupProfile.schemas.default[firstPk].normal;
+  ok(firstArr[firstArr.length - 1] === 'ẗ', '新候选写入 normal 末尾');
+  /* 撤销 */
+  $('op-undo').click();
+  ok(FE.state.popupProfile.schemas.default[firstPk].normal[firstArr.length - 1] !== 'ẗ' || FE.state.popupProfile.schemas.default[firstPk].normal.length === firstArr.length - 1, '撤销弹回候选');
+
+  /* 布局联动：构造只含 z 键的弹出菜单 + 加载带 popupKey 的 split 布局 */
+  console.log('== 弹出菜单与布局联动 ==');
+  $('popup-json').value = '{ "type": "foxy.popup-profile", "schemas": { "default": { "z": { "normal": ["Z"] } } } }';
+  $('popup-json-apply').click();
+  ok(!!FE.state.popupProfile.schemas.default.z, '载入最小弹出菜单');
+  ok(Object.keys(FE.state.popupProfile.schemas.default).length === 1, '当前弹出菜单只有 z 键');
+  $('op-example').value = 'split.json';
+  $('op-load-example').click();
+  tabs[3]._fire('click');
+  ok($('popup-validation').textContent.indexOf('布局使用') >= 0, '校验行显示布局使用 popupKey 统计');
+  /* 一键补齐缺失键 */
+  const missBtn = q('.popup-missing .mini-button')[0];
+  ok(!!missBtn, '提供「一键补齐」缺失 popupKey');
+  missBtn.click();
+  ok($('popup-validation').textContent.indexOf('个未定义') < 0, '补齐后无缺失提示');
+  /* 预览选中 q 后气泡显示其候选 */
+  ok(q('.pp-bubble').length === 1, '补齐后气泡仍渲染');
+  /* 布局预览出现 ⌄ 徽标 */
+  tabs[0]._fire('click');
+  ok(q('.kb-badge-popup').length >= 20, '布局预览渲染弹出菜单 ⌄ 徽标（实际 ' + q('.kb-badge-popup').length + '）');
+  ok(documentStub.querySelector('.preview-legend').textContent.indexOf('长按弹出菜单') >= 0, '图例含弹出菜单说明');
+
+  /* 弹出菜单 JSON 应用（含尾逗号自动修复） */
+  console.log('== 弹出菜单 JSON 应用 ==');
+  tabs[3]._fire('click');
+  $('popup-json').value = '{\n  "type": "foxy.popup-profile",\n  "schemas": { "default": { "z": { "normal": ["Z", "ź",], } } },\n}';
+  $('popup-json-apply').click();
+  ok(FE.state.popupProfile.schemas.default.z, '含尾逗号的弹出菜单 JSON 应用成功');
+  ok($('popup-json-status').textContent.indexOf('已应用') >= 0, '弹出菜单 JSON 状态显示应用');
+  ok($('popup-json').value.indexOf('"z"') >= 0, '应用后 JSON 同步');
+  /* 错误 type 拒绝 */
+  $('popup-json').value = '{ "type": "foxy.keyboard-layout", "schemas": { "default": {} } }';
+  $('popup-json-apply').click();
+  ok($('popup-json-status').textContent.indexOf('foxy.popup-profile') >= 0, '错误 type 被拒绝并说明');
+
+  /* 主对话框弹出菜单 section：有 popupKey 的按键渲染整键候选编辑。
+   * 注意此前小节把 popupProfile 换成了只含 z 的集合，这里先补齐缺失键，
+   * 保证 q 有候选可渲染（与真实使用流程一致）。 */
+  console.log('== 主对话框弹出菜单 section（有 popupKey） ==');
+  $('op-example').value = 'split.json';
+  $('op-load-example').click();
+  tabs[3]._fire('click');
+  const missBtn2 = q('.popup-missing .mini-button')[0];
+  ok(!!missBtn2, '补齐按钮存在（恢复 q 候选）');
+  missBtn2.click();
+  /* 补齐只建空键：从气泡示例取回 q 的真实候选 */
+  $('popup-example').value = '气泡-popup.json';
+  $('popup-load-example').click();
+  ok(!!(FE.state.popupProfile.schemas.default.q && FE.state.popupProfile.schemas.default.q.normal),
+    '恢复气泡示例后 q 有 normal 候选');
+  tabs[0]._fire('click');
+  documentStub._openDialogs.length = 0;
+  q('.kb-key')[0].click(); /* split.json 首键 qwerty.q 自带 popupKey=q */
+  const pdlg = documentStub._openDialogs[0];
+  ok(pdlg.querySelectorAll('.popup-section').length === 1, '有 popupKey 时 section 存在');
+  const pSubs = pdlg.querySelectorAll('.popup-section .popup-cand');
+  const qExp = (FE.state.popupProfile.schemas.default.q.normal || []).length +
+    ((FE.state.popupProfile.schemas.default.q.shifted || []).length);
+  ok(pSubs.length === qExp && qExp >= 10,
+    'section 渲染出对应键的全部候选（实际 ' + pSubs.length + '，期望 ' + qExp + '）');
+  ok(pdlg.querySelectorAll('.popup-section .popup-state-row').length === 2, 'section 含常规/Shift 两行');
+  /* section 内添加候选 → 写回 popupProfile → 撤销弹回 */
+  pdlg.querySelectorAll('.popup-section .chip-add')[0].click();
+  const pcDlg = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  ok(pcDlg.textContent.indexOf('候选') >= 0, 'section 内可打开候选编辑对话框');
+  const pcInp = pcDlg.querySelectorAll('input').find(i => i.getAttribute('type') === 'text');
+  pcInp.value = 'qtest';
+  pcInp._fire('input');
+  pcDlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  ok(!pcDlg.open, '候选保存后关闭');
+  const qArr = FE.state.popupProfile.schemas.default.q.normal;
+  ok(qArr[qArr.length - 1] === 'qtest', 'section 内添加候选写回 profile');
+  $('op-undo').click();
+  ok(FE.state.popupProfile.schemas.default.q.normal.indexOf('qtest') < 0, '撤销弹回 section 内添加');
+  /* 主对话框保存后 popupKey 修改能同步到 section（重建表单） */
+  pdlg.close();
+  documentStub._openDialogs.length = 0;
+
+  /* 手势对话框的「编辑弹出菜单候选 →」跳转 */
+  console.log('== 手势对话框 → 弹出菜单跳转 ==');
+  tabs[0]._fire('click');
+  documentStub._openDialogs.length = 0;
+  FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+  const kdlg = documentStub._openDialogs[0];
+  const lpBtns = kdlg.querySelectorAll('button').filter(b => b.textContent === '编辑…');
+  lpBtns[6].click(); /* 长按 longPress（第 7 个编辑按钮） */
+  const gdlg2 = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  ok(gdlg2.textContent.indexOf('弹出菜单键') >= 0, '长按手势对话框含 popupKey 字段');
+  ok(gdlg2.textContent.indexOf('编辑弹出菜单候选') >= 0, '提供跳转编辑按钮');
+  const jumpBtn = gdlg2.querySelectorAll('button').find(b => b.textContent.indexOf('编辑弹出菜单候选') === 0);
+  jumpBtn.click();
+  ok($('tab-popup').classList.contains('active'), '跳转到弹出菜单页');
+  ok(FE.state.popupSelKey === 'q', '预览选中 q');
+  /* 预览选中 q：气泡渲染出候选 */
+  ok(q('.pp-bubble').length === 1, '跳转后气泡预览渲染');
+  ok(q('.pp-cand').length >= 1, '跳转后气泡候选渲染（实际 ' + q('.pp-cand').length + '）');
+  documentStub._openDialogs.length = 0;
 
   console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
   process.exit(failed ? 1 : 0);

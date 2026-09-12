@@ -164,7 +164,9 @@ class DOMNode {
   querySelectorAll(sel) { return queryAll(this, sel); }
   getElementById(id) { return findById(this, id); }
   /* --- misc --- */
-  get clientWidth() { return 0; }
+  /* 测试桩用 __stubWidth 模拟可变宽度（默认 0 → 走 ||380 回退） */
+  get clientWidth() { return (this.__stubWidth != null ? this.__stubWidth : 0); }
+  set clientWidth(v) { this.__stubWidth = v; }
   getBoundingClientRect() { return { width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }; }
   focus() { documentStub.activeElement = this; }
   blur() { if (documentStub.activeElement === this) documentStub.activeElement = null; }
@@ -184,31 +186,38 @@ class TextNode {
 function classListOf(el) { return el._cls ? el._cls._set : new Set(); }
 
 function matchesImpl(el, sel) {
-  // 支持: .class / tag / tag.class / #id / [attr] 简化版
+  // 支持: .class / .class.class…（多 class）/ tag / tag.class / #id
   let m;
   if ((m = sel.match(/^#([\w-]+)$/))) return el.getAttribute && el.getAttribute('id') === m[1];
-  if ((m = sel.match(/^([\w-]+)?\.([\w-]+)$/))) {
-    if (m[1] && el.tagName !== m[1].toUpperCase()) return false;
-    return classListOf(el).has(m[2]);
+  if (sel.charAt(0) === '.' || /^\w[\w-]*\./.test(sel)) {
+    /* class 复合选择器：tag.cls1.cls2… */
+    const dot = sel.indexOf('.');
+    if (dot >= 0) {
+      const tag = sel.slice(0, dot);
+      if (tag && el.tagName !== tag.toUpperCase()) return false;
+      const classes = sel.slice(dot + 1).split('.');
+      return classes.every(c => c && classListOf(el).has(c));
+    }
   }
   if ((m = sel.match(/^([\w-]+)$/))) return el.tagName === m[1].toUpperCase();
   return false;
 }
 function queryAll(root, sel) {
-  /* 支持以空格分隔的后代选择器，如 "#layout-sections .chip" */
+  /* 支持以空格分隔的后代选择器，如 "#layout-sections .chip"。
+   * 祖先链从父节点开始匹配（不含元素自身），与浏览器语义一致。 */
   const parts = String(sel).trim().split(/\s+/);
   const last = parts[parts.length - 1];
   const out = [];
   const walk = (n) => {
     for (const c of n.children) {
       if (c.nodeType !== 1) continue;
-      if (matchesImpl(c, last) && hasAncestorsMatch(c, parts.slice(0, -1))) out.push(c);
+      if (matchesImpl(c, last) && matchesAncestors(c, parts.slice(0, -1))) out.push(c);
       walk(c);
     }
   };
-  function hasAncestorsMatch(el, chain) {
+  function matchesAncestors(el, chain) {
     if (!chain.length) return true;
-    /* 从内向外逐段匹配 */
+    /* 从内向外逐段匹配：chain 末段是离元素最近的祖先 */
     let node = el.parentNode;
     let idx = chain.length - 1;
     while (node && node.nodeType === 1) {
@@ -301,22 +310,25 @@ function buildSkeleton() {
       el('label', null, el('input', { type: 'checkbox', id: 'pt-composing' })),
       el('label', null, el('input', { type: 'checkbox', id: 'pt-ascii' })),
       el('label', null, el('input', { type: 'checkbox', id: 'pt-disabled' })),
+      el('label', null, el('input', { type: 'checkbox', id: 'pt-split' })),
       el('input', { type: 'text', id: 'pt-status-text' }),
       el('select', { id: 'pt-theme' }))
   );
   const pStage = el('div', { class: 'preview-stage' }, el('div', { id: 'preview-kb', class: 'kb kb-dark' }));
-  const pLegend = el('div', { class: 'preview-legend' });
+  const pLegend = el('div', { class: 'preview-legend' },
+    '角标说明：右上蓝色 = 长按提示 · 右上橙色 = 按住提示 · 底中 ⌄ = 长按弹出菜单 · 红色虚线框 = 引用无法解析 · 黄色框 = 选中按键');
   previewPanel.append(pToolbar, pStage, pLegend, el('div', { id: 'preview-meta', class: 'status' }));
 
-  /* 标签栏 */
+  /* 标签栏：5 个按钮，JSON 是独立布局文档标签 */
   const tabs = el('div', { class: 'tabs' });
-  [['tab-layout', true], ['tab-keys', false], ['tab-actions', false], ['tab-json', false]].forEach(([t, active]) => {
-    tabs.appendChild(el('button', { class: 'tab' + (active ? ' active' : ''), 'data-tab': t }));
+  [['tab-layout', true], ['tab-keys', false], ['tab-actions', false], ['tab-popup', false]].forEach(([t, active]) => {
+    tabs.appendChild(el('button', { class: 'tab' + (t === 'tab-popup' ? ' tab-popup' : ''), 'data-tab': t }));
   });
 
-  /* 布局编辑面板 */
+  /* 布局编辑面板：与 index.html 相同的卡片顺序与标题 */
   const tabLayout = el('section', { class: 'tabpanel' + ' active', id: 'tab-layout' });
-  const layoutCard = el('details', { class: 'card', open: 'open' });
+  const layoutCard = el('details', { class: 'card', open: 'open' },
+    el('summary', null, '布局编辑'));
   layoutCard.append(
     el('div', { class: 'toolbar' },
       el('select', { id: 'layout-select', class: 'mini-select' }),
@@ -330,7 +342,18 @@ function buildSkeleton() {
       el('div', { id: 'layout-variants' })),
     el('div', { id: 'layout-sections' })
   );
-  const opCard = el('details', { class: 'card', open: 'open' });
+  const layoutJsonCard = el('details', { class: 'card', open: 'open' },
+    el('summary', null, '布局 JSON（实时同步；可直接编辑后“应用”）'),
+    el('div', { class: 'toolbar' },
+      el('button', { id: 'json-check' }),
+      el('button', { id: 'json-apply' }),
+      el('button', { id: 'json-format' }),
+      el('button', { id: 'json-copy' })),
+    el('div', { id: 'json-issues', class: 'json-issues' }),
+    el('textarea', { id: 'json-editor', class: 'json-editor' }),
+    el('div', { id: 'json-status', class: 'status' }));
+  const opCard = el('details', { class: 'card', open: 'open' },
+    el('summary', null, '布局与文件操作'));
   opCard.append(
     el('div', { class: 'toolbar' },
       el('button', { id: 'op-import' }),
@@ -344,7 +367,7 @@ function buildSkeleton() {
     el('input', { id: 'op-type', type: 'checkbox' }),
     el('div', { id: 'op-status', class: 'status' })
   );
-  const wb = el('div', { class: 'workbench' }, el('div', { class: 'col-main' }, layoutCard, opCard));
+  const wb = el('div', { class: 'workbench' }, el('div', { class: 'col-main' }, opCard, layoutCard, layoutJsonCard));
   tabLayout.appendChild(wb);
 
   /* 按键定义面板 */
@@ -361,19 +384,38 @@ function buildSkeleton() {
     el('details', { class: 'card', open: 'open' }, el('div', { id: 'actions-list' })),
     el('details', { class: 'card', open: 'open' }, el('div', { id: 'macros-list' })));
 
-  /* JSON 面板 */
-  const tabJson = el('section', { class: 'tabpanel', id: 'tab-json' });
-  tabJson.appendChild(el('details', { class: 'card', open: 'open' },
-    el('div', { class: 'toolbar' },
-      el('button', { id: 'json-check' }),
-      el('button', { id: 'json-apply' }),
-      el('button', { id: 'json-format' }),
-      el('button', { id: 'json-copy' })),
-    el('div', { id: 'json-issues', class: 'json-issues' }),
-    el('textarea', { id: 'json-editor', class: 'json-editor' }),
-    el('div', { id: 'json-status', class: 'status' })));
+  /* 弹出菜单面板（与 index.html 同样的卡片顺序与标题）：
+   * 弹出菜单文件（最上）→ 弹出效果预览 → 弹出菜单键定义 → 弹出菜单 JSON（最下） */
+  const tabPopup = el('section', { class: 'tabpanel', id: 'tab-popup' });
+  tabPopup.append(
+    el('details', { class: 'card', open: 'open' },
+      el('summary', null, '弹出菜单文件'),
+      el('div', { class: 'toolbar' },
+        el('button', { id: 'popup-import' }),
+        el('input', { id: 'popup-import-file', type: 'file' }),
+        el('button', { id: 'popup-export' }),
+        el('select', { id: 'popup-example' }),
+        el('button', { id: 'popup-load-example' })),
+      el('input', { id: 'popup-author', type: 'text' }),
+      el('div', { id: 'popup-status', class: 'status' })),
+    el('details', { class: 'card', open: 'open' },
+      el('summary', null, '弹出效果预览'), el('div', { id: 'popup-preview' })),
+    el('details', { class: 'card', open: 'open' },
+      el('summary', null, '弹出菜单键定义（schemas）'),
+      el('select', { id: 'popup-schema' }),
+      el('button', { id: 'popup-schema-add' }),
+      el('button', { id: 'popup-schema-del' }),
+      el('div', { id: 'popup-validation', class: 'status' }),
+      el('div', { id: 'popup-keys' })),
+    el('details', { class: 'card', open: 'open' },
+      el('summary', null, '弹出菜单 JSON（实时同步；可直接编辑后“应用”）'),
+      el('div', { class: 'toolbar' },
+        el('button', { id: 'popup-json-apply' }),
+        el('button', { id: 'popup-json-format' })),
+      el('textarea', { id: 'popup-json', class: 'json-editor' }),
+      el('div', { id: 'popup-json-status', class: 'status' })));
 
-  main.append(previewPanel, tabs, tabLayout, tabKeys, tabActions, tabJson);
+  main.append(previewPanel, tabs, tabLayout, tabKeys, tabActions, tabPopup);
   body.appendChild(el('header', { class: 'topbar' }));
   body.appendChild(main);
   return body;

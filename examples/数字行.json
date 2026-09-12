@@ -1,0 +1,1055 @@
+{
+    "author": "Sandy yu",
+    "keys": {
+        "qwerty.shift": {
+            "ref": "foxy.Shift",
+            "weight": 1.5,
+            "keyType": "FUNCTION",
+            "icon": "shift",
+            "longPress": {
+                "label": "⇪",
+                "action": []
+            }
+        },
+        "qwerty.q": {
+            "ref": "rime.q",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.exclam"
+                }
+            },
+            "longPress": {
+                "ref": "rime.Q"
+            }
+        },
+        "qwerty.w": {
+            "ref": "rime.w",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.at"
+                }
+            },
+            "longPress": {
+                "ref": "rime.W"
+            }
+        },
+        "qwerty.e": {
+            "ref": "rime.e",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.numbersign"
+                }
+            },
+            "longPress": {
+                "ref": "rime.E"
+            }
+        },
+        "qwerty.r": {
+            "ref": "rime.r",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.dollar"
+                }
+            },
+            "longPress": {
+                "ref": "rime.R"
+            }
+        },
+        "qwerty.t": {
+            "ref": "rime.t",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.percent"
+                }
+            },
+            "longPress": {
+                "ref": "rime.T"
+            }
+        },
+        "qwerty.y": {
+            "ref": "rime.y",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.asciicircum"
+                }
+            },
+            "longPress": {
+                "ref": "rime.Y"
+            }
+        },
+        "qwerty.u": {
+            "ref": "rime.u",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.ampersand"
+                }
+            },
+            "longPress": {
+                "ref": "rime.U"
+            }
+        },
+        "qwerty.i": {
+            "ref": "rime.i",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.asterisk"
+                }
+            },
+            "longPress": {
+                "ref": "rime.I"
+            }
+        },
+        "qwerty.o": {
+            "ref": "rime.o",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.parenleft"
+                }
+            },
+            "longPress": {
+                "ref": "rime.O"
+            }
+        },
+        "qwerty.p": {
+            "ref": "rime.p",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.parenright"
+                }
+            },
+            "longPress": {
+                "ref": "rime.P"
+            }
+        },
+        "qwerty.a": {
+            "ref": "rime.a",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "foxy.SelectAll",
+                    "label": "全选"
+                }
+            },
+            "longPress": {
+                "ref": "rime.A"
+            }
+        },
+        "qwerty.s": {
+            "ref": "rime.s",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "action": "key.plus",
+                    "label": "+"
+                }
+            },
+            "longPress": {
+                "ref": "rime.S"
+            }
+        },
+        "qwerty.d": {
+            "ref": "rime.d",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.minus"
+                }
+            },
+            "longPress": {
+                "ref": "rime.D"
+            }
+        },
+        "qwerty.f": {
+            "ref": "rime.f",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.equal"
+                }
+            },
+            "longPress": {
+                "ref": "rime.F"
+            }
+        },
+        "qwerty.g": {
+            "ref": "rime.g",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.slash"
+                }
+            },
+            "longPress": {
+                "ref": "rime.G"
+            }
+        },
+        "qwerty.h": {
+            "ref": "rime.h",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.apostrophe"
+                }
+            },
+            "longPress": {
+                "ref": "rime.H"
+            }
+        },
+        "qwerty.j": {
+            "ref": "rime.j",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.ApostropheShift"
+                }
+            },
+            "longPress": {
+                "ref": "rime.J"
+            }
+        },
+        "qwerty.k": {
+            "ref": "rime.k",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.colon"
+                }
+            },
+            "longPress": {
+                "ref": "rime.K"
+            }
+        },
+        "qwerty.l": {
+            "ref": "rime.l",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.semicolon"
+                }
+            },
+            "longPress": {
+                "ref": "rime.L"
+            }
+        },
+        "qwerty.z": {
+            "ref": "rime.z",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "action": "key.tilde",
+                    "label": "~"
+                }
+            },
+            "longPress": {
+                "ref": "rime.Z"
+            }
+        },
+        "qwerty.x": {
+            "ref": "rime.x",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "foxy.Cut",
+                    "label": "剪切"
+                }
+            },
+            "longPress": {
+                "ref": "rime.X"
+            }
+        },
+        "qwerty.c": {
+            "ref": "rime.c",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "foxy.Copy",
+                    "label": "复制"
+                }
+            },
+            "longPress": {
+                "ref": "rime.C"
+            }
+        },
+        "qwerty.v": {
+            "ref": "rime.v",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "foxy.Paste",
+                    "label": "粘贴"
+                }
+            },
+            "longPress": {
+                "ref": "rime.V"
+            }
+        },
+        "qwerty.b": {
+            "ref": "rime.b",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "action": "key.underscore",
+                    "label": "_"
+                }
+            },
+            "longPress": {
+                "ref": "rime.B"
+            }
+        },
+        "qwerty.n": {
+            "ref": "rime.n",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.Question"
+                }
+            },
+            "longPress": {
+                "ref": "rime.N"
+            }
+        },
+        "qwerty.m": {
+            "ref": "rime.m",
+            "keyType": "LETTER",
+            "swipe": {
+                "down": {
+                    "ref": "rime.backslash"
+                }
+            },
+            "longPress": {
+                "ref": "rime.M"
+            }
+        },
+        "qwerty.semicolon": {
+            "ref": "rime.semicolon",
+            "keyType": "LETTER",
+            "swipe": {
+                "up": {
+                    "ref": "rime.colon"
+                },
+                "down": {
+                    "ref": "rime.Insert"
+                }
+            }
+        },
+        "qwerty.backspace.up": {
+            "label": "Esc",
+            "tap": {
+                "ref": "rime.Escape"
+            }
+        },
+        "qwerty.backspace": {
+            "ref": "rime.BackSpace",
+            "weight": 1.5,
+            "keyType": "FUNCTION",
+            "icon": "backspace",
+            "swipe": {
+                "up": {
+                    "ref": "qwerty.backspace.up"
+                }
+            },
+            "longPress": {
+                "label": "⌫",
+                "repeat": true,
+                "action": {
+                    "type": "key",
+                    "key": "BACKSPACE"
+                }
+            }
+        },
+        "qwerty.layout.up": {
+            "label": "Tab",
+            "tap": {
+                "ref": "rime.Tab"
+            }
+        },
+        "qwerty.layout": {
+            "ref": "foxy.LayoutNumpad",
+            "weight": 1.5,
+            "keyType": "FUNCTION",
+            "tap": {
+                "action": {
+                    "type": "switch_layout",
+                    "layout": "numpad"
+                }
+            },
+            "swipe": {
+                "up": {
+                    "ref": "qwerty.layout.up"
+                }
+            }
+        },
+        "qwerty.comma.up": {
+            "label": "!?#",
+            "tap": {
+                "type": "switch_layout",
+                "layout": "symbols"
+            }
+        },
+        "qwerty.comma.composing": {
+            "ref": "rime.2"
+        },
+        "qwerty.comma": {
+            "ref": "rime.comma",
+            "swipe": {
+                "up": {
+                    "ref": "qwerty.comma.up"
+                }
+            }
+        },
+        "qwerty.space.up": {
+            "label": "Up",
+            "tap": {
+                "ref": "rime.Up",
+                "label": "上"
+            }
+        },
+        "qwerty.space.down": {
+            "label": "Down",
+            "tap": {
+                "ref": "rime.Down",
+                "label": "下"
+            }
+        },
+        "qwerty.space.left": {
+            "label": "Left",
+            "tap": {
+                "ref": "rime.Left",
+                "label": "左"
+            }
+        },
+        "qwerty.space.right": {
+            "label": "Right",
+            "tap": {
+                "ref": "rime.Right",
+                "label": "右"
+            }
+        },
+        "qwerty.space": {
+            "ref": "rime.space",
+            "weight": 5,
+            "id": "space",
+            "statusLabel": "schema_name",
+            "keyType": "LETTER",
+            "textSize": 16,
+            "tap": {
+                "ref": "rime.space"
+            },
+            "swipe": {
+                "up": {
+                    "ref": "qwerty.space.up"
+                },
+                "down": {
+                    "ref": "qwerty.space.down"
+                },
+                "left": {
+                    "ref": "qwerty.space.left"
+                },
+                "right": {
+                    "ref": "qwerty.space.right"
+                }
+            },
+            "hold": {
+                "label": "🎤",
+                "start": {
+                    "type": "app",
+                    "command": "voice_start"
+                },
+                "end": {
+                    "type": "app",
+                    "command": "voice_stop"
+                }
+            },
+            "hintTextSize": 0
+        },
+        "qwerty.period.up": {
+            "label": "Emoji",
+            "tap": {
+                "type": "switch_layout",
+                "layout": "emoji"
+            }
+        },
+        "qwerty.period.composing": {
+            "ref": "rime.3"
+        },
+        "qwerty.period": {
+            "ref": "rime.period",
+            "swipe": {
+                "up": {
+                    "ref": "qwerty.period.up"
+                }
+            }
+        },
+        "qwerty.enter": {
+            "ref": "rime.Return",
+            "weight": 1.5,
+            "keyType": "ACTION",
+            "icon": "enter",
+            "swipe": {
+                "up": {
+                    "label": "Kaomoji",
+                    "action": {
+                        "type": "switch_layout",
+                        "layout": "kaomoji"
+                    }
+                }
+            }
+        },
+        "comma": {
+            "label": ",",
+            "keyType": "FUNCTION",
+            "tap": {
+                "ref": "rime.comma"
+            },
+            "swipe": {
+                "up": {
+                    "label": "!?#",
+                    "action": {
+                        "type": "switch_layout",
+                        "layout": "symbols"
+                    }
+                }
+            },
+            "variants": [
+                {
+                    "when": {
+                        "rime": {
+                            "composing": true
+                        }
+                    },
+                    "label": "2",
+                    "tap": {
+                        "ref": "qwerty.comma.composing"
+                    }
+                }
+            ]
+        },
+        "period": {
+            "label": ".",
+            "keyType": "FUNCTION",
+            "tap": {
+                "ref": "rime.period"
+            },
+            "swipe": {
+                "up": {
+                    "label": "Emoji",
+                    "action": {
+                        "type": "switch_layout",
+                        "layout": "emoji"
+                    }
+                }
+            },
+            "variants": [
+                {
+                    "when": {
+                        "rime": {
+                            "composing": true
+                        }
+                    },
+                    "label": "3",
+                    "tap": {
+                        "ref": "qwerty.period.composing"
+                    }
+                }
+            ]
+        },
+        "custom.numpad": {
+            "label": "?123",
+            "keyType": "ACTION",
+            "tap": {
+                "action": {
+                    "type": "switch_layout",
+                    "layout": "numpad"
+                }
+            },
+            "variants": [
+                {
+                    "when": {
+                        "rime": {
+                            "composing": true
+                        }
+                    },
+                    "label": "↹",
+                    "keyType": "ACTION",
+                    "tap": {
+                        "ref": "rime.Tab"
+                    }
+                }
+            ]
+        },
+        "custom.shift": {
+            "label": "⌨",
+            "keyType": "FUNCTION",
+            "tap": {
+                "type": "key",
+                "key": "SHIFT_LEFT"
+            },
+            "longPress": {
+                "action": {
+                    "type": "key",
+                    "key": "SPACE",
+                    "meta": [
+                        "SHIFT"
+                    ]
+                }
+            },
+            "variants": [
+                {
+                    "when": {
+                        "rime": {
+                            "composing": true
+                        }
+                    },
+                    "label": "⎋",
+                    "shiftedLabel": "Esc",
+                    "keyType": "ACTION",
+                    "tap": {
+                        "ref": "rime.Escape"
+                    }
+                }
+            ]
+        }
+    },
+    "layouts": {
+        "default": {
+            "sections": [
+                {
+                    "type": "rows",
+                    "rows": [
+                        {
+                            "height": 0.75,
+                            "keys": [
+                                {
+                                    "ref": "rime.1",
+                                    "keyType": "FUNCTION",
+                                    "swipe": {
+                                        "up": {
+                                            "ref": "rime.grave"
+                                        }
+                                    },
+                                    "longPress": {
+                                        "action": {
+                                            "type": "key",
+                                            "key": "DIGIT_1",
+                                            "meta": [
+                                                "CTRL"
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    "ref": "rime.2",
+                                    "keyType": "FUNCTION",
+                                    "longPress": {
+                                        "action": {
+                                            "type": "key",
+                                            "key": "DIGIT_2",
+                                            "meta": [
+                                                "CTRL"
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    "ref": "rime.3",
+                                    "keyType": "FUNCTION",
+                                    "longPress": {
+                                        "action": {
+                                            "type": "key",
+                                            "key": "DIGIT_3",
+                                            "meta": [
+                                                "CTRL"
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    "ref": "rime.4",
+                                    "keyType": "FUNCTION",
+                                    "longPress": {
+                                        "action": {
+                                            "type": "key",
+                                            "key": "DIGIT_4",
+                                            "meta": [
+                                                "CTRL"
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    "ref": "rime.5",
+                                    "keyType": "FUNCTION",
+                                    "longPress": {
+                                        "action": {
+                                            "type": "key",
+                                            "key": "DIGIT_5",
+                                            "meta": [
+                                                "CTRL"
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    "ref": "rime.6",
+                                    "keyType": "FUNCTION",
+                                    "longPress": {
+                                        "action": {
+                                            "type": "key",
+                                            "key": "DIGIT_6",
+                                            "meta": [
+                                                "CTRL"
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    "ref": "rime.7",
+                                    "keyType": "FUNCTION",
+                                    "swipe": {
+                                        "up": {
+                                            "label": "ˉ"
+                                        }
+                                    }
+                                },
+                                {
+                                    "ref": "rime.8",
+                                    "keyType": "FUNCTION",
+                                    "swipe": {
+                                        "up": {
+                                            "label": "ˊ"
+                                        }
+                                    }
+                                },
+                                {
+                                    "ref": "rime.9",
+                                    "keyType": "FUNCTION",
+                                    "swipe": {
+                                        "up": {
+                                            "label": "ˇ"
+                                        }
+                                    }
+                                },
+                                {
+                                    "ref": "rime.0",
+                                    "keyType": "FUNCTION",
+                                    "swipe": {
+                                        "up": {
+                                            "label": "ˋ"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        [
+                            {
+                                "ref": "qwerty.q"
+                            },
+                            {
+                                "ref": "qwerty.w"
+                            },
+                            {
+                                "ref": "qwerty.e"
+                            },
+                            {
+                                "ref": "qwerty.r"
+                            },
+                            {
+                                "ref": "qwerty.t"
+                            },
+                            {
+                                "ref": "qwerty.y"
+                            },
+                            {
+                                "ref": "qwerty.u"
+                            },
+                            {
+                                "ref": "qwerty.i"
+                            },
+                            {
+                                "ref": "qwerty.o"
+                            },
+                            {
+                                "ref": "qwerty.p"
+                            }
+                        ],
+                        {
+                            "width": 0.9,
+                            "keys": [
+                                {
+                                    "ref": "qwerty.a"
+                                },
+                                {
+                                    "ref": "qwerty.s"
+                                },
+                                {
+                                    "ref": "qwerty.d"
+                                },
+                                {
+                                    "ref": "qwerty.f"
+                                },
+                                {
+                                    "ref": "qwerty.g"
+                                },
+                                {
+                                    "ref": "qwerty.h"
+                                },
+                                {
+                                    "ref": "qwerty.j"
+                                },
+                                {
+                                    "ref": "qwerty.k"
+                                },
+                                {
+                                    "ref": "qwerty.l"
+                                }
+                            ]
+                        },
+                        [
+                            {
+                                "ref": "qwerty.shift",
+                                "override": {
+                                    "swipe": {
+                                        "up": {
+                                            "ref": "foxy.Redo",
+                                            "label": "重做"
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "ref": "qwerty.z"
+                            },
+                            {
+                                "ref": "qwerty.x"
+                            },
+                            {
+                                "ref": "qwerty.c"
+                            },
+                            {
+                                "ref": "qwerty.v"
+                            },
+                            {
+                                "ref": "qwerty.b"
+                            },
+                            {
+                                "ref": "qwerty.n"
+                            },
+                            {
+                                "ref": "qwerty.m"
+                            },
+                            {
+                                "ref": "qwerty.backspace"
+                            }
+                        ],
+                        [
+                            {
+                                "ref": "custom.numpad",
+                                "weight": 1.5
+                            },
+                            {
+                                "ref": "qwerty.comma",
+                                "weight": 1
+                            },
+                            {
+                                "ref": "custom.shift",
+                                "weight": 1
+                            },
+                            {
+                                "ref": "qwerty.space",
+                                "weight": 4
+                            },
+                            {
+                                "ref": "qwerty.period",
+                                "weight": 1
+                            },
+                            {
+                                "ref": "qwerty.enter",
+                                "weight": 1.5
+                            }
+                        ]
+                    ]
+                }
+            ]
+        },
+        "numpad": {
+            "sections": [
+                {
+                    "type": "grid",
+                    "columns": 5,
+                    "rows": 4,
+                    "keys": [
+                        {
+                            "column": 0,
+                            "row": 0,
+                            "ref": "rime.KP_Add",
+                            "override": {
+                                "keyType": "FUNCTION"
+                            }
+                        },
+                        {
+                            "column": 1,
+                            "row": 0,
+                            "ref": "rime.KP_1"
+                        },
+                        {
+                            "column": 2,
+                            "row": 0,
+                            "ref": "rime.KP_2"
+                        },
+                        {
+                            "column": 3,
+                            "row": 0,
+                            "ref": "rime.KP_3"
+                        },
+                        {
+                            "column": 4,
+                            "row": 0,
+                            "ref": "rime.KP_Divide",
+                            "override": {
+                                "keyType": "FUNCTION"
+                            }
+                        },
+                        {
+                            "column": 0,
+                            "row": 1,
+                            "ref": "rime.KP_Subtract",
+                            "override": {
+                                "keyType": "FUNCTION"
+                            }
+                        },
+                        {
+                            "column": 1,
+                            "row": 1,
+                            "ref": "rime.KP_4"
+                        },
+                        {
+                            "column": 2,
+                            "row": 1,
+                            "ref": "rime.KP_5"
+                        },
+                        {
+                            "column": 3,
+                            "row": 1,
+                            "ref": "rime.KP_6"
+                        },
+                        {
+                            "column": 4,
+                            "row": 1,
+                            "ref": "rime.BackSpace",
+                            "override": {
+                                "keyType": "FUNCTION",
+                                "icon": "backspace",
+                                "swipe": null,
+                                "longPress": {
+                                    "label": "⌫",
+                                    "repeat": true,
+                                    "action": {
+                                        "type": "key",
+                                        "key": "BACKSPACE"
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            "column": 0,
+                            "row": 2,
+                            "ref": "rime.KP_Multiply",
+                            "override": {
+                                "keyType": "FUNCTION"
+                            }
+                        },
+                        {
+                            "column": 1,
+                            "row": 2,
+                            "ref": "rime.KP_7"
+                        },
+                        {
+                            "column": 2,
+                            "row": 2,
+                            "ref": "rime.KP_8"
+                        },
+                        {
+                            "column": 3,
+                            "row": 2,
+                            "ref": "rime.KP_9"
+                        },
+                        {
+                            "column": 0,
+                            "row": 3,
+                            "ref": "foxy.LayoutDefault",
+                            "override": {
+                                "keyType": "FUNCTION"
+                            }
+                        },
+                        {
+                            "column": 1,
+                            "row": 3,
+                            "ref": "rime.KP_Equal"
+                        },
+                        {
+                            "column": 2,
+                            "row": 3,
+                            "ref": "rime.KP_0"
+                        },
+                        {
+                            "column": 3,
+                            "row": 3,
+                            "ref": "rime.KP_Decimal"
+                        },
+                        {
+                            "column": 4,
+                            "row": 2,
+                            "rowSpan": 2,
+                            "ref": "rime.KP_Enter",
+                            "override": {
+                                "keyType": "ACTION",
+                                "icon": "enter"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    },
+    "actions": {
+        "key.plus": {
+            "type": "key",
+            "key": "EQUAL",
+            "meta": [
+                "SHIFT"
+            ]
+        },
+        "key.underscore": {
+            "type": "key",
+            "key": "MINUS",
+            "meta": [
+                "SHIFT"
+            ]
+        },
+        "key.tilde": {
+            "type": "key",
+            "key": "GRAVE",
+            "meta": [
+                "SHIFT"
+            ]
+        },
+        "key.shift_space": {
+            "type": "key",
+            "key": "SPACE",
+            "meta": [
+                "SHIFT"
+            ]
+        }
+    },
+    "type": "foxy.keyboard-layout"
+}

@@ -16,14 +16,30 @@
   四向滑动提示、长按/按住徽标、`statusLabel`（方案名示例）、`keyType` 配色、
   每键 `colors` 颜色覆盖。
   角标含义（预览下方有图例）：**右上蓝色 = 长按提示**（`longPress.label`，如 ⌫、⇪）、
-  **右上橙色 = 按住提示**（`hold.label`，如语音）、四角灰色小字 = 滑动提示、
+  **右上橙色 = 按住提示**（`hold.label`，如语音）、**底中绿色 ⌄ = 长按弹出菜单**
+  （`longPress.popupKey`，候选在「弹出菜单」页编辑）、四角灰色小字 = 滑动提示、
   红色虚线框 = 引用无法解析、黄色框 = 选中。
-- 状态模拟：**Shift**、**组字（composing）**、**ASCII**、**停用** 四个开关实时应用
+- 状态模拟：**Shift**、**组字（composing）**、**ASCII**、**停用**、**分体** 五个开关实时应用
   按键状态变体（`variants`）与布局级变体（如仓颉 ASCII 时切回 default）。
+  **分体预览模拟横屏**：打开「分体」开关后预览容器放宽到约 2 倍宽度，按键靠
+  flex 自动拉宽；行高、字号、提示尺寸固定用竖屏口径——分体时不变大，
+  切回竖屏也不被"污染"。主题深浅同常规。
 - 深色 / 浅色键盘预览。**点击预览中的按键直接打开编辑对话框**。
 - 预览下方状态栏显示高度单位、按键数与校验结果（错误/警告可展开查看）。
 
-### 布局编辑
+### 分体键盘（split）
+- 每个命名布局可包含独立的 `split` 片段（由 Foxy 的分体键盘设置选择，
+  不经 `switch_layout` 切换）；预览「分体」开关或区段编辑器横幅切换常规/分体。
+- 区段编辑器在分体模式下直接编辑 `split.sections`（行/网格区段、拖拽排序等与常规一致）。
+- **从常规布局生成分体片段**：复制常规区段并在每行中间插入 `foxy.Spacer` 占位
+  （含 `weight:"auto"` 的行除外），生成后可继续移动按键微调两侧分配。
+- 支持「空白片段」创建、「重新生成」、「删除分体片段」。
+- 校验：split 片段结构与引用独立校验；常规与分体高度单位不一致给出警告。
+
+### 布局编辑（以及同页最上方「布局与文件操作」、最下方「布局 JSON」卡片）
+- **卡片顺序从上到下**：「布局与文件操作」（导入/导出/示例/撤销/author）→「布局编辑」
+  （命名布局管理、高度覆盖、变体、区段）→「布局 JSON」（实时同步的布局文档，
+  含检查/应用/格式化/复制与问题提醒面板——原独立 JSON 标签页已并入此处）。
 - 命名布局管理：新建 / 复制 / 重命名（自动更新布局变体与 `switch_layout` 引用）/ 删除。
 - 布局级设置：`keyboardHeightPercent` / `keyboardHeightPercentLandscape` 高度覆盖、
   布局变体（`when.rime` 条件 → 使用其他布局）。
@@ -47,16 +63,45 @@
   变体级 `ref` 替换、`label` / `shiftedLabel` / `tap` 与其他字段 JSON。
 - 按键颜色：`text` / `background` / `border` / `hint` 四个常用角色。
 - 高级：编辑原始 JSON；放置可"另存为按键定义"（keys 中复用）；位置移动（←→↑↓）。
+- **弹出菜单（独立折叠 section，与基本信息/手势/状态变体/颜色/高级同级，
+  位于高级之后）**：点击键盘预览打开「编辑按键」框即有；展开后直接编辑此按键
+  `longPress.popupKey` 对应键的整键候选（常规 / Shift，与弹出菜单页键定义卡片
+  同构：调序、增删改候选），附「到弹出菜单页编辑 →」跳转。无 popupKey 时显示
+  引导（先到手势 → 长按填写弹出菜单键）。
 
 ### 按键定义 / 动作与宏
 - 按键定义（`keys`）列表：搜索、编辑、改名（自动更新所有引用）、查找使用处、删除。
 - 动作（`actions`）与宏（`macros`）的 JSON 编辑与增删。
 
+### 弹出菜单（popup profile）
+独立的 `foxy.popup-profile` JSON（放置于 `<外部存储>/foxy/frontend/popups/<profile>.json`），
+由布局按键的 `longPress.popupKey` 关联：
+
+- **键卡片编辑**：按 popupKey 列出「常规 / Shift」两组候选，候选 chip 显示序号与
+  动作徽标，支持左右调序、点击编辑、`+` 添加。
+- schema 管理：多 schema（如按 Rime 方案区分）、新增 / 删除（default 不可删）。
+- **候选类型**：文本（上屏该文本）、动作对象（完整动作编辑器）、动作名（本文件
+  `actions` 里定义）、宏调用 / 共享键引用（`definitions.json`，标注提示无法本地校验）。
+- **气泡预览（最上面）**：模拟 Foxy 长按弹出的真实外观——首选候选放大居中，可切换
+  Shift 状态、切换 popupKey；显示状态回退链
+  （`schema[state] → default[state] → schema.normal → default.normal`）。
+- **卡片顺序从上到下**：「弹出菜单文件」（导入/导出/示例/author，最上）→
+  「弹出效果预览」→「弹出菜单键定义（schemas）」→「弹出菜单 JSON」（实时同步，
+  最下）。与布局编辑页「文件最上、JSON 最下」的布局呼应。
+- **与布局联动**：自动收集布局（含分体片段）中使用的全部 `popupKey`，列出
+  「布局使用 N 处」；**一键补齐**当前 schema 缺失的键；布局预览中带 `popupKey` 的
+  按键显示绿色 ⌄ 徽标；长按手势对话框可一键跳转到对应键的候选编辑。
+- 校验：候选类型、动作名引用、null 候选、非法结构；导入/JSON 应用同样享受
+  宽松修复（尾逗号、注释、单引号等）与「一键修复」。
+- 撤销/重做与自动保存同样覆盖弹出菜单文档（与布局文档一起快照）。
+
 ### 文件与数据
 - 导入 / 导出 JSON；`type: foxy.keyboard-layout` 与 `author` 控制。
-- 示例加载：内置默认布局 + `examples/` 目录中的工作区示例（HTTP 方式打开时可用；
-  `file://` 打开时请使用"导入 JSON"）。
+- 示例加载：内置默认布局 + `examples/` 目录中的工作区示例（已打包进页面，
+  `file://` 打开也能通过"加载示例"一键载入）。
 - 撤销 / 重做（Ctrl+Z / Ctrl+Y），自动保存草稿到浏览器 localStorage。
+- 顶部只有 4 个标签按钮：**布局编辑 / 按键定义 / 动作与宏** 是布局文档，
+  **弹出菜单**（虚线边框、与前面隔开）是另一类文档（popup profile）。
 
 ## 使用
 
@@ -130,23 +175,29 @@ node test/check-real-files.js
 - `hold` 与 `longPress` 不可同时定义；
 - `weight: "auto"` 行必须提供足够大的 `totalWeight`；
 - 网格按键不越界、不重叠；
-- 布局变体目标存在且无循环；各布局总高度单位兼容性（警告）。
+- 布局变体目标存在且无循环；各布局总高度单位兼容性（警告）；
+- `split` 分体片段结构/引用独立校验；常规与分体高度单位一致性（警告）。
+
+弹出菜单（popup profile）独立校验：候选类型/结构、动作名引用、null 候选、
+错误 `type`；宏/共享键引用因位于 `definitions.json` 只给提示。
 
 ## 结构
 
 ```
 foxy-editor/
-├── index.html            页面骨架（预览面板 + 四个标签页）
+├── index.html            页面骨架（预览面板 + 五个标签页）
 ├── style.css             界面与键盘预览样式
 ├── js/
 │   ├── data.js           内置按键注册表（rime.* / foxy.*）、KeyCode 表、App 命令表
 │   ├── default-profile.js 内置默认布局示例（由 layout-variant.json 生成）
-│   ├── examples-bundle.js 示例布局打包（由 tools/build-examples.js 生成）
-│   ├── app.js            状态、解析引擎、变体合并、校验器、预览与编辑器 UI
-│   └── key-dialog.js     按键/手势/动作/变体/选择器对话框
-├── examples/             示例布局源文件（含 cc lite.json 全键盘注音布局）
+│   ├── examples-bundle.js 示例打包（布局 + 弹出菜单，由 tools/build-examples.js 生成）
+│   ├── app.js            状态、解析引擎、变体合并、校验器、分体支持、预览与编辑器 UI
+│   ├── key-dialog.js     按键/手势/动作/变体/选择器对话框
+│   └── popup-editor.js   弹出菜单（popup profile）编辑标签页
+├── examples/             示例源文件（布局 14 个 + 弹出菜单 3 个，含 split/cangjie/
+│                         思无邪系列/万象/二十六键/七列 等）
 ├── tools/
-│   └── build-examples.js 重新生成 js/examples-bundle.js
+│   └── build-examples.js 重新生成 js/examples-bundle.js（自动区分布局/弹出菜单）
 └── test/
     ├── test-core.js      核心逻辑测试（node test/test-core.js）
     ├── test-ui.js        UI 冒烟测试（node test/test-ui.js，内置 DOM 桩）
@@ -166,12 +217,21 @@ foxy-editor/
   并记录每处问题的行号与字符位置；`FE.sanitizeJsonText` 是其只取修复结果的封装。
   字符串引号规则：ASCII `"` 开启的字符串只由 ASCII `"` 闭合（内部全角引号当内容），
   全角引号开启的字符串由全角或 ASCII 引号闭合。
+- 分体片段的运行时解析顺序与 Foxy 一致：先按命名布局解析（含状态变体），再取
+  其 `split`；片段缺失时回退常规渲染提示。编辑器的「从常规布局生成」只是辅助
+  （中间插 `foxy.Spacer`），Foxy 本身不会自动拆分行。
+- 弹出菜单与布局是**两份独立文档**：编辑器把两者放进同一撤销栈与自动草稿，
+  但导出/导入各走各的（布局 → `frontend/layouts/`，弹出菜单 → `frontend/popups/`）。
+  弹出菜单不解析布局本地 `keys`；需要跨文件复用的行为应放进 `definitions.json`
+  （编辑器对 `macro` / `ref` 类候选给出提示，不做本地校验）。
 
 ## 测试
 
 ```
-node test/test-core.js    # 106 项：解析引擎 / 变体 / 行权重 / 网格 / 校验器 / JSON 诊断与修复
-node test/test-ui.js      # 169 项：boot / 渲染 / 布局与状态切换 / 对话框保存 / 撤销重做 /
+node test/test-core.js    # 154 项：解析引擎 / 变体 / 行权重 / 网格 / 校验器 /
+                          #         JSON 诊断与修复 / 分体片段 / 弹出菜单候选与校验
+node test/test-ui.js      # 257 项：boot / 渲染 / 布局与状态切换 / 对话框保存 / 撤销重做 /
                           #         示例加载 / 问题提醒与一键修复 / 片段编辑器 / 导入流程 /
-                          #         宽松导入回归（防改回严格）
+                          #         宽松导入回归 / 分体生成与编辑（含横竖切换行高回归） /
+                          #         弹出菜单编辑与联动（含主对话框弹出菜单 section）
 ```

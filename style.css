@@ -102,6 +102,9 @@ details.card > summary + * { margin-top: 12px; }
 }
 .tab:hover { color: var(--text); }
 .tab.active { background: var(--card); color: var(--text); font-weight: 600; border-color: var(--border); }
+/* 弹出菜单是有 popup profile 语义的另一类文档标签，仅用间距分隔，
+ * 不改边框样式（避免与无效/残缺状态的虚线框混淆）。 */
+.tab.tab-popup { margin-left: 22px; }
 .tabpanel { display: none; }
 .tabpanel.active { display: block; }
 
@@ -181,8 +184,12 @@ label.check { cursor: pointer; white-space: nowrap; }
 .preview-legend { font-size: 12px; color: var(--text-dim); padding: 2px 14px 8px; line-height: 1.7; }
 .preview-legend .lg-lp { color: #8fd0ff; }
 .preview-legend .lg-hold { color: #ffd28f; }
+.preview-legend .lg-popup { color: #9fe0b0; }
 .preview-legend .lg-broken { color: var(--err); }
 .preview-legend .lg-sel { color: var(--sel); }
+
+/* 预览 meta 的分体标记 */
+.st-split { color: #9fe0b0; font-weight: 600; }
 
 .kb {
   width: 100%;
@@ -192,6 +199,13 @@ label.check { cursor: pointer; white-space: nowrap; }
   border-radius: 14px;
   user-select: none;
   transition: background 0.2s;
+  /* 注意：不要给 max-width 加 transition。分体切回竖屏时类名立即移除，
+   * 若宽度是动画收缩的，同一帧内 clientWidth 量到的还是宽值，
+   * 竖屏基准宽度会被污染，导致字和行高一起变大。 */
+}
+/* 分体键盘一般在横屏下使用：预览放宽到全宽页面，模拟横屏宽度 */
+.kb-split {
+  max-width: 860px;
 }
 .kb-dark { background: #191a1e; box-shadow: inset 0 0 0 1px #26282d; }
 .kb-light { background: #cfd2d7; box-shadow: inset 0 0 0 1px #b9bdc4; }
@@ -247,6 +261,12 @@ label.check { cursor: pointer; white-space: nowrap; }
 }
 .kb-badge-hold { color: #ffd28f; }
 .kb-light .kb-badge-lp { color: #1f6fb8; }
+/* 长按弹出菜单徽标：键底中 ⌄ */
+.kb-badge-popup {
+  position: absolute; bottom: 1px; left: 50%; transform: translateX(-50%);
+  pointer-events: none; color: #9fe0b0; line-height: 1; font-size: 11px;
+}
+.kb-light .kb-badge-popup { color: #2e8b57; }
 
 /* ---------------- 区段编辑器 ---------------- */
 .section-card .section-body { display: flex; flex-direction: column; gap: 8px; }
@@ -286,6 +306,54 @@ label.check { cursor: pointer; white-space: nowrap; }
 
 /* ---------------- 网格编辑器 ---------------- */
 .gedit-wrap { overflow-x: auto; }
+
+/* ---------------- 分体（split）横幅 ---------------- */
+.split-banner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--card-inner); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; margin-bottom: 10px;
+}
+.split-banner .pill-dim { opacity: 0.65; border-style: dashed; }
+
+/* ---------------- 弹出菜单编辑 ---------------- */
+.popup-state-row { display: flex; align-items: flex-start; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
+.popup-state-name { font-size: 12.5px; font-weight: 600; color: var(--text-dim); min-width: 40px; padding-top: 8px; }
+.popup-cands { flex: 1 1 260px; }
+.popup-cand { position: relative; }
+.popup-cand .chip-label { max-width: 96px; }
+.popup-cand .cand-idx { position: absolute; top: -6px; left: -6px; font-size: 9px; background: #4a4f58; color: #cfd3da; border-radius: 999px; padding: 0 4px; }
+.cand-order { display: flex; gap: 0; margin-left: 2px; }
+.cand-order .icon-button { font-size: 9px; padding: 0 3px; }
+.popup-missing { margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
+/* 主按键对话框里内嵌的弹出菜单整键编辑（与键定义卡片同构） */
+.popup-section .popup-key-editor .section-head { margin-bottom: 6px; }
+
+/* 弹出气泡预览 */
+.pp-stage { padding: 18px 0 6px; display: flex; justify-content: center; }
+.pp-wrap { display: flex; flex-direction: column; align-items: center; position: relative; }
+.pp-bubble {
+  display: flex; align-items: stretch; gap: 4px; position: relative;
+  background: #f4f5f7; color: #22242a;
+  border-radius: 10px; padding: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  margin-bottom: 14px; min-height: 44px;
+}
+.pp-bubble::after {
+  content: ''; position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%) rotate(45deg);
+  width: 10px; height: 10px; background: #f4f5f7; border-radius: 2px;
+}
+.pp-cand {
+  display: flex; align-items: center; justify-content: center;
+  min-width: 34px; padding: 2px 8px; border-radius: 6px; background: #ffffff; color: #22242a;
+  font-size: 15px; cursor: default;
+}
+.pp-cand-first { min-width: 52px; min-height: 40px; font-size: 22px; font-weight: 600; }
+.pp-empty-hint { color: #888; font-size: 12.5px; align-self: center; padding: 4px 10px; }
+.pp-key {
+  min-width: 120px; height: 44px; border-radius: 8px;
+  background: #52555b; color: #f2f3f5; display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 600; position: relative; z-index: 1;
+}
 .gedit {
   display: grid;
   gap: 5px;

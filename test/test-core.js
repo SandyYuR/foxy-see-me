@@ -18,6 +18,7 @@ load('data.js');
 load('default-profile.js');
 load('app.js');
 load('key-dialog.js');
+load('popup-editor.js');
 
 const FE = global.FE;
 let passed = 0, failed = 0;
@@ -296,12 +297,106 @@ FE.state.profile = profile;
 /* ---------------- 示例文件全部校验 ---------------- */
 console.log('== 工作区示例文件 ==');
 for (const f of fs.readdirSync(exDir)) {
-  const p = FE.normalizeProfile(JSON.parse(FE.sanitizeJsonText(fs.readFileSync(path.join(exDir, f), 'utf8'))));
+  const raw = fs.readFileSync(path.join(exDir, f), 'utf8');
+  const p = FE.normalizeProfile(JSON.parse(FE.sanitizeJsonText(raw)));
+  if (p && p.type === 'foxy.popup-profile') {
+    const pp = FE.normalizePopupProfile(JSON.parse(FE.sanitizeJsonText(raw)));
+    const r = FE.validatePopupProfile(pp);
+    eq(r.errors, [], f + '（弹出菜单）无错误');
+    continue;
+  }
   FE.state.profile = p;
   const r = FE.validateProfile(p);
   eq(r.errors, [], f + ' 无错误');
 }
 FE.state.profile = profile;
+
+/* ---------------- 分体布局（split） ---------------- */
+console.log('== 分体布局（split） ==');
+const splitRaw = fs.readFileSync(path.join(exDir, 'split.json'), 'utf8');
+const splitP = FE.normalizeProfile(JSON.parse(FE.sanitizeJsonText(splitRaw)));
+ok(splitP.layouts.default && splitP.layouts.default.split, 'split.json 的 default 含 split 片段');
+ok(Array.isArray(splitP.layouts.default.split.sections), 'split 片段含 sections 数组');
+FE.state.profile = splitP;
+eq(FE.validateProfile(splitP).errors, [], 'split.json 校验无错误');
+/* split 片段非法时被拒绝 */
+const badSplit = FE.normalizeProfile(JSON.parse(FE.sanitizeJsonText(splitRaw)));
+badSplit.layouts.default.split = { sections: [{ type: 'rows', rows: [[{ ref: 'no.such.key' }]] }] };
+ok(FE.validateProfile(badSplit).errors.length > 0, 'split 片段引用错误被检出');
+badSplit.layouts.default.split = { sections: [] };
+ok(FE.validateProfile(badSplit).errors.length > 0, 'split 片段空 sections 被检出');
+badSplit.layouts.default.split = 'not-object';
+ok(FE.validateProfile(badSplit).errors.length > 0, 'split 非对象被检出');
+/* 常规/分体高度不一致警告 */
+const hSplit = FE.normalizeProfile({ layouts: { a: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }], split: { sections: [{ type: 'rows', rows: [{ height: 2, keys: [{ ref: 'rime.a' }] }] }] } } } });
+ok(FE.validateProfile(hSplit).warnings.join('\n').indexOf('分体') >= 0, '常规/分体高度不一致警告');
+FE.state.profile = profile;
+
+/* ---------------- 弹出菜单（popup profile） ---------------- */
+console.log('== 弹出菜单（popup profile） ==');
+eq(FE.popupCandidates(
+  FE.normalizePopupProfile({ schemas: { default: { q: { normal: ['q', 'ɋ'] } } } }),
+  'default', 'q', false), ['q', 'ɋ'], 'normal 候选读取');
+eq(FE.popupCandidates(
+  FE.normalizePopupProfile({ schemas: { default: { q: { normal: ['q'], shifted: ['Q'] } } } }),
+  'default', 'q', true), ['Q'], 'shifted 候选读取');
+eq(FE.popupCandidates(
+  FE.normalizePopupProfile({ schemas: { default: { q: { normal: ['q'], shifted: ['Q'] } } } }),
+  'default', 'q', false), ['q'], '非 shifted 走 normal');
+eq(FE.popupCandidates(
+  FE.normalizePopupProfile({ schemas: { default: { q: { normal: ['q'] } } } }),
+  'default', 'q', true), ['q'], 'shifted 缺失回退 normal');
+eq(FE.popupCandidates(
+  FE.normalizePopupProfile({ schemas: { default: {}, my: { q: { shifted: ['Q'] } } } }),
+  'my', 'q', true), ['Q'], '指定 schema 的 shifted');
+eq(FE.popupCandidates(
+  FE.normalizePopupProfile({ schemas: { default: { q: { normal: ['dq'] } }, my: { q: { shifted: ['Q'] } } } }),
+  'my', 'q', true), ['Q'], 'schema shifted 优先于 default');
+eq(FE.popupCandidates(
+  FE.normalizePopupProfile({ schemas: { default: { q: { normal: ['dq'] } }, my: {} } }),
+  'my', 'q', false), ['dq'], 'schema 未定义时回退 default');
+eq(FE.popupCandidates(
+  FE.normalizePopupProfile({ schemas: { default: { q: { normal: null } } } }),
+  'default', 'q', false), null, 'null 显式清除');
+eq(FE.popupCandidates(
+  FE.normalizePopupProfile({ schemas: { default: {} } }),
+  'default', 'zz', false), null, '未定义键返回 null');
+/* 候选标签/摘要 */
+eq(FE.popupCandidateLabel('ā'), 'ā', '字符串候选标签');
+eq(FE.popupCandidateLabel({ label: '行首', action: { type: 'key', key: 'HOME' } }), '行首', '对象候选 label');
+eq(FE.popupCandidateLabel({ action: { type: 'key', key: 'HOME' } }), 'HOME', '无 label 用动作摘要');
+eq(FE.popupCandidateKind('x'), 'text', '字符串候选类型');
+eq(FE.popupCandidateKind({ action: 'a.b' }), 'action-name', '动作名候选');
+eq(FE.popupCandidateKind({ macro: 'm' }), 'macro', '宏候选');
+eq(FE.popupCandidateKind({ ref: 'k' }), 'ref', '共享键候选');
+/* 校验器 */
+const ppBad = FE.normalizePopupProfile({
+  type: 'foxy.popup-profile',
+  schemas: { default: { q: { normal: [{ action: 'no.such' }, { label: 'x' }, null], shifted: 'oops' }, bad: 'x' } }
+});
+const ppr = FE.validatePopupProfile(ppBad);
+const ppm = ppr.errors.join('\n');
+ok(ppm.indexOf('no.such') >= 0, '引用不存在的动作被检出');
+ok(ppm.indexOf('缺少 action / macro / ref') >= 0, '无动作对象候选被检出');
+ok(ppm.indexOf('不能为 null') >= 0, 'null 候选被检出');
+ok(ppm.indexOf('必须是数组') >= 0, '候选列表非数组被检出');
+ok(ppm.indexOf('不是对象') >= 0, '非法 entry 被检出');
+const ppBadType = FE.normalizePopupProfile({ type: 'foxy.keyboard-layout', schemas: { default: {} } });
+ok(FE.validatePopupProfile(ppBadType).errors.join('\n').indexOf('foxy.popup-profile') >= 0, '错误 type 被检出');
+/* 真实示例 */
+const qipuRaw = fs.readFileSync(path.join(exDir, '气泡-popup.json'), 'utf8');
+const qipu = FE.normalizePopupProfile(JSON.parse(FE.sanitizeJsonText(qipuRaw)));
+eq(FE.validatePopupProfile(qipu).errors, [], '气泡-popup.json 校验无错误');
+eq(FE.popupCandidates(qipu, 'default', 'a', false).length, 27, '气泡 a 常规候选 27 个');
+ok(FE.popupCandidateLabel(FE.popupCandidates(qipu, 'default', 'q', false)[1]) === 'q', '字符串候选 label 正确');
+ok(FE.popupCandidateLabel(FE.popupCandidates(qipu, 'default', 'g', false)[0]) === '行首', '动作候选 label 正确');
+const yaoRaw = fs.readFileSync(path.join(exDir, '药丸-popup.json'), 'utf8');
+const yao = FE.normalizePopupProfile(JSON.parse(FE.sanitizeJsonText(yaoRaw)));
+eq(FE.validatePopupProfile(yao).errors, [], '药丸-popup.json 校验无错误');
+eq(FE.popupCandidates(yao, 'default', 'a', false)[0], 'a', '药丸 a 首选为小写');
+eq(FE.popupCandidates(yao, 'default', 'a', true)[0], 'A', '药丸 a Shift 首选为大写');
+/* 序列化 */
+ok(FE.serializePopupProfile(yao).indexOf('"type": "foxy.popup-profile"') >= 0, '弹出菜单序列化补 type');
 
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
 process.exit(failed ? 1 : 0);
