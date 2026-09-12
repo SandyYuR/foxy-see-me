@@ -850,24 +850,34 @@ FE.openKeyDialog = function (opts) {
     ab.appendChild(h('button', {
       type: 'button', class: 'mini-button',
       onclick: function () {
-        var m2 = openModal({ title: '编辑原始 JSON' });
-        var ta = h('textarea', { class: 'json-editor', rows: 14, spellcheck: 'false' });
-        ta.value = JSON.stringify(draft, null, 2);
-        m2.body.appendChild(ta);
+        var m2 = openModal({ title: '编辑原始 JSON', wide: true });
+        var ed = FE.buildJsonSnippetEditor({
+          value: JSON.stringify(draft, null, 2),
+          rows: 14,
+          applyOnBlur: false,   /* 由对话框的「应用」按钮决定何时生效 */
+          applyAfterFix: false
+        });
+        m2.body.appendChild(ed.el);
+        m2.body.appendChild(h('div', { class: 'status' },
+          '支持一键修复：多余尾逗号、注释、单引号字符串、未加引号的键名、全角标点等。'));
         m2.toolbar.appendChild(h('button', { type: 'button', onclick: function () { m2.close(); } }, '取消'));
         m2.toolbar.appendChild(h('button', {
           type: 'button', class: 'primary',
           onclick: function () {
-            try {
-              var v = JSON.parse(ta.value);
-              if (!FE.isPlainObject(v)) throw new Error('必须是 JSON 对象');
-              draft = v;
-              m2.close();
-              buildForm();
-            } catch (e) { alert('JSON 无效: ' + e.message); }
+            var a = ed.check();
+            if (a.report && a.report.issues.length) { ed.fix(); a = ed.check(); } /* 先修复再应用 */
+            if (a.empty) { alert('内容不能为空'); return; }
+            if (a.error) { alert('JSON 无效: ' + a.error); return; }
+            if (!FE.isPlainObject(a.value)) { alert('必须是 JSON 对象（按键定义/放置）'); return; }
+            draft = a.value;
+            m2.close();
+            buildForm();
           }
         }, '应用'));
-        setTimeout(function () { ta.focus(); }, 50);
+        setTimeout(function () {
+          var ta = ed.el.querySelector('textarea');
+          if (ta && typeof ta.focus === 'function') ta.focus();
+        }, 50);
       }
     }, '编辑原始 JSON…'));
     if (isPlacement) {

@@ -355,6 +355,30 @@ label.check { cursor: pointer; white-space: nowrap; }
 }
 .json-editor.small { min-height: 0; margin: 4px 0; }
 
+/* ---------------- JSON 问题提醒面板 ---------------- */
+.json-issues {
+  display: none;
+  font-size: 12.5px;
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  background: #1d2025;
+  color: var(--text-dim);
+  line-height: 1.7;
+}
+.json-issues.warn,
+.json-issues.error,
+.json-issues.ok { display: block; }
+.json-issues.warn { border-left-color: var(--warn); background: rgba(226, 163, 63, 0.10); color: #f0d9ab; }
+.json-issues.error { border-left-color: var(--err); background: rgba(238, 107, 100, 0.10); color: #f4bcb8; }
+.json-issues.ok { border-left-color: var(--ok); background: rgba(72, 194, 106, 0.10); color: #a9e2bb; }
+.json-issues-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+/* 片段编辑器（动作 / 宏 / 按键原始 JSON）用的紧凑版 */
+.json-issues.small { font-size: 12px; padding: 6px 10px; margin: 6px 0; }
+.snippet-editor { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+
 /* ---------------- 对话框 ---------------- */
 dialog.editor-dialog {
   border: 1px solid var(--border);

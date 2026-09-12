@@ -134,10 +134,12 @@
       <details class="card" open>
         <summary>布局 JSON（实时同步；可直接编辑后“应用”）</summary>
         <div class="toolbar">
+          <button id="json-check" class="mini-button">检查语法</button>
           <button id="json-apply" class="mini-button primary">应用</button>
-          <button id="json-format" class="mini-button">格式化</button>
+          <button id="json-format" class="mini-button">格式化并修复</button>
           <button id="json-copy" class="mini-button">复制</button>
         </div>
+        <div id="json-issues" class="json-issues"></div>
         <textarea id="json-editor" class="json-editor" spellcheck="false"></textarea>
         <div id="json-status" class="status"></div>
       </details>

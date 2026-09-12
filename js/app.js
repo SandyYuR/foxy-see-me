@@ -625,30 +625,202 @@ FE.serializeProfile = function (p) {
   return JSON.stringify(ordered, null, 2);
 };
 
-/* 宽松 JSON 文本清理：去除 UTF-8 BOM 与 } / ] 前的多余尾逗号。
- * 手工编辑的布局文件常带尾逗号，严格 JSON.parse 会拒绝；此处字符串感知地清理。 */
-FE.sanitizeJsonText = function (text) {
-  var s = String(text).replace(/^\uFEFF/, '');
+/* ---------------- 宽松 JSON 诊断与修复 ----------------
+ * 手工编辑的布局文件常见问题：UTF-8 BOM、多余尾逗号、注释、单引号字符串、
+ * 未加引号的键名、全角标点。inspectJsonText 报告问题（类型/次数/行号/字符位置）
+ * 并给出修复后的文本；sanitizeJsonText 是其简化封装，只返回修复后的文本。
+ * 扫描是"字符串感知"的：字符串内部的内容一律原样保留。 */
+var FULLWIDTH_MAP = {
+  '\uFF0C': ',',  /* ， */
+  '\uFF1A': ':',  /* ： */
+  '\uFF1B': ';',  /* ； */
+  '\u201C': '"',  /* “ */
+  '\u201D': '"',  /* ” */
+  '\u2018': '"',  /* ‘ */
+  '\u2019': '"',  /* ’ */
+  '\uFF3B': '[',  /* ［ */
+  '\uFF3D': ']',  /* ］ */
+  '\uFF5B': '{',  /* ｛ */
+  '\uFF5D': '}',  /* ｝ */
+  '\u3000': ' '   /* 全角空格 */
+};
+
+FE.inspectJsonText = function (text) {
+  var original = String(text);
+  var src = original;
+  var bomOffset = 0;
+  var bomFound = src.charCodeAt(0) === 0xFEFF;
+  if (bomFound) { src = src.slice(1); bomOffset = 1; }
+  var n = src.length, i = 0, line = 1;
   var out = [];
-  var inStr = false, esc = false;
-  for (var i = 0; i < s.length; i++) {
-    var c = s.charAt(i);
-    if (inStr) {
-      out.push(c);
-      if (esc) esc = false;
-      else if (c === '\\') esc = true;
-      else if (c === '"') inStr = false;
+  var found = { trailingComma: [], lineComment: [], blockComment: [], singleQuote: [], unquotedKey: [], fullwidth: [] };
+  function record(kind, pos) { found[kind].push({ line: line, pos: pos + bomOffset }); }
+
+  while (i < n) {
+    var c = src.charAt(i);
+
+    if (c === '\n') { line++; out.push(c); i++; continue; }
+
+    /* 双引号字符串（顺带把全角引号规范化为双引号）
+     * 规则：ASCII " 开启的字符串只由 ASCII " 闭合，内部的全角引号视为内容保留；
+     *       全角引号开启的字符串由全角引号或 ASCII " 闭合。 */
+    if (c === '"' || c === '\u201C' || c === '\u201D') {
+      var openedAscii = (c === '"');
+      if (!openedAscii) record('fullwidth', i);
+      out.push('"');
+      i++;
+      while (i < n) {
+        var d = src.charAt(i);
+        if (d === '\\') {
+          out.push(d);
+          var nx = src.charAt(i + 1);
+          if (nx) { out.push(nx); if (nx === '\n') line++; i += 2; } else i++;
+          continue;
+        }
+        if (d === '\n') { line++; out.push(d); i++; continue; }
+        if (openedAscii ? (d === '"') : (d === '"' || d === '\u201C' || d === '\u201D')) {
+          if (!openedAscii && d !== '"') record('fullwidth', i);
+          out.push('"');
+          i++;
+          break;
+        }
+        out.push(d); i++;
+      }
       continue;
     }
-    if (c === '"') { inStr = true; out.push(c); continue; }
+
+    /* 单引号字符串 → 双引号（同上规则） */
+    if (c === "'" || c === '\u2018' || c === '\u2019') {
+      var singleAscii = (c === "'");
+      record('singleQuote', i);
+      if (!singleAscii) record('fullwidth', i);
+      i++;
+      var buf = '';
+      while (i < n) {
+        var d2 = src.charAt(i);
+        if (d2 === '\\') {
+          var e2 = src.charAt(i + 1);
+          if (e2 === "'" || e2 === '\u2018' || e2 === '\u2019') { buf += "'"; i += 2; continue; }
+          if (e2 === '"') { buf += '\\"'; i += 2; continue; }
+          if (e2 === '\\') { buf += '\\\\'; i += 2; continue; }
+          if (e2 === 'n') { buf += '\\n'; i += 2; continue; }
+          if (e2 === 't') { buf += '\\t'; i += 2; continue; }
+          if (e2 === 'r') { buf += '\\r'; i += 2; continue; }
+          buf += '\\' + (e2 || ''); i += 2; continue;
+        }
+        if (d2 === '"') { buf += '\\"'; i++; continue; }
+        if (d2 === '\n') line++;
+        if (singleAscii ? (d2 === "'") : (d2 === "'" || d2 === '\u2018' || d2 === '\u2019')) { i++; break; }
+        buf += d2; i++;
+      }
+      out.push('"' + buf + '"');
+      continue;
+    }
+
+    /* 注释 */
+    if (c === '/' && src.charAt(i + 1) === '/') {
+      record('lineComment', i);
+      while (i < n && src.charAt(i) !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && src.charAt(i + 1) === '*') {
+      record('blockComment', i);
+      i += 2;
+      while (i < n && !(src.charAt(i) === '*' && src.charAt(i + 1) === '/')) {
+        if (src.charAt(i) === '\n') { line++; out.push('\n'); } /* 保留换行以维持行号 */
+        i++;
+      }
+      i += 2;
+      continue;
+    }
+
+    /* } / ] 前的多余尾逗号 */
     if (c === ',') {
       var j = i + 1;
-      while (j < s.length && (s.charAt(j) === ' ' || s.charAt(j) === '\t' || s.charAt(j) === '\n' || s.charAt(j) === '\r')) j++;
-      if (j < s.length && (s.charAt(j) === '}' || s.charAt(j) === ']')) continue; /* 丢弃尾逗号 */
+      while (j < n && /\s/.test(src.charAt(j))) j++;
+      if (j < n && (src.charAt(j) === '}' || src.charAt(j) === ']')) {
+        record('trailingComma', i);
+        i++;
+        continue;
+      }
+      out.push(c); i++; continue;
     }
-    out.push(c);
+
+    /* 全角结构标点（全角逗号同样参与尾逗号判定） */
+    if (FULLWIDTH_MAP[c] != null) {
+      if (FULLWIDTH_MAP[c] === ',') {
+        var mj = i + 1;
+        while (mj < n && /\s/.test(src.charAt(mj))) mj++;
+        if (mj < n && (src.charAt(mj) === '}' || src.charAt(mj) === ']')) {
+          record('fullwidth', i);
+          record('trailingComma', i);
+          i++;
+          continue;
+        }
+      }
+      record('fullwidth', i);
+      out.push(FULLWIDTH_MAP[c]);
+      i++;
+      continue;
+    }
+
+    /* 未加引号的键名（identifier 后跟冒号） */
+    if (/[A-Za-z_$]/.test(c)) {
+      var k = i;
+      while (k < n && /[A-Za-z0-9_$]/.test(src.charAt(k))) k++;
+      var m = k;
+      while (m < n && /\s/.test(src.charAt(m))) m++;
+      if (src.charAt(m) === ':') {
+        record('unquotedKey', i);
+        out.push('"' + src.slice(i, k) + '"');
+        i = k;
+        continue;
+      }
+    }
+
+    out.push(c); i++;
   }
-  return out.join('');
+
+  var issues = [];
+  if (bomFound) {
+    issues.push({ kind: 'bom', label: '文件开头的 UTF-8 BOM 字符', count: 1, lines: [1], positions: [0], fixable: true });
+  }
+  [
+    ['trailingComma', '多余尾逗号（对象/数组最后一项之后）'],
+    ['lineComment', '行注释 //（JSON 不支持）'],
+    ['blockComment', '块注释 /* */（JSON 不支持）'],
+    ['singleQuote', '单引号字符串（JSON 只接受双引号）'],
+    ['unquotedKey', '未加引号的键名'],
+    ['fullwidth', '全角标点/引号（，： “” 等）']
+  ].forEach(function (pair) {
+    var arr = found[pair[0]];
+    if (!arr.length) return;
+    issues.push({
+      kind: pair[0], label: pair[1], count: arr.length,
+      lines: arr.map(function (x) { return x.line; }),
+      positions: arr.map(function (x) { return x.pos; }),
+      fixable: true
+    });
+  });
+
+  var fixedText = out.join('');
+  var total = issues.reduce(function (a, b) { return a + b.count; }, 0);
+  var report = {
+    issues: issues,
+    total: total,
+    fixedText: fixedText,
+    changed: fixedText !== original,
+    parseOk: false,
+    parseError: null
+  };
+  try { JSON.parse(fixedText); report.parseOk = true; }
+  catch (e) { report.parseError = e.message; }
+  return report;
+};
+
+/* 宽松 JSON 文本清理（仅返回修复后的文本） */
+FE.sanitizeJsonText = function (text) {
+  return FE.inspectJsonText(text).fixedText;
 };
 
 /* ================================================================
@@ -744,6 +916,7 @@ function applyProfileText(text, opts) {
   }
   FE.normalizeProfile(p);
   state.profile = p;
+  state.jsonDirty = false;
   var names = Object.keys(p.layouts);
   state.layoutName = (opts.layoutName && p.layouts[opts.layoutName]) ? opts.layoutName
     : (p.layouts[state.layoutName] ? state.layoutName : null);
@@ -769,6 +942,289 @@ function setJsonStatus(msg, kind) {
   el.className = 'status ' + (kind || '');
   el.append(msg || '');
 }
+
+/* ---------------- JSON 问题提醒 / 一键修复 ---------------- */
+function issueLineText(it) {
+  if (!it.lines || !it.lines.length) return '';
+  var shown = it.lines.slice(0, 6);
+  var txt = shown.join('、');
+  if (it.lines.length > shown.length) txt += ' 等';
+  return '（第 ' + txt + ' 行）';
+}
+
+function formatIssueList(issues) {
+  return issues.map(function (it) {
+    return it.label + ' ×' + it.count + issueLineText(it);
+  }).join('；');
+}
+
+/* 渲染问题面板：notice 非空时显示一条结果提示 */
+function renderJsonIssues(report, notice) {
+  var host = $('json-issues');
+  if (!host) return;
+  clearEl(host);
+  if (notice) {
+    host.className = 'json-issues ok';
+    host.append('✓ ' + notice);
+    return;
+  }
+  if (!report) { host.className = 'json-issues'; return; }
+  if (!report.issues.length) {
+    if (report.parseOk) {
+      host.className = 'json-issues ok';
+      host.append('✓ JSON 语法检查通过，未发现可修复问题');
+    } else {
+      host.className = 'json-issues error';
+      host.append('✗ JSON 无法解析: ' + (report.parseError || '未知错误') + '（未发现可自动修复的问题，请检查括号/引号是否配对）');
+    }
+    return;
+  }
+  host.className = 'json-issues warn';
+  host.appendChild(h('div', null, '⚠ 检测到 ' + report.total + ' 处可修复问题：' + formatIssueList(report.issues)));
+  if (!report.parseOk) {
+    host.appendChild(h('div', { class: 'st-error' }, '修复这些问题后仍无法解析：' + (report.parseError || '')));
+  }
+  var actions = h('div', { class: 'json-issues-actions' });
+  actions.appendChild(h('button', {
+    class: 'mini-button primary',
+    onclick: function () { fixJsonText(true); }
+  }, '一键修复并应用'));
+  actions.appendChild(h('button', {
+    class: 'mini-button',
+    onclick: function () { fixJsonText(false); }
+  }, '仅修复文本'));
+  var first = report.issues[0];
+  if (first && first.positions && first.positions.length) {
+    actions.appendChild(h('button', {
+      class: 'mini-button',
+      onclick: function () { locateJsonIssue(first.positions[0]); }
+    }, '定位到第 ' + first.lines[0] + ' 行'));
+  }
+  host.appendChild(actions);
+}
+
+/* 把光标跳到指定字符位置（并粗略滚动到可见处）；taEl 省略时作用于 JSON 主编辑区 */
+function locateJsonIssue(pos, taEl) {
+  var ta = taEl || $('json-editor');
+  if (!ta) return;
+  var text = String(ta.value);
+  var start = Math.max(0, pos - 40);
+  var end = Math.min(text.length, pos + 40);
+  if (typeof ta.focus === 'function') ta.focus();
+  if (typeof ta.setSelectionRange === 'function') {
+    try { ta.setSelectionRange(start, end); } catch (e) { /* 忽略 */ }
+  }
+  var lineNo = text.slice(0, pos).split('\n').length;
+  if (typeof ta.scrollTop === 'number' || ta.scrollTop === undefined) {
+    try { ta.scrollTop = Math.max(0, (lineNo - 3) * 18); } catch (e2) { /* 忽略 */ }
+  }
+}
+
+/* ================================================================
+ * 通用 JSON 片段编辑器：编辑 + 实时体检 + 一键修复
+ * 动作（actions）/ 宏（macros）/ 按键"原始 JSON"三处共用，行为与主 JSON 页一致。
+ * opts: { value, rows, placeholder, onApply(value|null, report), applyOnBlur, applyAfterFix }
+ * 返回 { el, getValue(), check(), fix(), apply() }
+ * ================================================================ */
+FE.buildJsonSnippetEditor = function (opts) {
+  opts = opts || {};
+  var ta = h('textarea', { class: 'json-editor small', rows: opts.rows || 4, spellcheck: 'false' });
+  ta.value = opts.value != null ? String(opts.value) : '';
+  if (opts.placeholder) ta.setAttribute('placeholder', opts.placeholder);
+  var notice = h('div', { class: 'json-issues small' });
+  var status = h('div', { class: 'status' });
+  var root = h('div', { class: 'snippet-editor' }, ta, notice, status);
+  var timer = null;
+  var api = { el: root };
+
+  function analyze() {
+    var text = String(ta.value);
+    if (text.trim() === '') return { report: null, value: null, error: null, empty: true };
+    var report = FE.inspectJsonText(text);
+    var value = null, error = null;
+    if (report.parseOk) {
+      try { value = JSON.parse(report.fixedText); } catch (e) { error = e.message; }
+    } else error = report.parseError;
+    return { report: report, value: value, error: error, empty: false };
+  }
+
+  function render(a) {
+    clearEl(notice);
+    if (a.empty) {
+      notice.className = 'json-issues small';
+      status.className = 'status';
+      status.textContent = '';
+      return;
+    }
+    if (a.report.issues.length) {
+      notice.className = 'json-issues small warn';
+      notice.appendChild(h('div', null, '⚠ ' + a.report.total + ' 处可修复问题：' + formatIssueList(a.report.issues)));
+      if (!a.report.parseOk) {
+        notice.appendChild(h('div', { class: 'st-error' }, '修复后仍无法解析：' + (a.report.parseError || '')));
+      }
+      var actions = h('div', { class: 'json-issues-actions' });
+      actions.appendChild(h('button', {
+        type: 'button', class: 'mini-button primary',
+        onclick: function () { api.fix(); }
+      }, '一键修复'));
+      var first = a.report.issues[0];
+      if (first.positions && first.positions.length) {
+        actions.appendChild(h('button', {
+          type: 'button', class: 'mini-button',
+          onclick: function () { locateJsonIssue(first.positions[0], ta); }
+        }, '定位到第 ' + first.lines[0] + ' 行'));
+      }
+      notice.appendChild(actions);
+      status.className = 'status warn';
+      status.textContent = a.report.parseOk ? '可一键修复' : '修复后仍无法解析';
+    } else if (a.error) {
+      notice.className = 'json-issues small error';
+      notice.append('✗ JSON 无法解析: ' + a.error + '（未发现可自动修复的问题）');
+      status.className = 'status error';
+      status.textContent = 'JSON 无效';
+    } else {
+      notice.className = 'json-issues small ok';
+      notice.append('✓ JSON 语法检查通过');
+      status.className = 'status';
+      status.textContent = '';
+    }
+  }
+
+  api.getValue = function () { return ta.value; };
+  api.check = function () { var a = analyze(); render(a); return a; };
+
+  api.fix = function () {
+    var a = analyze();
+    if (!a.report || !a.report.issues.length) return false;
+    var n = a.report.total, summary = formatIssueList(a.report.issues);
+    ta.value = a.report.fixedText;
+    var after = analyze();
+    render(after);
+    if (after.error) {
+      status.className = 'status error';
+      status.textContent = '已修复 ' + n + ' 处问题，但仍无法解析: ' + after.error;
+      return false;
+    }
+    status.className = 'status ok';
+    status.textContent = '已修复 ' + n + ' 处问题：' + summary;
+    if (opts.applyAfterFix === true) api.apply();
+    return true;
+  };
+
+  api.apply = function () {
+    var a = analyze();
+    if (a.empty) {
+      if (opts.onApply) opts.onApply(null, null);
+      status.className = 'status warn';
+      status.textContent = '内容为空（该项将被删除）';
+      return true;
+    }
+    if (a.error) {
+      render(a);
+      status.className = 'status error';
+      status.textContent = 'JSON 无效: ' + a.error +
+        (a.report && a.report.total ? '（可点击「一键修复」）' : '');
+      return false;
+    }
+    if (opts.onApply) opts.onApply(a.value, a.report);
+    render(a);
+    status.className = 'status ok';
+    status.textContent = a.report.total ? ('已应用（自动修复 ' + a.report.total + ' 处问题）') : '已应用';
+    return true;
+  };
+
+  ta.addEventListener('input', function () {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(function () { timer = null; render(analyze()); }, 250);
+  });
+  if (opts.applyOnBlur !== false) {
+    ta.addEventListener('blur', function () { api.apply(); });
+  }
+  api.check();
+  return api;
+};
+
+/* 兼容旧调用：返回 { el }（内部已含问题提醒与状态行） */
+function jsonTextarea(value, onApply, rows) {
+  var ed = FE.buildJsonSnippetEditor({
+    value: value != null ? JSON.stringify(value, null, 2) : '',
+    rows: rows || 4,
+    onApply: onApply,
+    applyOnBlur: true,
+    applyAfterFix: true
+  });
+  return { el: ed.el };
+}
+
+/* 检查 JSON 编辑区内容并刷新问题面板 */
+function checkJsonText() {
+  var ta = $('json-editor');
+  if (!ta) return null;
+  var report = FE.inspectJsonText(ta.value);
+  renderJsonIssues(report);
+  return report;
+}
+FE.checkJsonText = function () { return checkJsonText(); };
+
+/* 一键修复：applyAfter=true 时修复后直接应用 */
+function fixJsonText(applyAfter) {
+  var ta = $('json-editor');
+  if (!ta) return;
+  var rep = FE.inspectJsonText(ta.value);
+  if (!rep.issues.length) {
+    setJsonStatus(rep.parseOk ? '没有检测到需要修复的问题' : ('无法自动修复：' + (rep.parseError || '')), rep.parseOk ? 'ok' : 'error');
+    renderJsonIssues(rep);
+    return;
+  }
+  var n = rep.total;
+  var summary = formatIssueList(rep.issues);
+  state.jsonDirty = true;
+  ta.value = rep.fixedText;
+  var after = FE.inspectJsonText(ta.value);
+  if (applyAfter) {
+    if (applyProfileText(ta.value)) {
+      state.jsonDirty = false;
+      setOpStatus('已修复 ' + n + ' 处 JSON 问题并应用', 'ok');
+      setJsonStatus('✓ 已修复 ' + n + ' 处问题并应用', 'ok');
+      renderJsonIssues(FE.inspectJsonText(ta.value), '已修复 ' + n + ' 处问题并应用：' + summary);
+    } else {
+      setJsonStatus('已修复 ' + n + ' 处问题，但仍无法解析: ' + (state.lastParseError || ''), 'error');
+      renderJsonIssues(FE.inspectJsonText(ta.value));
+    }
+  } else {
+    if (!after.parseOk) {
+      /* 修完了却还解析不了：必须明确告知，而不是给个"已修复"的假绿灯 */
+      renderJsonIssues(after);
+      if (after.issues.length) setJsonStatus('已修复 ' + n + ' 处问题，但仍有 ' + after.total + ' 处可修复问题', 'warn');
+      else setJsonStatus('已修复 ' + n + ' 处问题，但仍无法解析: ' + (after.parseError || ''), 'error');
+    } else {
+      setJsonStatus('已修复 ' + n + ' 处问题（尚未应用，点击「应用」后生效）', 'ok');
+      renderJsonIssues(after, '已修复 ' + n + ' 处问题：' + summary + '（尚未应用）');
+    }
+  }
+}
+FE.fixJsonText = fixJsonText;
+
+var jsonCheckTimer = null;
+function scheduleJsonCheck() {
+  if (jsonCheckTimer) clearTimeout(jsonCheckTimer);
+  jsonCheckTimer = setTimeout(function () { jsonCheckTimer = null; checkJsonText(); }, 250);
+}
+
+/* 切换标签页（供导入失败时跳转到 JSON 页等场景复用） */
+function activateTab(id) {
+  document.querySelectorAll('.tab').forEach(function (b) {
+    var on = b.dataset.tab === id;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('.tabpanel').forEach(function (p) { p.classList.remove('active'); });
+  var panel = document.getElementById(id);
+  if (panel) panel.classList.add('active');
+  if (id === 'tab-json') renderJsonTab();
+  if (id === 'tab-keys') renderKeysTab();
+}
+FE.activateTab = activateTab;
 
 /* ---------------- 当前布局访问 ---------------- */
 function curLayout() {
@@ -1682,23 +2138,6 @@ function renderActionsTab() {
   renderMacrosList();
 }
 
-function jsonTextarea(value, onApply, rows) {
-  var ta = h('textarea', { class: 'json-editor small', rows: rows || 4, spellcheck: 'false' });
-  ta.value = value != null ? JSON.stringify(value, null, 2) : '';
-  var status = h('span', { class: 'status' });
-  ta.addEventListener('blur', function () {
-    if (ta.value.trim() === '') { onApply(null, status, ta); return; }
-    try {
-      var v = JSON.parse(ta.value);
-      onApply(v, status, ta);
-    } catch (e) {
-      status.className = 'status error';
-      status.textContent = 'JSON 无效: ' + e.message;
-    }
-  });
-  return { el: ta, status: status };
-}
-
 function renderActionsList() {
   var host = $('actions-list');
   if (!host) return;
@@ -1709,11 +2148,9 @@ function renderActionsList() {
     host.appendChild(h('div', { class: 'status' }, '尚无动作定义。动作可被按键以字符串形式引用，如 "tap": "my.action"。'));
   }
   names.forEach(function (n) {
-    var editor = jsonTextarea(actions[n], function (v, status) {
+    var editor = jsonTextarea(actions[n], function (v) {
       if (v === null) mutate(function () { delete state.profile.actions[n]; });
       else mutate(function () { state.profile.actions[n] = v; });
-      status.className = 'status st-ok';
-      status.textContent = '已应用';
     });
     host.appendChild(h('div', { class: 'def-item col' },
       h('div', { class: 'def-main' },
@@ -1721,7 +2158,7 @@ function renderActionsList() {
         h('span', { class: 'def-badges' }, FE.actionDisplay(actions[n])),
         h('button', { class: 'danger mini-button', onclick: function () { mutate(function () { delete state.profile.actions[n]; }); } }, '删除')
       ),
-      editor.el, editor.status
+      editor.el
     ));
   });
   var addName = h('input', { type: 'text', placeholder: '新动作名称，如 editor.select_all', class: 'mini-input wide' });
@@ -1748,11 +2185,9 @@ function renderMacrosList() {
     host.appendChild(h('div', { class: 'status' }, '尚无宏。宏是有序动作步骤数组，用 { "macro": "名称" } 调用。'));
   }
   names.forEach(function (n) {
-    var editor = jsonTextarea(macros[n], function (v, status) {
+    var editor = jsonTextarea(macros[n], function (v) {
       if (v === null) mutate(function () { delete state.profile.macros[n]; });
       else mutate(function () { state.profile.macros[n] = v; });
-      status.className = 'status st-ok';
-      status.textContent = '已应用';
     }, 5);
     host.appendChild(h('div', { class: 'def-item col' },
       h('div', { class: 'def-main' },
@@ -1760,7 +2195,7 @@ function renderMacrosList() {
         h('span', { class: 'def-badges' }, Array.isArray(macros[n]) ? macros[n].length + ' 步' : ''),
         h('button', { class: 'danger mini-button', onclick: function () { mutate(function () { delete state.profile.macros[n]; }); } }, '删除')
       ),
-      editor.el, editor.status
+      editor.el
     ));
   });
   var addName = h('input', { type: 'text', placeholder: '新宏名称，如 delete_to_line_start', class: 'mini-input wide' });
@@ -1784,7 +2219,10 @@ function renderJsonTab() {
   var ta = $('json-editor');
   if (!ta) return;
   if (document.activeElement === ta) return;
+  /* 用户手改过且尚未应用时，保留其文本不被覆盖 */
+  if (state.jsonDirty) return;
   ta.value = FE.serializeProfile(state.profile);
+  checkJsonText();
 }
 
 /* ================================================================
@@ -1818,14 +2256,9 @@ function updateUndoButtons() {
 function initTabs() {
   document.querySelectorAll('.tab').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      document.querySelectorAll('.tab').forEach(function (b) { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
-      document.querySelectorAll('.tabpanel').forEach(function (p) { p.classList.remove('active'); });
-      btn.classList.add('active');
-      btn.setAttribute('aria-selected', 'true');
-      var panel = document.getElementById(btn.dataset.tab);
-      if (panel) panel.classList.add('active');
-      if (btn.dataset.tab === 'tab-json') renderJsonTab();
-      if (btn.dataset.tab === 'tab-keys') renderKeysTab();
+      activateTab(btn.dataset.tab);
+      var ta = $('json-editor');
+      if (btn.dataset.tab === 'tab-json' && ta) checkJsonText();
     });
   });
 }
@@ -1899,9 +2332,27 @@ function initToolbar() {
     if (!file) return;
     var reader = new FileReader();
     reader.onload = function () {
-      if (applyProfileText(String(reader.result))) {
+      var text = String(reader.result);
+      var rep = FE.inspectJsonText(text);
+      if (applyProfileText(text)) {
         state.fileName = file.name;
-        setOpStatus('已导入 ' + file.name, 'ok');
+        if (rep.total) {
+          /* 文件有问题但可自动修复：明确告知修了什么 */
+          setOpStatus('已导入 ' + file.name + '：检测到并自动修复 ' + rep.total + ' 处问题 —— ' + formatIssueList(rep.issues), 'warn');
+          setJsonStatus('导入 ' + file.name + ' 时自动修复 ' + rep.total + ' 处问题：' + formatIssueList(rep.issues), 'warn');
+        } else {
+          setOpStatus('已导入 ' + file.name, 'ok');
+          setJsonStatus('✓ 已导入 ' + file.name + '，JSON 语法检查通过', 'ok');
+        }
+      } else {
+        /* 无法解析：把原文放进 JSON 页并展示问题 + 一键修复入口 */
+        activateTab('tab-json');
+        var ta = $('json-editor');
+        if (ta) { ta.value = text; state.jsonDirty = true; }
+        checkJsonText();
+        var extra = rep.total ? '（检测到 ' + rep.total + ' 处可修复问题，可点击「一键修复并应用」）' : '';
+        setOpStatus('无法直接读取 ' + file.name + '：' + (state.lastParseError || 'JSON 语法错误') + extra + ' 已把原文载入 JSON 页', 'error');
+        setJsonStatus('✗ ' + file.name + ' 无法解析: ' + (state.lastParseError || '') + extra, 'error');
       }
     };
     reader.readAsText(file, 'utf-8');
@@ -1965,21 +2416,44 @@ function initToolbar() {
   /* JSON tab */
   $('json-apply').addEventListener('click', function () {
     var ta = $('json-editor');
+    var rep = FE.inspectJsonText(ta.value);
     if (applyProfileText(ta.value)) {
       setOpStatus('JSON 已应用', 'ok');
-      setJsonStatus('✓ 已应用；校验结果见预览下方状态栏', 'ok');
+      if (rep.total) {
+        setJsonStatus('✓ 已应用（自动修复 ' + rep.total + ' 处问题：' + formatIssueList(rep.issues) + '）', 'warn');
+        renderJsonIssues(FE.inspectJsonText(ta.value), '已修复 ' + rep.total + ' 处问题并应用：' + formatIssueList(rep.issues));
+      } else {
+        setJsonStatus('✓ 已应用；校验结果见预览下方状态栏', 'ok');
+      }
     } else {
       setJsonStatus('✗ 未应用（原文保留）。错误: ' + (state.lastParseError || '未知'), 'error');
+      renderJsonIssues(rep); /* 展示问题列表与「一键修复」入口 */
     }
+  });
+  $('json-check').addEventListener('click', function () {
+    var rep = checkJsonText();
+    if (!rep) return;
+    if (rep.issues.length) setJsonStatus('检测到 ' + rep.total + ' 处可修复问题，见上方提示（可一键修复）', 'warn');
+    else if (rep.parseOk) setJsonStatus('✓ JSON 语法检查通过', 'ok');
+    else setJsonStatus('✗ JSON 无法解析: ' + (rep.parseError || ''), 'error');
   });
   $('json-format').addEventListener('click', function () {
     var ta = $('json-editor');
-    try {
-      var p = JSON.parse(FE.sanitizeJsonText(ta.value));
-      ta.value = JSON.stringify(p, null, 2);
-      setJsonStatus('已格式化（尚未应用；BOM 与多余尾逗号已清理）', 'ok');
-    } catch (e) {
-      setJsonStatus('JSON 无效: ' + e.message, 'error');
+    var rep = FE.inspectJsonText(ta.value);
+    if (!rep.parseOk) {
+      setJsonStatus('JSON 无效: ' + (rep.parseError || '') +
+        (rep.total ? '（检测到 ' + rep.total + ' 处可修复问题，可先「一键修复」）' : ''), 'error');
+      renderJsonIssues(rep);
+      return;
+    }
+    ta.value = JSON.stringify(JSON.parse(rep.fixedText), null, 2);
+    state.jsonDirty = true;
+    if (rep.total) {
+      setJsonStatus('已格式化并修复 ' + rep.total + ' 处问题（尚未应用）', 'ok');
+      renderJsonIssues(FE.inspectJsonText(ta.value), '已修复 ' + rep.total + ' 处问题：' + formatIssueList(rep.issues) + '（尚未应用）');
+    } else {
+      setJsonStatus('已格式化（尚未应用）', 'ok');
+      renderJsonIssues(FE.inspectJsonText(ta.value));
     }
   });
   $('json-copy').addEventListener('click', function () {
@@ -1991,6 +2465,12 @@ function initToolbar() {
     } catch (e) {
       setJsonStatus('复制失败，请手动选择复制', 'error');
     }
+  });
+  /* 编辑时自动检查（防抖），发现问题即时提醒 */
+  var jsonTa = $('json-editor');
+  jsonTa.addEventListener('input', function () {
+    state.jsonDirty = true;
+    scheduleJsonCheck();
   });
 
   /* 高度覆盖（一次性绑定，值由 renderLayoutSettings 同步） */

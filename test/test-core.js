@@ -214,6 +214,85 @@ eq(ccv.warnings, [], 'cc lite.json 校验无警告');
 eq(FE.rawLabelOf(FE.evalPlacement(ccLite.layouts.default.sections[0].rows[0][0], FE.NEUTRAL_STATUS).eff, FE.NEUTRAL_STATUS), 'ㄅ', '注音标签解析');
 FE.state.profile = profile;
 
+/* ---------------- JSON 诊断与一键修复 ---------------- */
+console.log('== JSON 诊断（inspectJsonText） ==');
+
+/* 尾逗号：类型/次数/行号/位置 + 修复结果 */
+let rep = FE.inspectJsonText('{\n  "a": 1,\n  "b": 2,\n}');
+eq(rep.issues.length, 1, '只报告一类问题');
+eq(rep.issues[0].kind, 'trailingComma', '问题类型 = 尾逗号');
+eq(rep.issues[0].count, 1, '尾逗号计数 = 1');
+eq(rep.issues[0].lines, [3], '尾逗号行号 = 3');
+ok(typeof rep.issues[0].positions[0] === 'number' && rep.issues[0].positions[0] > 0, '提供字符位置（可定位）');
+eq(rep.total, 1, '问题总数 = 1');
+ok(rep.parseOk, '修复后可正常解析');
+eq(JSON.parse(rep.fixedText).b, 2, '修复文本内容正确');
+ok(rep.changed, 'changed 标记为 true');
+
+/* 干净 JSON：无问题 */
+rep = FE.inspectJsonText('{"a": 1}');
+eq(rep.total, 0, '正常 JSON 无问题');
+ok(rep.parseOk && !rep.changed, '正常 JSON 无需改动');
+
+/* BOM */
+rep = FE.inspectJsonText('\uFEFF{"a": 1}');
+eq(rep.issues[0].kind, 'bom', '检出 BOM');
+ok(rep.parseOk && rep.fixedText === '{"a": 1}', 'BOM 被移除');
+
+/* 注释 */
+rep = FE.inspectJsonText('{\n  // 这是注释\n  "a": 1\n}');
+eq(rep.issues[0].kind, 'lineComment', '检出 // 行注释');
+eq(rep.issues[0].lines, [2], '注释行号正确');
+ok(rep.parseOk, '移除注释后可解析');
+rep = FE.inspectJsonText('{ /* 块注释\n 跨行 */ "a": 1 }');
+eq(rep.issues[0].kind, 'blockComment', '检出块注释');
+ok(rep.parseOk && JSON.parse(rep.fixedText).a === 1, '移除块注释后可解析');
+
+/* 单引号字符串 → 双引号（含转义与内嵌双引号） */
+rep = FE.inspectJsonText("{'a': 'b'}");
+eq(rep.issues[0].kind, 'singleQuote', '检出单引号字符串');
+eq(rep.issues[0].count, 2, '两处单引号字符串');
+ok(rep.parseOk && JSON.parse(rep.fixedText).a === 'b', '单引号转双引号后可解析');
+rep = FE.inspectJsonText("{'a': 'it\\'s \"x\"'}");
+eq(JSON.parse(rep.fixedText).a, 'it\'s "x"', '单引号内的转义与双引号处理正确');
+
+/* 未加引号的键名 */
+rep = FE.inspectJsonText('{a: 1, bcd: 2}');
+eq(rep.issues[0].kind, 'unquotedKey', '检出未加引号键名');
+eq(rep.issues[0].count, 2, '两个未加引号键名');
+ok(rep.parseOk && JSON.parse(rep.fixedText).bcd === 2, '键名补引号后可解析');
+
+/* 全角标点 / 引号 */
+rep = FE.inspectJsonText('{“a”：1，}');
+ok(rep.issues.some(i => i.kind === 'fullwidth'), '检出全角标点');
+ok(rep.issues.some(i => i.kind === 'trailingComma'), '同时检出尾逗号');
+ok(rep.parseOk && JSON.parse(rep.fixedText).a === 1, '全角标点修复后可解析');
+
+/* 字符串内部内容必须原样保留 */
+rep = FE.inspectJsonText('{"a": "x,} // 不是注释 \'q\'，全角“引号”",}');
+ok(rep.parseOk, '含敏感内容的字符串修复后可解析');
+eq(JSON.parse(rep.fixedText).a, 'x,} // 不是注释 \'q\'，全角“引号”', '字符串内容原样保留');
+
+/* 无法自动修复的错误：issues 为空但 parseOk=false */
+rep = FE.inspectJsonText('{"a": oops}');
+eq(rep.total, 0, '不可修复错误不产生可修复项');
+ok(!rep.parseOk && !!rep.parseError, '提供解析错误信息');
+
+/* 修复后仍不可解析的情况 */
+rep = FE.inspectJsonText('{"a": 1,,,}');
+ok(!rep.parseOk, '修复后仍无法解析时 parseOk=false');
+ok(!!rep.parseError, '仍提供错误信息');
+
+/* cc lite.json：真实场景 */
+rep = FE.inspectJsonText(ccRaw);
+ok(rep.total > 0, 'cc lite.json 检出可修复问题');
+ok(rep.issues.some(i => i.kind === 'trailingComma'), '问题类型含尾逗号');
+ok(rep.parseOk, '一键修复后可解析');
+const ccFixed = FE.normalizeProfile(JSON.parse(rep.fixedText));
+FE.state.profile = ccFixed;
+eq(FE.validateProfile(ccFixed).errors, [], '一键修复后的 cc lite.json 校验无错误');
+FE.state.profile = profile;
+
 /* ---------------- 示例文件全部校验 ---------------- */
 console.log('== 工作区示例文件 ==');
 for (const f of fs.readdirSync(exDir)) {

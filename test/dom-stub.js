@@ -169,8 +169,8 @@ class DOMNode {
   focus() { documentStub.activeElement = this; }
   blur() { if (documentStub.activeElement === this) documentStub.activeElement = null; }
   select() {}
-  click() { this._fire('click'); }
-  showModal() { this.open = true; documentStub._openDialogs.push(this); }
+  setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; }
+  click() { this._fire('click'); }  showModal() { this.open = true; documentStub._openDialogs.push(this); }
   close() { if (this.open) { this.open = false; this._fire('close'); } }
   scrollTo() {}
   find(...a) { return null; }
@@ -365,9 +365,11 @@ function buildSkeleton() {
   const tabJson = el('section', { class: 'tabpanel', id: 'tab-json' });
   tabJson.appendChild(el('details', { class: 'card', open: 'open' },
     el('div', { class: 'toolbar' },
+      el('button', { id: 'json-check' }),
       el('button', { id: 'json-apply' }),
       el('button', { id: 'json-format' }),
       el('button', { id: 'json-copy' })),
+    el('div', { id: 'json-issues', class: 'json-issues' }),
     el('textarea', { id: 'json-editor', class: 'json-editor' }),
     el('div', { id: 'json-status', class: 'status' })));
 
