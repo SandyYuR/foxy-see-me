@@ -363,7 +363,7 @@ $('layout-select')._fire('change');
 ok(q('.gedit').length === 1, '网格编辑器渲染');
 ok(q('.gedit-key').length === 19, '网格编辑器 19 个按键格');
 ok(q('.gedit-empty').length === 0, 'numpad 网格全满无空格');
-ok(q('.gedit-covered').length === 1, '跨距键覆盖 1 格');
+ok(q('.gedit-covered').length === 0, '跨距键覆盖格不再单独渲染(避免遮住跨距键下半部)');
 ok(q('.gedit-span').length === 1, '跨距徽标显示');
 
 /* 带空格的网格 */
@@ -375,8 +375,7 @@ FE.mutate(() => {
 $('layout-select').value = 'gridtest';
 $('layout-select')._fire('change');
 eq(q('.gedit-empty').length, 5, '3×2 网格 1 键 → 5 个空格');
-eq(q('.gedit-key').length, 1, '1 个按键格');
-/* 点击空格 → 打开选择器 */
+eq(q('.gedit-key').length, 1, '1 个按键格');/* 点击空格 → 打开选择器 */
 documentStub._openDialogs.length = 0;
 q('.gedit-empty')[0].click();
 ok(documentStub._openDialogs.length === 1, '点击空格打开按键选择器');

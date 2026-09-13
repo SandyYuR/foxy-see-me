@@ -2299,8 +2299,8 @@ function gridEditor(section, si) {
         var place = { gridColumn: String(x + 1), gridRow: String(y + 1) };
         var info = cellMap[x + ',' + y];
         if (info && !info.start) {
-          /* 被跨距按键覆盖的格子 */
-          grid.appendChild(h('div', { class: 'gedit-cell gedit-covered', style: place }));
+          /* 被跨距按键覆盖的格子:跨距键本身已占满该区域(占位格会与其重叠
+           * 并因 DOM 靠后而绘制在上层,把键的下半/右半遮住),不再单独渲染。 */
           return;
         }
         if (info) {
@@ -2315,18 +2315,18 @@ function gridEditor(section, si) {
           var cell = h('div', {
             class: 'gedit-cell gedit-key' + (isSel(si, null, info.gi) ? ' chip-sel' : '') + (ev.unresolved ? ' chip-broken' : ''),
             title: placementTooltip(ev, k),
-            style: place,
-            onclick: function () {
-              state.sel = { s: si, r: null, k: info.gi };
-              renderPreview();
-              renderSectionsEditor();
-              if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'placement', placement: k, location: { s: si, r: null, k: info.gi }, grid: true });
-            }
-          },
-            h('span', { class: 'gedit-label' }, String(label).slice(0, 4)),
-            h('span', { class: 'gedit-sub' }, k.ref || '内联'),
-            (cs > 1 || rs > 1) ? h('span', { class: 'gedit-span' }, cs + '×' + rs) : null
-          );
+            style: place
+          });
+          cell.style.zIndex = '1';
+          cell.appendChild(h('span', { class: 'gedit-label' }, String(label).slice(0, 4)));
+          cell.appendChild(h('span', { class: 'gedit-sub' }, k.ref || '内联'));
+          if (cs > 1 || rs > 1) cell.appendChild(h('span', { class: 'gedit-span' }, cs + '×' + rs));
+          cell.addEventListener('click', function () {
+            state.sel = { s: si, r: null, k: info.gi };
+            renderPreview();
+            renderSectionsEditor();
+            if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'placement', placement: k, location: { s: si, r: null, k: info.gi }, grid: true });
+          });
           grid.appendChild(cell);
         } else {
           grid.appendChild(h('div', {
