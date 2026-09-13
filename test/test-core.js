@@ -398,5 +398,31 @@ eq(FE.popupCandidates(yao, 'default', 'a', true)[0], 'A', '药丸 a Shift 首选
 /* 序列化 */
 ok(FE.serializePopupProfile(yao).indexOf('"type": "foxy.popup-profile"') >= 0, '弹出菜单序列化补 type');
 
+/* ---------------- 审查缺陷回归 ---------------- */
+console.log('== 审查缺陷回归 ==');
+ok(FE.ALL_KEYCODES.NUMBERSIGN && !FE.ALL_KEYCODES.NUMBERSHAR, 'NUMBERSIGN KeyCode 拼写正确');
+gi = FE.gestureInfo({ type: 'key', key: 'ENTER', label: '回车' }, FE.NEUTRAL_STATUS);
+ok(gi.action && gi.action.actions[0].key === 'ENTER', '直接动作手势可被解析');
+rep = FE.inspectJsonText('{"a":1/*x*/2}');
+ok(!rep.parseOk && rep.fixedText === '{"a":1 2}', '块注释删除不会拼接相邻 token');
+const invalidActions = FE.normalizeProfile({
+  actions: { bad: { type: 'key' }, badApp: { type: 'app', command: 'not_real' } },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ label: 'x', tap: { type: 'key', key: 'NO_SUCH_KEY', meta: ['BAD'] } }]] }] } }
+});
+v = FE.validateProfile(invalidActions);
+ok(v.errors.some(e => e.indexOf('NO_SUCH_KEY') >= 0), '非法 KeyCode 被检出');
+ok(v.errors.some(e => e.indexOf('not_real') >= 0), '非法 app command 被检出');
+ok(v.errors.some(e => e.indexOf('缺少 key') >= 0), 'key 动作缺少 key 被检出');
+const holeGrid = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'grid', columns: 2, rows: 2, keys: [{ column: 0, row: 0, ref: 'rime.a' }] }] } } });
+ok(FE.validateProfile(holeGrid).errors.some(e => e.indexOf('未覆盖单元格') >= 0), '网格空洞被检出');
+const badVariant = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a', variants: [{ when: { rime: { composing: true } }, ref: 'missing.variant' }] }]] }] } } });
+ok(FE.validateProfile(badVariant).errors.some(e => e.indexOf('missing.variant') >= 0), 'placement 变体坏引用被检出');
+const renameProfile = FE.normalizeProfile({ keys: { old: { ref: 'rime.a' } }, layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'old' }]] }], split: { sections: [{ type: 'rows', rows: [[{ ref: 'old' }]] }] } } } });
+FE.state.profile = renameProfile;
+FE.renameKeyDef('old', 'renamed');
+eq(renameProfile.layouts.default.sections[0].rows[0][0].ref, 'renamed', '重命名更新常规引用');
+eq(renameProfile.layouts.default.split.sections[0].rows[0][0].ref, 'renamed', '重命名更新 split 引用');
+FE.state.profile = profile;
+
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
 process.exit(failed ? 1 : 0);

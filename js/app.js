@@ -41,6 +41,7 @@ var state = {
   status: { composing: false, ascii_mode: false, disabled: false, shift: false },
   statusSample: '朙月拼音',
   theme: 'dark',
+  includeType: true,
   sel: null,              // 选中按键 {s, r, k}
   validation: { errors: [], warnings: [] },
   history: [],
@@ -302,7 +303,7 @@ FE.gestureInfo = function (g, status, depth) {
     out.action = FE.resolveActionSpec(
       g.action != null ? g.action :
       (g.actions != null ? g.actions :
-        (g.macro != null ? g : null))
+        (g.macro != null || g.type != null ? g : null))
     );
   }
   if (g.hint != null) out.hint = g.hint;
@@ -395,43 +396,80 @@ FE.resolvePreviewLayout = function (profile, name, status, seen) {
 /* ================================================================
  * 五、校验器
  * ================================================================ */
+function appCommandExists(command) {
+  return (FE.APP_COMMANDS || []).some(function (x) { return x[0] === command; });
+}
+
+/* 校验一个直接动作；profile 可省略（popup profile 没有命名布局上下文）。 */
+function validateAction(action, where, err, profile) {
+  if (!isPlainObject(action)) { err(where + ' 必须是动作对象'); return; }
+  var t = action.type;
+  if (typeof t !== 'string' || !t) { err(where + ' 缺少动作 type'); return; }
+  if (t === 'key') {
+    if (typeof action.key !== 'string' || !action.key) err(where + ' 的 key 动作缺少 key');
+    else if (!FE.ALL_KEYCODES[action.key]) err(where + ' 使用了不支持的 KeyCode: ' + action.key);
+    if (action.meta != null) {
+      var meta = Array.isArray(action.meta) ? action.meta : [action.meta];
+      meta.forEach(function (m) {
+        if (['SHIFT', 'CTRL', 'ALT', 'META'].indexOf(String(m).toUpperCase()) < 0) err(where + ' 使用了不支持的 meta: ' + m);
+      });
+    }
+  } else if (t === 'modifier') {
+    if (FE.MODIFIERS.indexOf(action.modifier) < 0) err(where + ' 使用了不支持的 modifier: ' + action.modifier);
+    if (action.state != null && ['OFF', 'ONESHOT', 'LOCKED'].indexOf(action.state) < 0) err(where + ' 使用了不支持的 modifier state: ' + action.state);
+  } else if (t === 'text' || t === 'commit') {
+    if (typeof action.text !== 'string') err(where + ' 的 ' + t + ' 动作缺少字符串 text');
+  } else if (t === 'switch_layout') {
+    if (typeof action.layout !== 'string' || !action.layout) err(where + ' 的 switch_layout 动作缺少 layout');
+    else if (profile && isPlainObject(profile.layouts) && !profile.layouts[action.layout] && ['symbols', 'emoji', 'kaomoji'].indexOf(action.layout) < 0) {
+      err(where + ' 的 switch_layout 目标不存在: ' + action.layout);
+    }
+  } else if (t === 'app') {
+    if (typeof action.command !== 'string' || !action.command) err(where + ' 的 app 动作缺少 command');
+    else if (!appCommandExists(action.command)) err(where + ' 使用了不支持的 app command: ' + action.command);
+    else if (action.command === 'commit_text' && typeof action.argument !== 'string') err(where + ' 的 commit_text 命令缺少字符串 argument');
+  } else {
+    err(where + ' 使用了不支持的动作 type: ' + t);
+  }
+}
+FE.validateAction = validateAction;
+
 function refNameOf(placement) {
   return (isPlainObject(placement) && typeof placement.ref === 'string') ? placement.ref : '内联按键';
 }
 
-function checkGestureRefs(container, where, err) {
-  ['tap', 'doubleTap', 'longPress', 'hold'].forEach(function (f) {
-    var g = container[f];
+function checkGestureRefs(container, where, err, profile) {
+  function checkOne(g, gw) {
     if (g == null) return;
-    if (isPlainObject(g) && typeof g.ref === 'string' && !lookupDef(g.ref)) {
-      err(where + ' 的 ' + f + '.ref 引用无法解析: ' + g.ref);
-    }
+    if (isPlainObject(g) && typeof g.ref === 'string' && !lookupDef(g.ref)) err(gw + '.ref 引用无法解析: ' + g.ref);
     if (typeof g === 'string') {
       var acts = (state.profile && isPlainObject(state.profile.actions)) ? state.profile.actions : {};
-      if (!acts[g]) err(where + ' 的 ' + f + ' 引用动作名不存在: ' + g);
+      if (!acts[g]) err(gw + ' 引用动作名不存在: ' + g);
+      return;
     }
-    if (isPlainObject(g) && g.macro != null) {
+    if (!isPlainObject(g)) { err(gw + ' 的手势结构无效'); return; }
+    if (g.macro != null) {
       var macros = (state.profile && isPlainObject(state.profile.macros)) ? state.profile.macros : {};
-      if (!macros[g.macro]) err(where + ' 的 ' + f + ' 引用宏不存在: ' + g.macro);
+      if (!macros[g.macro]) err(gw + ' 引用宏不存在: ' + g.macro);
     }
-  });
-  if (isPlainObject(container.swipe)) {
-    FE.SWIPE_DIRS.forEach(function (d) {
-      var g = container.swipe[d];
-      if (g == null) return;
-      if (isPlainObject(g) && typeof g.ref === 'string' && !lookupDef(g.ref)) {
-        err(where + ' 的 swipe.' + d + '.ref 引用无法解析: ' + g.ref);
-      }
-      if (typeof g === 'string') {
-        var acts2 = (state.profile && isPlainObject(state.profile.actions)) ? state.profile.actions : {};
-        if (!acts2[g]) err(where + ' 的 swipe.' + d + ' 引用动作名不存在: ' + g);
-      }
-      if (isPlainObject(g) && g.macro != null) {
-        var macros2 = (state.profile && isPlainObject(state.profile.macros)) ? state.profile.macros : {};
-        if (!macros2[g.macro]) err(where + ' 的 swipe.' + d + ' 引用宏不存在: ' + g.macro);
-      }
-    });
+    if (g.action != null) {
+      if (typeof g.action === 'string') {
+        var named = (state.profile && isPlainObject(state.profile.actions)) ? state.profile.actions : {};
+        if (!named[g.action]) err(gw + ' 引用动作名不存在: ' + g.action);
+      } else if (Array.isArray(g.action)) {
+        g.action.forEach(function (a, i) { validateAction(a, gw + '.action[' + i + ']', err, profile); });
+      } else validateAction(g.action, gw + '.action', err, profile);
+    }
+    if (g.actions != null) {
+      if (!Array.isArray(g.actions)) err(gw + '.actions 必须是数组');
+      else g.actions.forEach(function (a, i) { validateAction(a, gw + '.actions[' + i + ']', err, profile); });
+    }
+    if (g.type != null) validateAction(g, gw, err, profile);
+    if (g.start != null) validateAction(g.start, gw + '.start', err, profile);
+    if (g.end != null) validateAction(g.end, gw + '.end', err, profile);
   }
+  ['tap', 'doubleTap', 'longPress', 'hold'].forEach(function (f) { checkOne(container[f], where + ' 的 ' + f); });
+  if (isPlainObject(container.swipe)) FE.SWIPE_DIRS.forEach(function (d) { checkOne(container.swipe[d], where + ' 的 swipe.' + d); });
 }
 
 FE.validateProfile = function (profile) {
@@ -471,11 +509,12 @@ FE.validateProfile = function (profile) {
       else if (typeof kd.ref === 'string' && !lookupDef(kd.ref)) err('按键定义 “' + kn + '” 的 ref 无法解析: ' + kd.ref);
       if (kd.ref === kn) err('按键定义 “' + kn + '” 引用了自身');
       if (kd.hold != null && kd.longPress != null) err('按键定义 “' + kn + '” 同时定义了 hold 与 longPress');
-      checkGestureRefs(kd, '按键定义 “' + kn + '”', err);
+      checkGestureRefs(kd, '按键定义 “' + kn + '”', err, profile);
       if (Array.isArray(kd.variants)) {
         kd.variants.forEach(function (v, vi) {
           if (!isPlainObject(v)) { err('按键定义 “' + kn + '” 的变体 ' + vi + ' 不是对象'); return; }
           if (typeof v.ref === 'string' && !lookupDef(v.ref)) err('按键定义 “' + kn + '” 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref);
+          checkGestureRefs(v, '按键定义 “' + kn + '” 变体 ' + vi, err, profile);
         });
       }
     }
@@ -584,6 +623,13 @@ FE.validateProfile = function (profile) {
             }
             checkPlacement(k, pfx, si, '网格按键 ' + label);
           });
+          if (Number.isInteger(cols) && cols > 0 && Number.isInteger(rws) && rws > 0) {
+            var holes = [];
+            for (var gy = 0; gy < R; gy++) for (var gx = 0; gx < C; gx++) {
+              if (occ[gx + ',' + gy] == null) holes.push('(' + gx + ',' + gy + ')');
+            }
+            if (holes.length) err(pfx + ' 区段 ' + si + ' 网格存在 ' + holes.length + ' 个未覆盖单元格: ' + holes.slice(0, 8).join('、') + (holes.length > 8 ? '…' : ''));
+          }
         } else {
           err(pfx + ' 区段 ' + si + ' 的 type 必须是 rows 或 grid');
         }
@@ -600,8 +646,35 @@ FE.validateProfile = function (profile) {
       if (ev.cycle) err(full + ' 引用链存在循环: ' + ev.cycle);
       if (ev.eff.tap == null) err(full + '（' + refNameOf(k) + '）解析后缺少点击动作 tap');
       if (ev.eff.hold != null && ev.eff.longPress != null) err(full + '（' + refNameOf(k) + '）同时定义了 hold 与 longPress');
-      checkGestureRefs(k, full, err);
+      checkGestureRefs(k, full, err, profile);
+      if (Array.isArray(k.variants)) k.variants.forEach(function (v, vi) {
+        if (!isPlainObject(v)) { err(full + ' 的变体 ' + vi + ' 不是对象'); return; }
+        if (typeof v.ref === 'string' && !lookupDef(v.ref)) err(full + ' 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref);
+        checkGestureRefs(v, full + ' 变体 ' + vi, err, profile);
+      });
+      if (isPlainObject(k.override)) {
+        checkGestureRefs(k.override, full + ' override', err, profile);
+        if (Array.isArray(k.override.variants)) k.override.variants.forEach(function (v, vi) {
+          if (!isPlainObject(v)) { err(full + ' override 变体 ' + vi + ' 不是对象'); return; }
+          if (typeof v.ref === 'string' && !lookupDef(v.ref)) err(full + ' override 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref);
+          checkGestureRefs(v, full + ' override 变体 ' + vi, err, profile);
+        });
+      }
+      /* 三个布尔状态共 8 种组合，逐一验证最终引用、tap 与手势冲突。 */
+      for (var mask = 0; mask < 8; mask++) {
+        var st = { composing: !!(mask & 1), ascii_mode: !!(mask & 2), disabled: !!(mask & 4) };
+        var sev = FE.evalPlacement(k, st);
+        var suffix = '（状态 composing=' + st.composing + ', ascii_mode=' + st.ascii_mode + ', disabled=' + st.disabled + '）';
+        if (sev.unresolved) err(full + suffix + ' 引用链无法解析: ' + sev.unresolved);
+        if (sev.cycle) err(full + suffix + ' 引用链存在循环: ' + sev.cycle);
+        if (sev.eff.tap == null) err(full + suffix + ' 解析后缺少点击动作 tap');
+        if (sev.eff.hold != null && sev.eff.longPress != null) err(full + suffix + ' 同时定义了 hold 与 longPress');
+      }
     }
+
+    /* ---- 顶层动作 ---- */
+    var topActions = isPlainObject(profile.actions) ? profile.actions : {};
+    Object.keys(topActions).forEach(function (an) { validateAction(topActions[an], '动作 “' + an + '”', err, profile); });
 
     /* ---- 高度单位兼容性 ---- */
     if (layoutNames.length > 1) {
@@ -619,9 +692,16 @@ FE.validateProfile = function (profile) {
       if (!Object.prototype.hasOwnProperty.call(macros, mn2)) continue;
       if (!Array.isArray(macros[mn2])) { err('宏 “' + mn2 + '” 必须是数组'); continue; }
       macros[mn2].forEach(function (step, i) {
-        var target = isPlainObject(step) && typeof step.action === 'string' ? step.action : null;
-        if (target && !(isPlainObject(profile.actions) && profile.actions[target])) {
-          err('宏 “' + mn2 + '” 步骤 ' + i + ' 引用动作名不存在: ' + target);
+        var where = '宏 “' + mn2 + '” 步骤 ' + i;
+        var target = isPlainObject(step) && typeof step.action === 'string' ? step.action : (typeof step === 'string' ? step : null);
+        if (target) {
+          if (!(isPlainObject(profile.actions) && profile.actions[target])) err(where + ' 引用动作名不存在: ' + target);
+        } else if (isPlainObject(step) && isPlainObject(step.action)) {
+          validateAction(step.action, where + '.action', err, profile);
+        } else if (isPlainObject(step) && step.type != null) {
+          validateAction(step, where, err, profile);
+        } else {
+          err(where + ' 结构无效');
         }
       });
     }
@@ -643,9 +723,10 @@ FE.normalizeProfile = function (p) {
   return p;
 };
 
-FE.serializeProfile = function (p) {
+FE.serializeProfile = function (p, includeType) {
   var out = deepClone(p);
-  if (out.type == null) out.type = 'foxy.keyboard-layout';
+  if (includeType !== false && out.type == null) out.type = 'foxy.keyboard-layout';
+  if (includeType === false) delete out.type;
   /* 把 type 移到最前，author 随后 */
   var ordered = {};
   if (out.type != null) ordered.type = out.type;
@@ -758,11 +839,14 @@ FE.inspectJsonText = function (text) {
     if (c === '/' && src.charAt(i + 1) === '*') {
       record('blockComment', i);
       i += 2;
+      var keptNewline = false;
       while (i < n && !(src.charAt(i) === '*' && src.charAt(i + 1) === '/')) {
-        if (src.charAt(i) === '\n') { line++; out.push('\n'); } /* 保留换行以维持行号 */
+        if (src.charAt(i) === '\n') { line++; out.push('\n'); keptNewline = true; } /* 保留换行以维持行号 */
         i++;
       }
       i += 2;
+      /* 单行块注释至少留下空白，防止相邻 token 被静默拼接。 */
+      if (!keptNewline) out.push(' ');
       continue;
     }
 
@@ -953,7 +1037,7 @@ function autosave() {
     localStorage.setItem(LS_KEY, JSON.stringify({
       profile: state.profile, layoutName: state.layoutName, fileName: state.fileName,
       popupProfile: state.popupProfile || null, popupFileName: state.popupFileName,
-      splitMode: state.splitMode
+      splitMode: state.splitMode, includeType: state.includeType
     }));
   } catch (e) { /* 忽略存储失败 */ }
 }
@@ -966,7 +1050,12 @@ function applyProfileText(text, opts) {
     setOpStatus('JSON 解析失败: ' + e.message + '（已自动清理 BOM 与多余尾逗号后仍无法解析，请检查语法）', 'error');
     return false;
   }
-  FE.normalizeProfile(p);
+  if (!isPlainObject(p)) {
+    state.lastParseError = '配置根节点必须是 JSON 对象';
+    setOpStatus(state.lastParseError, 'error');
+    return false;
+  }
+  p = FE.normalizeProfile(p);
   state.profile = p;
   state.jsonDirty = false;
   var names = Object.keys(p.layouts);
@@ -1395,7 +1484,8 @@ function placementTooltip(ev, placement) {
   if (pkTip != null && pkTip !== '') {
     var tipLine = '长按弹出: popupKey=' + pkTip;
     if (state.popupProfile && FE.popupCandidates) {
-      var pc = FE.popupCandidates(state.popupProfile, 'default', String(pkTip), state.status.shift);
+      var popupSchema = FE.popupSchemaName ? FE.popupSchemaName(state.popupProfile, state.popupSchema) : 'default';
+      var pc = FE.popupCandidates(state.popupProfile, popupSchema, String(pkTip), state.status.shift);
       tipLine += pc ? ' · ' + pc.length + ' 个候选' : ' · 弹出菜单未定义';
     }
     lines.push(tipLine);
@@ -1481,7 +1571,8 @@ function buildPreviewKey(placement, ctx) {
   if (pk != null && pk !== '') {
     var pkTitle = '长按弹出菜单 popupKey: ' + pk;
     if (state.popupProfile && FE.popupCandidates) {
-      var cands = FE.popupCandidates(state.popupProfile, 'default', String(pk), state.status.shift);
+      var popupSchema = FE.popupSchemaName ? FE.popupSchemaName(state.popupProfile, state.popupSchema) : 'default';
+      var cands = FE.popupCandidates(state.popupProfile, popupSchema, String(pk), state.status.shift);
       pkTitle += cands ? '（' + cands.length + ' 个候选）' : '（当前弹出菜单未定义该键）';
     }
     el.appendChild(h('span', { class: 'kb-badge-popup', title: pkTitle }, '⌄'));
@@ -1716,7 +1807,7 @@ function renderLayoutSettings() {
   /* 布局变体 */
   var vhost = $('layout-variants');
   clearEl(vhost);
-  var variants = Array.isArray(L.variants) ? L.variants : [];
+  var variants = (L && Array.isArray(L.variants)) ? L.variants : [];
   variants.forEach(function (v, vi) {
     var condSel = function (cond) {
       var val = v && v.when && v.when.rime ? v.when.rime[cond] : undefined;
@@ -1748,15 +1839,18 @@ function renderLayoutSettings() {
       h('button', { class: 'icon-button', title: '删除此变体', onclick: function () { mutate(function () { curLayout().variants.splice(vi, 1); }); } }, '✕')
     ));
   });
-  vhost.appendChild(h('button', {
+  var addVariant = h('button', {
     class: 'mini-button', onclick: function () {
       mutate(function () {
         var l = curLayout();
+        if (!l) return;
         if (!Array.isArray(l.variants)) l.variants = [];
         l.variants.push({ when: { rime: { composing: true } }, layout: Object.keys(state.profile.layouts)[0] || 'default' });
       });
     }
-  }, '+ 添加布局变体'));
+  }, '+ 添加布局变体');
+  addVariant.disabled = !L;
+  vhost.appendChild(addVariant);
 }
 
 /* ---------------- 区段编辑器 ---------------- */
@@ -2200,6 +2294,7 @@ function gridEditor(section, si) {
 
   for (var ry = 0; ry < rws; ry++) {
     for (var cx = 0; cx < cols; cx++) {
+      if (ry * cols + cx >= 400) continue;
       (function (x, y) {
         var place = { gridColumn: String(x + 1), gridRow: String(y + 1) };
         var info = cellMap[x + ',' + y];
@@ -2344,32 +2439,33 @@ function countKeyUsage(name) {
         if (isPlainObject(g) && g.ref === name) places.push(where + ' swipe.' + d);
       });
     }
+    (Array.isArray(container.variants) ? container.variants : []).forEach(function (v, i) {
+      if (isPlainObject(v)) checkNode(v, where + ' 变体' + i);
+    });
+    if (isPlainObject(container.override)) checkNode(container.override, where + ' override');
   }
-  Object.keys(profile.keys || {}).forEach(function (kn) {
-    var kd = profile.keys[kn];
-    if (!isPlainObject(kd)) return;
-    if (kd.ref === name) places.push('按键定义 ' + kn);
-    checkGestures(kd, '按键定义 ' + kn);
-  });
+  function checkNode(node, where) {
+    if (!isPlainObject(node)) return;
+    if (node.ref === name) places.push(where);
+    checkGestures(node, where);
+  }
+  function walkSections(sections, prefix) {
+    (Array.isArray(sections) ? sections : []).forEach(function (s, si) {
+      if (!isPlainObject(s)) return;
+      if (s.type === 'rows') FE.rowsOfSection(s).forEach(function (row, ri) {
+        row.keys.forEach(function (k, ki) { checkNode(k, prefix + ' 区段' + si + ' 行' + ri + ' 键' + ki); });
+      });
+      else if (s.type === 'grid' && Array.isArray(s.keys)) s.keys.forEach(function (k, ki) {
+        checkNode(k, prefix + ' 区段' + si + ' 网格键' + ki);
+      });
+    });
+  }
+  Object.keys(profile.keys || {}).forEach(function (kn) { checkNode(profile.keys[kn], '按键定义 ' + kn); });
   Object.keys(profile.layouts || {}).forEach(function (ln) {
     var L = profile.layouts[ln];
-    if (!isPlainObject(L) || !Array.isArray(L.sections)) return;
-    L.sections.forEach(function (s, si) {
-      if (!isPlainObject(s)) return;
-      if (s.type === 'rows') {
-        FE.rowsOfSection(s).forEach(function (row, ri) {
-          row.keys.forEach(function (k, ki) {
-            if (isPlainObject(k) && k.ref === name) places.push(ln + ' 区段' + si + ' 行' + ri + ' 键' + ki);
-            checkGestures(k, ln + ' 区段' + si + ' 行' + ri + ' 键' + ki);
-          });
-        });
-      } else if (s.type === 'grid' && Array.isArray(s.keys)) {
-        s.keys.forEach(function (k, ki) {
-          if (isPlainObject(k) && k.ref === name) places.push(ln + ' 区段' + si + ' 网格键' + ki);
-          checkGestures(k, ln + ' 区段' + si + ' 网格键' + ki);
-        });
-      }
-    });
+    if (!isPlainObject(L)) return;
+    walkSections(L.sections, ln);
+    if (isPlainObject(L.split)) walkSections(L.split.sections, ln + ' 分体');
   });
   return { count: places.length, places: places };
 }
@@ -2466,7 +2562,7 @@ function renderJsonTab() {
   if (document.activeElement === ta) return;
   /* 用户手改过且尚未应用时，保留其文本不被覆盖 */
   if (state.jsonDirty) return;
-  ta.value = FE.serializeProfile(state.profile);
+  ta.value = FE.serializeProfile(state.profile, state.includeType);
   checkJsonText();
 }
 
@@ -2487,7 +2583,7 @@ function renderAll() {
 function renderOps() {
   var a = $('op-author'), t = $('op-type');
   if (a && document.activeElement !== a) a.value = state.profile && state.profile.author != null ? String(state.profile.author) : '';
-  if (t) t.checked = !!(state.profile && state.profile.type === 'foxy.keyboard-layout');
+  if (t) t.checked = state.includeType !== false;
 }
 
 function updateUndoButtons() {
@@ -2609,7 +2705,7 @@ function initToolbar() {
     reader.readAsText(file, 'utf-8');
   });
   $('op-export').addEventListener('click', function () {
-    var text = FE.serializeProfile(state.profile);
+    var text = FE.serializeProfile(state.profile, state.includeType);
     var blob = new Blob([text], { type: 'application/json;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -2660,10 +2756,10 @@ function initToolbar() {
   });
   var typeChk = $('op-type');
   typeChk.addEventListener('change', function () {
-    mutate(function () {
-      if (typeChk.checked) state.profile.type = 'foxy.keyboard-layout';
-      else delete state.profile.type;
-    });
+    state.includeType = typeChk.checked;
+    autosave();
+    renderJsonTab();
+    renderOps();
   });
 
   /* JSON tab */
@@ -2803,33 +2899,45 @@ function initToolbar() {
 
 function walkAllActions(cb) {
   var profile = state.profile;
+  function walkAction(a) {
+    if (isPlainObject(a)) cb(a);
+  }
   function walkGesture(g) {
-    if (isPlainObject(g)) {
-      if (g.action) cb(g.action);
-      if (Array.isArray(g.actions)) g.actions.forEach(cb);
-      if (g.start) cb(g.start);
-      if (g.end) cb(g.end);
-    }
+    if (!isPlainObject(g)) return;
+    if (g.type != null) walkAction(g);
+    if (isPlainObject(g.action)) walkAction(g.action);
+    else if (Array.isArray(g.action)) g.action.forEach(walkAction);
+    if (Array.isArray(g.actions)) g.actions.forEach(walkAction);
+    walkAction(g.start);
+    walkAction(g.end);
   }
   function walkKeyContainer(c) {
-    ['tap', 'doubleTap', 'longPress', 'hold'].forEach(function (f) { if (c[f] != null) walkGesture(c[f]); });
-    if (isPlainObject(c.swipe)) FE.SWIPE_DIRS.forEach(function (d) { if (c.swipe[d] != null) walkGesture(c.swipe[d]); });
+    if (!isPlainObject(c)) return;
+    ['tap', 'doubleTap', 'longPress', 'hold'].forEach(function (f) { walkGesture(c[f]); });
+    if (isPlainObject(c.swipe)) FE.SWIPE_DIRS.forEach(function (d) { walkGesture(c.swipe[d]); });
+    (Array.isArray(c.variants) ? c.variants : []).forEach(walkKeyContainer);
+    if (isPlainObject(c.override)) walkKeyContainer(c.override);
   }
-  Object.keys(profile.keys || {}).forEach(function (n) {
-    var kd = profile.keys[n];
-    if (isPlainObject(kd)) walkKeyContainer(kd);
+  function walkSections(sections) {
+    (Array.isArray(sections) ? sections : []).forEach(function (s) {
+      if (!isPlainObject(s)) return;
+      if (s.type === 'rows') FE.rowsOfSection(s).forEach(function (row) { row.keys.forEach(walkKeyContainer); });
+      else if (s.type === 'grid' && Array.isArray(s.keys)) s.keys.forEach(walkKeyContainer);
+    });
+  }
+  Object.keys(profile.actions || {}).forEach(function (n) { walkAction(profile.actions[n]); });
+  Object.keys(profile.macros || {}).forEach(function (n) {
+    (Array.isArray(profile.macros[n]) ? profile.macros[n] : []).forEach(function (step) {
+      if (isPlainObject(step) && isPlainObject(step.action)) walkAction(step.action);
+      else if (isPlainObject(step) && step.type != null) walkAction(step);
+    });
   });
+  Object.keys(profile.keys || {}).forEach(function (n) { walkKeyContainer(profile.keys[n]); });
   Object.keys(profile.layouts || {}).forEach(function (ln) {
     var L = profile.layouts[ln];
-    if (!isPlainObject(L) || !Array.isArray(L.sections)) return;
-    L.sections.forEach(function (s) {
-      if (!isPlainObject(s)) return;
-      if (s.type === 'rows') {
-        FE.rowsOfSection(s).forEach(function (row) { row.keys.forEach(function (k) { if (isPlainObject(k)) walkKeyContainer(k); }); });
-      } else if (s.type === 'grid' && Array.isArray(s.keys)) {
-        s.keys.forEach(function (k) { if (isPlainObject(k)) walkKeyContainer(k); });
-      }
-    });
+    if (!isPlainObject(L)) return;
+    walkSections(L.sections);
+    if (isPlainObject(L.split)) walkSections(L.split.sections);
   });
 }
 
@@ -2889,9 +2997,8 @@ function boot() {
     var draft = localStorage.getItem(LS_KEY);
     if (draft) {
       var d = JSON.parse(draft);
-      if (d && d.profile) {
-        FE.normalizeProfile(d.profile);
-        state.profile = d.profile;
+      if (d && isPlainObject(d.profile)) {
+        state.profile = FE.normalizeProfile(d.profile);
         state.fileName = d.fileName || 'foxy-layout.json';
         state.layoutName = (d.layoutName && d.profile.layouts[d.layoutName]) ? d.layoutName
           : (d.profile.layouts['default'] ? 'default' : Object.keys(d.profile.layouts)[0] || null);
@@ -2915,6 +3022,7 @@ function boot() {
         state.popupFileName = d2.popupFileName || 'popups.json';
       }
       if (d2 && d2.splitMode) state.splitMode = !!d2.splitMode;
+      if (d2 && d2.includeType === false) state.includeType = false;
     }
   } catch (e2) { /* 忽略 */ }
   state.validation = FE.validateProfile(state.profile);

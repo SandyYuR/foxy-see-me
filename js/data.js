@@ -147,7 +147,7 @@ var KEYCODE_GROUPS = [];
   KEYCODE_GROUPS.push({
     label: '标点',
     names: ['SPACE', 'COMMA', 'PERIOD', 'SLASH', 'SEMICOLON', 'APOSTROPHE', 'GRAVE', 'MINUS', 'EQUAL',
-      'LEFT_BRACKET', 'RIGHT_BRACKET', 'BACKSLASH', 'NUMBERSHAR', 'ASTERISK', 'PLUS', 'AT']
+      'LEFT_BRACKET', 'RIGHT_BRACKET', 'BACKSLASH', 'NUMBERSIGN', 'ASTERISK', 'PLUS', 'AT']
   });
   KEYCODE_GROUPS.push({
     label: '编辑与导航',

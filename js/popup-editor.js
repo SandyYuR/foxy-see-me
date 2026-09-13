@@ -19,6 +19,13 @@ FE.normalizePopupProfile = function (p) {
   return p;
 };
 
+FE.popupSchemaName = function (p, requested) {
+  var schemas = p && FE.isPlainObject(p.schemas) ? p.schemas : {};
+  if (requested && FE.isPlainObject(schemas[requested])) return requested;
+  if (FE.isPlainObject(schemas['default'])) return 'default';
+  return Object.keys(schemas).find(function (n) { return FE.isPlainObject(schemas[n]); }) || 'default';
+};
+
 FE.serializePopupProfile = function (p) {
   var out = FE.deepClone(p);
   if (out.type == null) out.type = 'foxy.popup-profile';
@@ -84,6 +91,9 @@ FE.validatePopupProfile = function (pp) {
   var schemaNames = Object.keys(schemas);
   if (!schemaNames.length) err('schemas 不能为空');
   var actions = FE.isPlainObject(pp.actions) ? pp.actions : {};
+  Object.keys(actions).forEach(function (an) {
+    if (FE.validateAction) FE.validateAction(actions[an], '弹出菜单动作 “' + an + '”', err, null);
+  });
   schemaNames.forEach(function (sn) {
     var s = schemas[sn];
     if (!FE.isPlainObject(s)) { err('schema “' + sn + '” 不是对象'); return; }
@@ -102,6 +112,7 @@ FE.validatePopupProfile = function (pp) {
           if (typeof c !== 'string' && !FE.isPlainObject(c)) { err(where + ' 候选必须是字符串或对象'); return; }
           if (FE.isPlainObject(c)) {
             if (typeof c.action === 'string' && !actions[c.action]) err(where + ' 引用动作名不存在: ' + c.action);
+            if (FE.isPlainObject(c.action) && FE.validateAction) FE.validateAction(c.action, where + '.action', err, null);
             if (c.action == null && c.macro == null && c.ref == null) err(where + ' 对象候选缺少 action / macro / ref');
             if (c.macro != null) warn(where + ' 宏 “' + c.macro + '” 需在 definitions.json 中定义（编辑器无法校验）');
             if (c.ref != null) warn(where + ' 共享键 “' + c.ref + '” 需在 definitions.json 中定义（编辑器无法校验）');
@@ -151,7 +162,8 @@ function pmutate(fn) { FE.mutate(fn); }
 function buildPopupKeyEditor(schemaName, pk, opts) {
   opts = opts || {};
   var P = pp();
-  var schema = P.schemas[schemaName] || P.schemas['default'];
+  schemaName = FE.popupSchemaName(P, schemaName);
+  var schema = P.schemas[schemaName];
   var host = h('div', { class: 'popup-key-editor' });
   var used = collectLayoutPopupKeys()[pk];
   /* 标题行：键名 + 布局使用处 + 预览跳转 */
@@ -267,7 +279,7 @@ function renderPopupToolbar() {
   Object.keys(pp().schemas).forEach(function (sn) {
     sel.appendChild(h('option', { value: sn }, sn));
   });
-  if (!pp().schemas[state.popupSchema]) state.popupSchema = 'default';
+  if (!pp().schemas[state.popupSchema]) state.popupSchema = FE.popupSchemaName(pp(), state.popupSchema);
   sel.value = state.popupSchema;
 }
 
@@ -277,7 +289,7 @@ function renderPopupKeys() {
   clearEl(host);
   var P = pp();
   var schema = P.schemas[state.popupSchema];
-  if (!schema) { schema = P.schemas['default']; state.popupSchema = 'default'; }
+  if (!schema) { state.popupSchema = FE.popupSchemaName(P, state.popupSchema); schema = P.schemas[state.popupSchema] || {}; }
   var used = collectLayoutPopupKeys();
   var names = Object.keys(schema).sort();
   if (!names.length) {
@@ -332,7 +344,8 @@ function popupKeyCard(P, schemaName, pk, entry, usedAt) {
 }
 
 function stateRow(P, schemaName, pk, st) {
-  var entry = P.schemas[schemaName][pk];
+  var entry = P.schemas[schemaName] && P.schemas[schemaName][pk];
+  if (!entry) return h('div', { class: 'status error' }, '当前 schema 中不存在该键');
   var arr = Array.isArray(entry[st]) ? entry[st] : null;
   var row = h('div', { class: 'popup-state-row' });
   row.appendChild(h('span', { class: 'popup-state-name', title: st === 'normal' ? '常规状态候选' : 'Shift 状态候选（缺省回退到 normal）' },
@@ -450,6 +463,7 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
         if (!acts.length) sel.appendChild(h('option', { value: '' }, '（尚无动作定义，可在下方 actions JSON 中添加）'));
         acts.forEach(function (n) { sel.appendChild(h('option', { value: n }, n + ' · ' + FE.actionDisplay(pp().actions[n]))); });
         sel.value = draft.actionName || acts[0] || '';
+        draft.actionName = sel.value;
         sel.addEventListener('change', function () { draft.actionName = sel.value; });
         area.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '动作'), sel));
       } else if (k === 'macro') {
@@ -587,28 +601,29 @@ function findMockLabel(pk) {
   catch (e) { return null; }
 }
 
-/* 供弹出预览用的"第一个使用该 popupKey 的按键 eff"（不应用 Shift，由调用方定） */
+/* 供弹出预览用的“第一个使用该 popupKey 的按键 eff”（不应用 Shift，由调用方定） */
 function findMockEff(pk) {
   var profile = state.profile;
   if (!profile) return null;
   var best = null;
+  function walkSections(sections) {
+    return (Array.isArray(sections) ? sections : []).some(function (s) {
+      if (!FE.isPlainObject(s)) return false;
+      var keys = [];
+      if (s.type === 'rows') FE.rowsOfSection(s).forEach(function (row) { keys = keys.concat(row.keys); });
+      else if (s.type === 'grid' && Array.isArray(s.keys)) keys = s.keys;
+      return keys.some(function (k) {
+        var ev = FE.evalPlacement(k, FE.NEUTRAL_STATUS);
+        var lp = (ev.eff && FE.isPlainObject(ev.eff.longPress)) ? ev.eff.longPress.popupKey : null;
+        if (String(lp) === String(pk)) { best = ev.eff || best; return true; }
+        return false;
+      });
+    });
+  }
   Object.keys(profile.layouts || {}).some(function (ln) {
     var L = profile.layouts[ln];
     if (!FE.isPlainObject(L)) return false;
-    return (Array.isArray(L.sections) ? L.sections : []).some(function (s) {
-      if (!FE.isPlainObject(s) || s.type !== 'rows') return false;
-      return FE.rowsOfSection(s).some(function (row) {
-        return row.keys.some(function (k) {
-          var ev = FE.evalPlacement(k, FE.NEUTRAL_STATUS);
-          var lp = (ev.eff && FE.isPlainObject(ev.eff.longPress)) ? ev.eff.longPress.popupKey : null;
-          if (String(lp) === String(pk)) {
-            best = ev.eff || best;
-            return best != null;
-          }
-          return false;
-        });
-      });
-    });
+    return walkSections(L.sections) || (FE.isPlainObject(L.split) && walkSections(L.split.sections));
   });
   return best;
 }
@@ -672,10 +687,15 @@ FE.loadPopupProfileText = function (text, fileName) {
     setPopupStatus('这不是弹出菜单文件（' + typeMsg + '）', 'error');
     return false;
   }
-  FE.normalizePopupProfile(p);
+  if (!FE.isPlainObject(p)) {
+    state.lastParseError = '弹出菜单根节点必须是 JSON 对象';
+    setPopupStatus(state.lastParseError, 'error');
+    return false;
+  }
+  p = FE.normalizePopupProfile(p);
   state.popupProfile = p;
   if (fileName) state.popupFileName = fileName;
-  state.popupSchema = 'default';
+  state.popupSchema = FE.popupSchemaName(p, 'default');
   state.popupSelKey = null;
   popupJsonDirty = false;
   FE.afterChange();

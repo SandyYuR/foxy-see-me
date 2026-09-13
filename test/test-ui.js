@@ -792,6 +792,26 @@ setTimeout(async function () {
   ok(q('.pp-cand').length >= 1, '跳转后气泡候选渲染（实际 ' + q('.pp-cand').length + '）');
   documentStub._openDialogs.length = 0;
 
+  /* 审查缺陷回归：非对象导入必须被拒绝而非抛异常 */
+  console.log('== 审查缺陷回归 ==');
+  let threwNonObject = false;
+  try { ok(FE.applyProfileText('[]') === false, '数组根节点被拒绝'); }
+  catch (e) { threwNonObject = true; }
+  ok(!threwNonObject, '数组根节点不会抛异常');
+  let threwEmptyLayouts = false;
+  try { FE.applyProfileText('{"layouts":{}}'); }
+  catch (e) { threwEmptyLayouts = true; }
+  ok(!threwEmptyLayouts, '空 layouts 渲染不会抛异常');
+
+  /* 直接动作手势打开编辑器后应保留动作 */
+  documentStub._openDialogs.length = 0;
+  let directSaved = null;
+  FE.openGestureDialog({ slot: 'tap', gesture: { type: 'key', key: 'A', popup: false }, onChange: v => { directSaved = v; } });
+  const directDlg = documentStub._openDialogs[0];
+  directDlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  ok(directSaved && directSaved.type === 'key' && directSaved.key === 'A' && directSaved.popup === false, '直接动作手势无损保存');
+  documentStub._openDialogs.length = 0;
+
   console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
   process.exit(failed ? 1 : 0);
 }, 350);

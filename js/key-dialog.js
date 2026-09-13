@@ -261,7 +261,9 @@ FE.openGestureDialog = function (opts) {
   var macroName = (mode === 'macro' && FE.isPlainObject(g)) ? g.macro : null;
   var directSpec = null;
   if (mode === 'direct' && FE.isPlainObject(g)) {
-    directSpec = g.action != null ? g.action : (g.actions != null ? g.actions : null);
+    if (g.action != null) directSpec = g.action;
+    else if (g.actions != null) directSpec = g.actions;
+    else if (g.type != null) directSpec = FE.omit(g, ['label', 'popup', 'repeat', 'popupKey', 'hint']);
   }
   var startSpec = null, endSpec = null;
   if (isHold && FE.isPlainObject(g)) {
@@ -361,7 +363,8 @@ FE.openGestureDialog = function (opts) {
           var k = popupKeyInp.value.trim();
           if (!k) { pkHint.textContent = '填写 popupKey 后可编辑其长按候选'; return; }
           if (FE.state && FE.state.popupProfile && FE.popupCandidates) {
-            var c = FE.popupCandidates(FE.state.popupProfile, 'default', k, false);
+            var schemaName = FE.popupSchemaName ? FE.popupSchemaName(FE.state.popupProfile, FE.state.popupSchema) : 'default';
+            var c = FE.popupCandidates(FE.state.popupProfile, schemaName, k, false);
             pkHint.textContent = c ? '弹出菜单中该键有 ' + c.length + ' 个候选' : '弹出菜单未定义该键（可跳转补齐）';
           } else {
             pkHint.textContent = '候选在「弹出菜单」标签页编辑';
@@ -412,10 +415,7 @@ FE.openGestureDialog = function (opts) {
           value = Object.assign({ ref: refName }, extras);
         } else if (m === 'action-name') {
           if (!actionName) { alert('请选择动作'); return; }
-          if (Object.keys(extras).length) {
-            var actObj = (state.profile.actions || {})[actionName];
-            value = Object.assign({ action: actObj ? FE.deepClone(actObj) : { type: 'key', key: 'A' } }, extras);
-          } else value = actionName;
+          value = Object.keys(extras).length ? Object.assign({ action: actionName }, extras) : actionName;
         } else if (m === 'macro') {
           if (!macroName) { alert('请选择宏'); return; }
           value = Object.assign({ macro: macroName }, extras);
@@ -430,10 +430,9 @@ FE.openGestureDialog = function (opts) {
             if (!value.start && !value.end && !Object.keys(extras).length) { alert('请至少配置开始或结束动作'); return; }
           } else {
             if (!act && !Object.keys(extras).length) { alert('请配置动作'); return; }
-            value = Object.assign({}, extras);
+            value = act ? Object.assign({}, act, extras) : Object.assign({}, extras);
             if (isLongPress && repeatChk.checked) value.repeat = true;
             if (isLongPress && popupKeyInp.value.trim() !== '') value.popupKey = popupKeyInp.value.trim();
-            if (act) value.action = act;
           }
         }
       }
@@ -1076,21 +1075,15 @@ function renameKeyDef(oldN, newN) {
       });
     }
   }
-  function updNode(n) {
-    var node = n;
+  function updNode(node) {
     if (!FE.isPlainObject(node)) return;
     if (node.ref === oldN) node.ref = newN;
     updGestures(node);
-    (Array.isArray(node.variants) ? node.variants : []).forEach(function (v) {
-      if (FE.isPlainObject(v) && v.ref === oldN) v.ref = newN;
-      if (FE.isPlainObject(v)) updGestures(v);
-    });
+    (Array.isArray(node.variants) ? node.variants : []).forEach(updNode);
+    if (FE.isPlainObject(node.override)) updNode(node.override);
   }
-  Object.keys(nk).forEach(function (k) { updNode(nk[k]); });
-  Object.keys(state.profile.layouts || {}).forEach(function (ln) {
-    var L = state.profile.layouts[ln];
-    if (!FE.isPlainObject(L) || !Array.isArray(L.sections)) return;
-    L.sections.forEach(function (s) {
+  function walkSections(sections) {
+    (Array.isArray(sections) ? sections : []).forEach(function (s) {
       if (!FE.isPlainObject(s)) return;
       if (s.type === 'rows') {
         FE.rowsOfSection(s).forEach(function (row) { row.keys.forEach(updNode); });
@@ -1098,6 +1091,13 @@ function renameKeyDef(oldN, newN) {
         s.keys.forEach(updNode);
       }
     });
+  }
+  Object.keys(nk).forEach(function (k) { updNode(nk[k]); });
+  Object.keys(state.profile.layouts || {}).forEach(function (ln) {
+    var L = state.profile.layouts[ln];
+    if (!FE.isPlainObject(L)) return;
+    walkSections(L.sections);
+    if (FE.isPlainObject(L.split)) walkSections(L.split.sections);
   });
 }
 FE.renameKeyDef = renameKeyDef;
