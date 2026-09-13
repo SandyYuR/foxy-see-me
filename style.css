@@ -156,6 +156,26 @@ label.check { cursor: pointer; white-space: nowrap; }
 .form-row.form-inline { flex-direction: row; align-items: center; gap: 8px; flex-wrap: wrap; }
 .form-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 14px; }
 
+/* jscolor 颜色输入框：色块即输入框背景，f5a-see-me 同款点击弹出 */
+.color-input { width: 150px; font-family: var(--mono); cursor: pointer; }
+/* 高级颜色子卡：未配置时标题置灰，已配置时圆点点亮 */
+.color-adv-card { margin: 6px 0 0 !important; }
+.color-adv-card > summary { color: var(--text-dim); font-weight: 500; }
+.color-state-card { margin: 6px 0 0 !important; }
+.color-state-card > summary {
+  display: flex; align-items: center; gap: 6px;
+  font-weight: 500; color: var(--text-dim);
+}
+.color-state-card.has-colors > summary { color: #cdd2da; }
+.color-state-card.has-colors .color-state-dot { background: var(--accent); }
+.color-state-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: #3a3f47; border: 1px solid var(--border); flex: 0 0 auto;
+}
+@media (max-width: 640px) {
+  .color-input { width: 100%; }
+}
+
 .status { font-size: 12.5px; color: var(--text-dim); margin: 6px 0; word-break: break-all; }
 .status.ok, .st-ok { color: var(--ok); }
 .status.error, .st-error { color: var(--err); }

@@ -61,7 +61,28 @@
   `app`（全部 Foxy 命令 + 参数）。
 - 状态变体编辑：`composing` / `ascii_mode` / `disabled` 三态条件（真/假/忽略）、
   变体级 `ref` 替换、`label` / `shiftedLabel` / `tap` 与其他字段 JSON。
-- 按键颜色：`text` / `background` / `border` / `hint` 四个常用角色。
+- 按键颜色：`text` / `background` / `border` / `hint` 四个常用角色，
+  外加 `shadow` 与 `states`（`pressed` / `modifierLocked` / `modifierActive`
+  各含背景 / 文字 / 阴影）。全部用 **jscolor 取色面板点选**
+  （与 [f5a-see-me](https://github.com/SandyYuR/f5a-see-me) 同款交互：
+  点击输入框就地弹出 HSV 取色区 + 透明度滑杆 + ✓，支持 `#RRGGBB` / `#AARRGGBB`，
+  `js/jscolor/jscolor.js` 即其同版本 vendor 文件，无需联网）；
+  也可直接手输（非法格式会提示并回退），留空即恢复继承；
+  states 子卡带「已配置」圆点标记，清空后自动清理空对象。
+
+  > 两处容易踩坑、已在代码注释与测试中锁死的实现细节：
+  > 1. **面板必须挂进 `<dialog>`**。jscolor 默认把面板 append 到 `document.body`，
+  >    而按键对话框是原生 `<dialog>`（`showModal()` 进入顶层渲染），挂在 body 的
+  >    面板会被对话框及其 `::backdrop` 盖住 —— 现象就是"点色块没反应"。
+  >    因此安装时传 `container: <最近的祖先 dialog>`，并在 `show()` 后把
+  >    `.jscolor-wrap` 改成 `position: fixed` 贴到输入框下方
+  >    （f5a 的 `positionInlineColorPicker` 同款）。面板也因此随对话框销毁自动清理。
+  > 2. **十六进制字节序**。这份 vendor 版 jscolor 用的是"ARGB 友好"约定：
+  >    不透明为 `BBGGRR`（6 位、RGB 反序），带透明度为 `AABBGGRR`，
+  >    **不是**标准 CSS 的 `RRGGBBAA`。编辑器用 `FE.argbToPickerHex` /
+  >    `FE.pickerHexToArgb` 在 `#AARRGGBB` 与该约定间互转，
+  >    并有 ARGB↔picker 往返断言 + 真实库交叉验证兜底（写错会整片串色）。
+  >    另外 jscolor 构造时不会读输入框初值，安装后必须 `fromString()` 同步一次。
 - 高级：编辑原始 JSON；放置可"另存为按键定义"（keys 中复用）；位置移动（←→↑↓）。
 - **弹出菜单（独立折叠 section，与基本信息/手势/状态变体/颜色/高级同级，
   位于高级之后）**：点击键盘预览打开「编辑按键」框即有；展开后直接编辑此按键
@@ -192,7 +213,9 @@ foxy-editor/
 │   ├── default-profile.js 内置默认布局示例（由 layout-variant.json 生成）
 │   ├── examples-bundle.js 示例打包（布局 + 弹出菜单，由 tools/build-examples.js 生成）
 │   ├── app.js            状态、解析引擎、变体合并、校验器、分体支持、预览与编辑器 UI
-│   ├── key-dialog.js     按键/手势/动作/变体/选择器对话框
+│   ├── jscolor/jscolor.js jscolor 取色面板（与 f5a-see-me 同版本 vendor，GPLv3，
+│   │                     仅浏览器端 `<script>` 引入；见 jscolor.com）
+│   ├── key-dialog.js     按键/手势/动作/变体/选择器对话框（含 jscolor 颜色行封装）
 │   └── popup-editor.js   弹出菜单（popup profile）编辑标签页
 ├── examples/             示例源文件（布局 14 个 + 弹出菜单 3 个，含 split/cangjie/
 │                         思无邪系列/万象/二十六键/七列 等）
@@ -230,8 +253,10 @@ foxy-editor/
 ```
 node test/test-core.js    # 164 项：解析引擎 / 变体 / 行权重 / 网格 / 校验器 /
                           #         JSON 诊断与修复 / 分体片段 / 弹出菜单候选与校验
-node test/test-ui.js      # 263 项：boot / 渲染 / 布局与状态切换 / 对话框保存 / 撤销重做 /
+node test/test-ui.js      # 314 项：boot / 渲染 / 布局与状态切换 / 对话框保存 / 撤销重做 /
                           #         示例加载 / 问题提醒与一键修复 / 片段编辑器 / 导入流程 /
-                          #         宽松导入回归 / 分体生成与编辑（含横竖切换行高回归） /
+                          #         宽松导入回归 / 按键颜色 jscolor 取色（面板挂进 dialog、
+                          #         定位、惰性安装、ARGB↔picker 字节序往返、states/shadow GUI） /
+                          #         分体生成与编辑（含横竖切换行高回归） /
                           #         弹出菜单编辑与联动（含主对话框弹出菜单 section）
 ```

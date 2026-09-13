@@ -6,12 +6,15 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { documentStub, localStorageStub, buildSkeleton } = require('./dom-stub');
+const { documentStub, localStorageStub, buildSkeleton, JscolorStub,
+  __getLastJscolorOptions, __resetJscolorStub } = require('./dom-stub');
 
 buildSkeleton();
 global.window = global;
 global.document = documentStub;
 global.localStorage = localStorageStub;
+/* jscolor 测试桩：f5a-see-me 同款 `new window.jscolor(input, opts)` 构造语义 */
+global.jscolor = global.JscolorStub = JscolorStub;
 const _winListeners = {};
 global.addEventListener = (t, fn) => { (_winListeners[t] = _winListeners[t] || []).push(fn); };
 global.removeEventListener = () => {};
@@ -460,6 +463,134 @@ kdRaw.querySelectorAll('.dialog-toolbar .primary')[0].click(); /* 保存按键�
 eq(FE.state.profile.keys['qwerty.q'].label, '修复测试', '修复后的 JSON 写入 profile');
 $('op-undo').click();
 eq(FE.state.profile.keys['qwerty.q'].label, undefined, '撤销恢复按键定义');
+documentStub._openDialogs.length = 0;
+
+console.log('== 按键颜色 jscolor 取色（f5a-see-me 同款） ==');
+__resetJscolorStub();
+ok(typeof window.jscolor === 'function', '测试环境已挂载 jscolor 桩');
+/* 颜色工具：归一化与 ARGB↔picker 约定的互转。
+ * 注意 vendor 版 jscolor 的十六进制是"ARGB 友好"约定（见 jscolor.js hexaColor）：
+ *   不透明 → BBGGRR（RGB 反序，6 位）；带透明度 → AABBGGRR。
+ * 不是标准 CSS 的 RRGGBBAA —— 这里按真实约定断言，才能拦住"取色串色"。 */
+eq(FE.normalizeColorHex('#4caf50'), '#4CAF50', '6 位 hex 归一化大写');
+eq(FE.normalizeColorHex('#804caf50'), '#804CAF50', '8 位 hex 归一化大写');
+ok(FE.normalizeColorHex('oops') === null && FE.normalizeColorHex('') === null, '非法/空值归一化为 null');
+eq(FE.argbToPickerHex('#4CAF50'), '#FF50AF4C', 'ARGB→picker：不透明补 FF 且 RGB 反序（BBGGRR）');
+eq(FE.argbToPickerHex('#804CAF50'), '#8050AF4C', 'ARGB→picker：带 alpha 保持 alpha 在前、RGB 反序');
+eq(FE.argbToPickerHex(''), '', '空值不产出 picker 串');
+eq(FE.pickerHexToArgb('#50AF4C'), '#4CAF50', 'picker(6 位 BBGGRR)→ARGB：恢复 RGB 正序');
+eq(FE.pickerHexToArgb('#8050AF4C'), '#804CAF50', 'picker(AABBGGRR)→ARGB：恢复 alpha 与 RGB 正序');
+eq(FE.pickerHexToArgb('#FF50AF4C'), '#4CAF50', '不透明(alpha=FF)写回 6 位');
+ok(FE.pickerHexToArgb('nope') === null, '非法 picker 串返回 null');
+/* 往返一致（这才是取色面板与 layout 之间的真实契约） */
+['#4CAF50', '#804CAF50', '#000000', '#FFFFFF', '#00112233'].forEach(function (c) {
+  eq(FE.pickerHexToArgb(FE.argbToPickerHex(c)), c, 'ARGB↔picker 往返一致: ' + c);
+});
+documentStub._openDialogs.length = 0;
+FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+{
+  const kd = documentStub._openDialogs[0];
+  const colorInputs = kd.querySelectorAll('.color-input');
+  /* 4 基础角色 + shadow + 3 states × 3 角色 = 14 个 jscolor 输入框 */
+  eq(colorInputs.length, 14, '颜色区共 14 个 jscolor 输入框（4 基础 + shadow + 3×3 states）');
+  ok(colorInputs.every(i => i.getAttribute('data-jscolor') !== null), '全部颜色输入框带 data-jscolor');
+  ok(!!JscolorStub.instances && JscolorStub.instances.length === 14, '每个颜色输入框都安装了 jscolor 实例');
+  const o = __getLastJscolorOptions();
+  eq(o.format, 'hexa', 'jscolor 配置 format:hexa（f5a 同款）');
+  ok(o.alphaChannel === true, 'jscolor 开启 alphaChannel（f5a 同款）');
+  ok(o.valueElement == null, 'jscolor 不接管输入框值（f5a 同款 valueElement:null）');
+  /* ★ 面板容器必须是外层 <dialog>：jscolor 默认挂 document.body，而按键对话框是
+   *   原生 <dialog>（顶层渲染），挂 body 的面板会被对话框与其 ::backdrop 盖住，
+   *   现象就是"点色块没反应"。f5a-see-me 同样传 container: <该对话框>。 */
+  ok(o.container === kd, '取色面板容器指向外层 <dialog>（不是 body，否则被顶层遮挡）');
+  ok(o.container !== documentStub._body, '面板容器不是 document.body');
+  /* ★ 面板定位：dialog 容器内 jscolor 只做 relative 0,0，必须自己按输入框改 fixed */
+  const bgInput0 = colorInputs[1];
+  bgInput0.getBoundingClientRect = () => ({ left: 40, top: 100, right: 190, bottom: 124, width: 150, height: 24 });
+  bgInput0.jscolor.show();
+  const wrap = kd.querySelectorAll('.jscolor-wrap')[0];
+  ok(!!wrap, 'show() 后对话框内出现 .jscolor-wrap 面板');
+  ok(wrap.parentNode === kd, '取色面板挂在 <dialog> 内（可见），而不是 body');
+  ok(wrap.style.position === 'fixed', '面板改为 fixed 定位（f5a positionInlineColorPicker 同款）');
+  ok(wrap.style.left === '40px' && wrap.style.top === '128px', '面板贴在输入框正下方（' + wrap.style.left + ',' + wrap.style.top + '）');
+  ok(String(wrap.style.zIndex) === '100000', '面板 z-index 提高，压住对话框内容');
+  /* ★ 安装时机：元素未挂载时先挂起，进入 DOM 后补装（否则构造时查不到 <dialog>） */
+  const pend = documentStub.createElement('input');
+  pend.className = 'color-input';
+  FE.installJscolor(pend, {});
+  ok(!pend.jscolor, '未挂载的输入框暂不创建 jscolor 实例');
+  kd.appendChild(pend);
+  ok(FE.installPendingColorPickers(kd) >= 1 && !!pend.jscolor, 'installPendingColorPickers 在挂载后补装');
+  ok(pend.jscolor.opts.container === kd, '补装时容器同样指向 <dialog>');
+  ok(FE.installPendingColorPickers(kd) === 0, '重复补装不会重复创建实例');
+  /* ★ 惰性兜底：万一补装没跑到，首次点击也必须能弹出（pointerdown 早于
+   *   jscolor 的文档级 mousedown，所以第一下点击照样命中） */
+  const lazyInp = documentStub.createElement('input');
+  lazyInp.className = 'color-input';
+  FE.installJscolor(lazyInp, {});
+  ok(!lazyInp.jscolor, '惰性路径：安装时元素尚未挂载');
+  kd.appendChild(lazyInp);
+  lazyInp._fire('pointerdown');
+  ok(!!lazyInp.jscolor, '首次 pointerdown 惰性安装 jscolor（保证第一下点击就弹面板）');
+  ok(lazyInp.jscolor.opts.container === kd, '惰性安装同样挂进 <dialog>');
+  kd.removeChild(pend);
+  kd.removeChild(lazyInp);
+  /* jscolor onInput 实时回写：模拟面板拖动 → draft.colors 更新 */
+  const bgInput = colorInputs[1]; /* 背景 */
+  const bgPicker = bgInput.jscolor;
+  ok(!!bgPicker, '背景输入框有 jscolor 实例');
+  /* 面板里选纯红（不透明）→ 桩按约定返回 6 位 BBGGRR = 0000FF */
+  bgPicker.fromString('#0000FF');
+  eq(bgPicker.toHEXAString(), '0000FF', '桩按 vendor 约定输出不透明 BBGGRR');
+  bgPicker.opts.onInput();
+  eq(bgInput.value, '#FF0000', '面板取色回写输入框为 ARGB 正序（纯红）');
+  eq(FE.state.profile.keys['qwerty.q'].colors, undefined, '面板拖动只进 draft，保存前不动 profile');
+  /* 手输 change 同样归一化写 draft */
+  const textInput = colorInputs[0]; /* 文字 */
+  textInput.value = '#ff0000';
+  textInput._fire('change');
+  /* 保存 → profile */
+  kd.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  eq(FE.state.profile.keys['qwerty.q'].colors.background, '#FF0000', '面板选的背景色写入 profile（归一化，不透明省略 alpha）');
+  eq(FE.state.profile.keys['qwerty.q'].colors.text, '#FF0000', '手输的文字色归一化写入 profile');
+  /* 非法输入被回退 */
+  documentStub._openDialogs.length = 0;
+  FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+  const kd2 = documentStub._openDialogs[0];
+  const badInput = kd2.querySelectorAll('.color-input')[0];
+  const keepVal = badInput.value;
+  badInput.value = 'oops';
+  let alerted = null;
+  const realAlert = global.alert;
+  global.alert = (m) => { alerted = m; };
+  badInput._fire('change');
+  global.alert = realAlert;
+  ok(alerted && alerted.indexOf('颜色格式无效') >= 0, '非法颜色输入被提示');
+  ok(badInput.value === keepVal, '非法颜色输入被回退');
+  kd2.querySelectorAll('.dialog-toolbar')[0].querySelectorAll('button')[0].click(); /* 取消 */
+  $('op-undo').click();
+  eq(FE.state.profile.keys['qwerty.q'].colors, undefined, '撤销清除颜色覆盖');
+  /* states 子卡：badge + 清除 + shadow 回显 */
+  documentStub._openDialogs.length = 0;
+  FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q', colors: { shadow: '#40000000', states: { pressed: { background: '#2E7D32' } } } };
+  FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+  const kd3 = documentStub._openDialogs[0];
+  const advCard = kd3.querySelectorAll('.color-adv-card')[0];
+  ok(!!advCard, '存在高级颜色子卡');
+  eq(advCard.querySelectorAll('.color-state-card').length, 3, '高级区有 3 个 states 子卡');
+  const pressedCard = advCard.querySelectorAll('.color-state-card')[0];
+  ok(pressedCard.classList.contains('has-colors'), 'pressed 卡标已配置');
+  const shadowInputs = advCard.querySelectorAll('.form-row.form-inline').filter(r => r.textContent.indexOf('shadow') >= 0);
+  ok(shadowInputs.length >= 1, 'shadow 行存在');
+  pressedCard.open = true;
+  const bgInp3 = pressedCard.querySelectorAll('.form-row.form-inline').filter(r => r.querySelectorAll('.color-input').length === 1)[0].querySelectorAll('input')[0];
+  bgInp3.value = '';
+  bgInp3._fire('change');
+  kd3.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  eq(FE.state.profile.keys['qwerty.q'].colors.states, undefined, '清空 states 唯一角色后整体清理');
+  eq(FE.state.profile.keys['qwerty.q'].colors.shadow, '#40000000', '基础 shadow 保留');
+  FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q', keyType: 'LETTER', swipe: { up: { ref: 'rime.Q' }, down: { ref: 'rime.1' } } };
+}
 documentStub._openDialogs.length = 0;
 
 console.log('== 输入时自动检查（防抖） ==');

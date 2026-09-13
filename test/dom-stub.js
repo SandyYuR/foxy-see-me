@@ -30,6 +30,76 @@ function makeEvent(type, target) {
   };
 }
 
+/* jscolor 测试桩：模拟 f5a-see-me 所用 jscolor 实例的关键行为。
+ * - 构造后挂到 input.jscolor；重复安装抛错（与真实 jscolor 一致）；
+ * - 内部保存 RGBA 通道，并按 **本仓库 vendor 版的 hexaColor 约定** 输出：
+ *     不透明 → BBGGRR（6 位，RGB 反序）；带透明度 → AABBGGRR（alpha 在前）
+ *   这点与标准 CSS 的 RRGGBBAA 不同，是"取色串色"类 bug 的根源，
+ *   桩必须照抄，测试才能真正验证字节序；
+ * - show() 会把 .jscolor-wrap 挂进 opts.container（未指定则 document.body），
+ *   与真实 jscolor 的 `THIS.container.appendChild(p.wrap)` 行为一致 —— 用来
+ *   锁住"面板必须挂进 <dialog> 才看得见"这一修复点；
+ * - 记录构造时的 options，供断言 format/alphaChannel/valueElement/container。 */
+let _lastJscolorOptions = null;
+function _hx(n) { return ('0' + Math.max(0, Math.min(255, Math.round(n))).toString(16)).slice(-2).toUpperCase(); }
+class JscolorStub {
+  constructor(input, opts) {
+    this.input = input;
+    this.opts = opts || {};
+    if (input.jscolor) throw new Error('Color picker already installed on this element');
+    _lastJscolorOptions = this.opts;
+    /* 输入框里是 ARGB(#AARRGGBB) 或 #RRGGBB，取出通道 */
+    const m = String(input.value || '').trim().match(/^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
+    let r = 255, g = 255, b = 255, a = 1;
+    if (m) {
+      const hex = m[1].toUpperCase();
+      if (hex.length === 6) { r = parseInt(hex.slice(0, 2), 16); g = parseInt(hex.slice(2, 4), 16); b = parseInt(hex.slice(4, 6), 16); }
+      else { a = parseInt(hex.slice(0, 2), 16) / 255; r = parseInt(hex.slice(2, 4), 16); g = parseInt(hex.slice(4, 6), 16); b = parseInt(hex.slice(6, 8), 16); }
+    }
+    this.channels = { r, g, b, a };
+    this.wrap = null;
+    input.jscolor = this;
+    (JscolorStub.instances = JscolorStub.instances || []).push(this);
+  }
+  /* 按 vendor 版 parseColorString：6 位 = BBGGRR，8 位 = AABBGGRR */
+  fromString(s) {
+    const m = String(s || '').trim().match(/^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
+    if (!m) return false;
+    const hex = m[1].toUpperCase();
+    if (hex.length === 6) {
+      this.channels = { b: parseInt(hex.slice(0, 2), 16), g: parseInt(hex.slice(2, 4), 16), r: parseInt(hex.slice(4, 6), 16), a: 1 };
+    } else {
+      this.channels = {
+        a: parseInt(hex.slice(0, 2), 16) / 255,
+        b: parseInt(hex.slice(2, 4), 16),
+        g: parseInt(hex.slice(4, 6), 16),
+        r: parseInt(hex.slice(6, 8), 16)
+      };
+    }
+    return true;
+  }
+  /* 按 vendor 版 hexaColor：a==1 → BBGGRR，否则 AABBGGRR */
+  toHEXAString() {
+    const c = this.channels;
+    if (c.a === 1) return _hx(c.b) + _hx(c.g) + _hx(c.r);
+    return _hx(c.a * 255) + _hx(c.b) + _hx(c.g) + _hx(c.r);
+  }
+  /* 按 hexColor：正常 RRGGBB */
+  toHEXString() { const c = this.channels; return _hx(c.r) + _hx(c.g) + _hx(c.b); }
+  show() {
+    JscolorStub.shown = (JscolorStub.shown || 0) + 1;
+    JscolorStub.lastShown = this;
+    if (!this.wrap) {
+      this.wrap = new DOMNode('div');
+      this.wrap.className = 'jscolor-wrap';
+    }
+    /* 真实 jscolor：wrap 会被移入当前 owner 的 container */
+    const container = this.opts.container || documentStub.body;
+    if (container) container.appendChild(this.wrap);
+  }
+  hide() { JscolorStub.hidden = (JscolorStub.hidden || 0) + 1; }
+}
+
 class DOMNode {
   constructor(tag) {
     this.nodeType = 1;
@@ -298,6 +368,9 @@ function buildSkeleton() {
   const body = el('body');
   documentStub._body = body;
   documentStub.children = [body];
+  /* 与真实 DOM 一致：body 的父节点是 document（nodeType 9）。
+   * 编辑器用它判断"元素是否已挂载到文档"（决定 jscolor 何时安装）。 */
+  body.parentNode = documentStub;
 
   const main = el('main');
 
@@ -421,4 +494,6 @@ function buildSkeleton() {
   return body;
 }
 
-module.exports = { DOMNode, TextNode, el, documentStub, localStorageStub, buildSkeleton, makeEvent };
+module.exports = { DOMNode, TextNode, el, documentStub, localStorageStub, buildSkeleton, makeEvent, JscolorStub,
+  __getLastJscolorOptions: () => _lastJscolorOptions,
+  __resetJscolorStub: () => { _lastJscolorOptions = null; JscolorStub.instances = []; JscolorStub.shown = 0; JscolorStub.hidden = 0; } };

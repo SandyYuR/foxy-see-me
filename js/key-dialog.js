@@ -33,6 +33,260 @@ function openModal(opts) {
 FE.openModal = openModal;
 
 /* ================================================================
+ * jscolor 颜色选择器（与 f5a-see-me 相同的交互）
+ * - 点击输入框就地弹出 jscolor 面板：HSV 取色区 + 透明度滑杆 + ✓ 关闭，
+ *   支持 #RRGGBB / #AARRGGBB（format hexa + alphaChannel）。
+ * - 关键点（否则"点了没反应"）：
+ *   1) 面板必须挂进最近的 <dialog>。jscolor 默认挂 document.body，而按键
+ *      对话框是原生 <dialog>（showModal 进入顶层渲染），body 里的面板会被
+ *      对话框及其 ::backdrop 盖住 —— 看起来就是"点了不弹"。
+ *      f5a-see-me 同样传 container: el("layout-key-colors-dialog")。
+ *   2) 面板在 dialog 内时 jscolor 只做 relative 0,0 摆位，需要自己按输入框
+ *      位置改成 position:fixed（f5a 的 positionInlineColorPicker 同款）。
+ *   3) 必须等输入框进入 DOM 后再 new jscolor：construct 需要能查到 <dialog>
+ *      容器。本函数在元素未挂载时改为首次交互（pointerdown/mousedown/focus）
+ *      惰性安装；pointerdown 早于 jscolor 的文档级 mousedown，所以第一次点击
+ *      依然能弹出面板。也可由 FE.installPendingColorPickers 在挂载后主动安装。
+ * opts: { onInput(hexOrNull), onDone(hexOrNull) }
+ * 返回 { el, syncFromValue(v), destroy() }。
+ * ================================================================ */
+FE.COLOR_HEX_RE = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+FE.normalizeColorHex = function (v) {
+  /* '#rrggbb' → 原样大写；'#aarrggbb' 同样；其余（空/非法）→ null */
+  if (typeof v !== 'string') return null;
+  var t = v.trim();
+  if (t === '') return null;
+  if (!FE.COLOR_HEX_RE.test(t)) return null;
+  return '#' + t.slice(1).toUpperCase();
+};
+/* 本仓库 vendor 的 jscolor 被 f5a 改成"ARGB 友好"的十六进制约定（见 jscolor.js
+ * 的 hexaColor / parseColorString）：
+ *   - 不透明：BBGGRR（RGB 反序，6 位）
+ *   - 带透明度：AABB GGRR（alpha 在前 + RGB 反序，8 位）
+ * 这与标准 CSS 的 RRGGBBAA 不同 —— 按标准转换会让取出的颜色串色。
+ * f5a-see-me 的 argbHexToRgbaHex / rgbaHexToArgbHex 就是为此而写，
+ * 下面两个函数在本编辑器的 ARGB(#AARRGGBB) 与该约定之间互转。 */
+FE.argbToPickerHex = function (argb) {
+  var n = FE.normalizeColorHex(argb);
+  if (n == null) return '';
+  var hex = n.slice(1);
+  var a, r, g, b;
+  if (hex.length === 6) { a = 'FF'; r = hex.slice(0, 2); g = hex.slice(2, 4); b = hex.slice(4, 6); }
+  else { a = hex.slice(0, 2); r = hex.slice(2, 4); g = hex.slice(4, 6); b = hex.slice(6, 8); }
+  return '#' + a + b + g + r;
+};
+FE.pickerHexToArgb = function (pickerHex) {
+  if (typeof pickerHex !== 'string') return null;
+  var m = pickerHex.trim().match(/^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
+  if (!m) return null;
+  var hex = m[1].toUpperCase();
+  var a, r, g, b;
+  if (hex.length === 6) { a = 'FF'; b = hex.slice(0, 2); g = hex.slice(2, 4); r = hex.slice(4, 6); }
+  else { a = hex.slice(0, 2); b = hex.slice(2, 4); g = hex.slice(4, 6); r = hex.slice(6, 8); }
+  if (a === 'FF') return '#' + r + g + b;
+  return '#' + a + r + g + b;
+};
+
+/* 最近的祖先 <dialog>：取色面板要挂进它才能显示在对话框之上 */
+function nearestDialog(el) {
+  var n = el ? el.parentNode : null;
+  while (n && n.nodeType === 1) {
+    if (String(n.tagName || '').toLowerCase() === 'dialog') return n;
+    n = n.parentNode;
+  }
+  return null;
+}
+function isAttached(el) {
+  var n = el;
+  while (n) {
+    if (n.nodeType === 9) return true;   /* document */
+    n = n.parentNode;
+  }
+  return false;
+}
+/* 把 jscolor 面板摆到输入框正下方（视口内；下方放不下则翻到上方） */
+var activeColorInput = null;   /* 当前弹出面板的输入框,供窗口缩放时重新摆位 */
+var colorResizeBound = false;
+function positionColorWrap(input) {
+  if (!input) return;
+  var container = nearestDialog(input) || document.body;
+  if (!container || typeof container.querySelector !== 'function') return;
+  var wrap = container.querySelector('.jscolor-wrap');
+  if (!wrap || !wrap.style) return;
+  var r = typeof input.getBoundingClientRect === 'function' ? input.getBoundingClientRect() : null;
+  if (!r) return;
+  var top = r.bottom + 4;
+  var vh = window.innerHeight || 0;
+  var ph = wrap.offsetHeight || 0;
+  if (vh && ph && top + ph > vh - 8 && r.top - ph - 4 > 0) top = r.top - ph - 4;
+  wrap.style.position = 'fixed';
+  wrap.style.left = Math.round(r.left) + 'px';
+  wrap.style.top = Math.round(top) + 'px';
+  wrap.style.zIndex = '100000';
+}
+function bindColorReposition() {
+  if (colorResizeBound) return;
+  colorResizeBound = true;
+  if (typeof window.addEventListener !== 'function') return;
+  /* jscolor 自己在 resize/scroll 时会 redrawPosition；容器不是 body 时它会把
+   * 面板摆成 relative 0,0（对话框左上角）。我们在它之后注册，覆盖回输入框下方。 */
+  var reflow = function () {
+    if (activeColorInput && activeColorInput.jscolor) positionColorWrap(activeColorInput);
+  };
+  window.addEventListener('resize', reflow);
+  window.addEventListener('scroll', reflow);
+}
+
+FE.installJscolor = function (input, opts) {
+  opts = opts || {};
+  input._foxyColorOpts = opts;   /* 供 FE.installPendingColorPickers 挂载后补装 */
+  function emitInput(v) { if (typeof opts.onInput === 'function') opts.onInput(v); }
+  function emitDone(v) { if (typeof opts.onDone === 'function') opts.onDone(v); }
+
+  function syncPickerFromInput() {
+    /* 手输后把值同步进 picker（f5a 的 syncInlinePickerFromArgbInput 同款） */
+    var p = input.jscolor;
+    if (!p) return;
+    var pickerHex = FE.argbToPickerHex(input.value);
+    if (!pickerHex) return;
+    try { p.fromString(pickerHex); } catch (e) { /* 忽略 */ }
+  }
+  function syncInputFromPicker() {
+    /* 面板拖动后把值写回输入框（f5a 的 syncArgbInputFromInlinePicker 同款） */
+    var p = input.jscolor;
+    if (!p) return;
+    var raw = null;
+    try { raw = (typeof p.toHEXAString === 'function' ? p.toHEXAString() : p.toHEXString()); } catch (e) { return; }
+    var argb = FE.pickerHexToArgb(raw);
+    if (argb) input.value = argb;
+  }
+
+  var api = {
+    el: input,
+    syncFromValue: function (v) {
+      var n = FE.normalizeColorHex(v);
+      input.value = n || '';
+      syncPickerFromInput();
+    },
+    destroy: function () {
+      try { if (input.jscolor && typeof input.jscolor.hide === 'function') input.jscolor.hide(); } catch (e) { /* 忽略 */ }
+    }
+  };
+
+  /* 真正创建实例：必须在元素已进入 DOM 之后调用（要能查到祖先 <dialog>） */
+  function ensurePicker() {
+    if (input.jscolor) return input.jscolor;
+    if (!window.jscolor) return null;    /* 降级：纯文本输入 */
+    /* jscolor 的面板 CSS 与"点目标即弹出"的文档级 mousedown 监听都在 init()
+     * 里注册（正常由 DOMContentLoaded 触发）。这里幂等补一次，确保脚本加载
+     * 时机异常（如 DOMContentLoaded 已过）时点击依然能弹出面板。 */
+    if (typeof window.jscolor.init === 'function' && document.readyState !== 'loading') {
+      try { window.jscolor.init(); } catch (e) { /* 忽略 */ }
+    }
+    var picker = null;
+    try {
+      picker = new window.jscolor(input, {
+        hash: true,
+        closeButton: true,
+        closeText: '✓',
+        showOnClick: true,
+        format: 'hexa',
+        alphaChannel: true,
+        valueElement: null,
+        /* 挂进对话框（顶层），否则会被 dialog 与 ::backdrop 盖住 */
+        container: nearestDialog(input) || undefined,
+        onInput: function () {
+          syncInputFromPicker();
+          activeColorInput = input;
+          positionColorWrap(input);
+          emitInput(FE.normalizeColorHex(input.value));
+        }
+      });
+    } catch (e) {
+      if (window.console && typeof window.console.warn === 'function') {
+        console.warn('[foxy-editor] jscolor 初始化失败，颜色框降级为文本输入：', e);
+      }
+      return null;
+    }
+    /* show 之后按输入框位置摆好面板（dialog 容器内 jscolor 只做 relative 0,0） */
+    var origShow = picker.show.bind(picker);
+    picker.show = function () {
+      var r = origShow();
+      activeColorInput = input;
+      positionColorWrap(input);
+      return r;
+    };
+    /* 关闭时补一次 Done 回调（实时值已由 onInput 发出） */
+    var origHide = picker.hide.bind(picker);
+    picker.hide = function () {
+      var r = origHide();
+      if (activeColorInput === input) activeColorInput = null;
+      emitDone(FE.normalizeColorHex(input.value));
+      return r;
+    };
+    bindColorReposition();
+    syncPickerFromInput();
+    return picker;
+  }
+
+  if (isAttached(input)) {
+    ensurePicker();
+  } else {
+    /* 未挂载：首次交互时惰性安装。pointerdown/touchstart 都早于 jscolor 的
+     * 文档级 mousedown 监听，所以这一次点击照样能弹出面板。 */
+    var lazy = function () { ensurePicker(); };
+    input.addEventListener('pointerdown', lazy);
+    input.addEventListener('mousedown', lazy);
+    input.addEventListener('touchstart', lazy, { passive: true });
+    input.addEventListener('focus', lazy);
+  }
+
+  /* 手输 change：归一化并回写 draft；非法则提示并回退 */
+  input.addEventListener('change', function () {
+    var raw = input.value.trim();
+    if (raw === '') { emitInput(null); emitDone(null); return; }
+    var n = FE.normalizeColorHex(raw);
+    if (n == null) {
+      alert('颜色格式无效，应为 #RRGGBB 或 #AARRGGBB');
+      return;
+    }
+    input.value = n;
+    syncPickerFromInput();
+    emitInput(n);
+    emitDone(n);
+  });
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+  });
+  return api;
+};
+
+/* 关掉当前弹出的取色面板（表单重建 / 对话框关闭前调用，避免留下悬空面板） */
+FE.closeActiveColorPicker = function () {
+  var inp = activeColorInput;
+  activeColorInput = null;
+  if (inp && inp.jscolor && typeof inp.jscolor.hide === 'function') {
+    try { inp.jscolor.hide(); } catch (e) { /* 忽略 */ }
+  }
+};
+
+/* 挂载后补装：buildForm 末尾调用一次，让输入框一进入 DOM 就装好 jscolor
+ * （这样 jscolor 自己的文档级 mousedown 也能直接命中，不依赖惰性兜底）。 */
+FE.installPendingColorPickers = function (root) {
+  if (!root || typeof root.querySelectorAll !== 'function') return 0;
+  var inputs = root.querySelectorAll('.color-input');
+  var n = 0;
+  for (var i = 0; i < inputs.length; i++) {
+    var inp = inputs[i];
+    if (inp.jscolor || !inp._foxyColorOpts) continue;
+    if (!isAttached(inp)) continue;
+    FE.installJscolor(inp, inp._foxyColorOpts);
+    n++;
+  }
+  return n;
+};
+
+/* ================================================================
  * 按键选择器
  * ================================================================ */
 FE.openKeyPicker = function (opts) {
@@ -582,6 +836,7 @@ FE.openKeyDialog = function (opts) {
 
   /* ---------- 表单构建 ---------- */
   function buildForm() {
+    FE.closeActiveColorPicker();   /* 重建前收起取色面板，避免留下悬空面板 */
     clearEl(formHost);
 
     /* 基本信息 */
@@ -844,26 +1099,167 @@ FE.openKeyDialog = function (opts) {
     vcard.appendChild(vb);
     formHost.appendChild(vcard);
 
-    /* 颜色 */
+    /* 颜色：4 个常用角色 + shadow + states，全部用 jscolor 点选（f5a-see-me 同款） */
     var ccard = h('details', { class: 'card inner-card' });
     ccard.appendChild(h('summary', null, '按键颜色覆盖（可选）'));
     var cb = h('div', { class: 'inner-card-body' });
+    var draftColors = function () {
+      if (!FE.isPlainObject(draft.colors)) draft.colors = {};
+      return draft.colors;
+    };
+    function cleanupColors() {
+      /* 清理空的 states 子对象与空的 colors，避免残留 {} */
+      var c = draft.colors;
+      if (!FE.isPlainObject(c)) return;
+      if (FE.isPlainObject(c.states)) {
+        Object.keys(c.states).forEach(function (k) {
+          if (!FE.isPlainObject(c.states[k]) || !Object.keys(c.states[k]).length) delete c.states[k];
+        });
+        if (!Object.keys(c.states).length) delete c.states;
+      }
+      if (!Object.keys(c).length) delete draft.colors;
+    }
+    /* 单个颜色行：jscolor 输入框 + 「清除」按钮。
+     * get/set 用于读写 draft 中对应位置的值（支持 states.xxx.role 嵌套）。 */
+    function colorRow(label, get, set) {
+      var cur = get();
+      var inp = h('input', {
+        type: 'text', class: 'mini-input color-input', spellcheck: 'false',
+        value: cur != null ? String(cur) : '', placeholder: '点击取色 / #RRGGBB 或 #AARRGGBB',
+        'data-jscolor': '{}'
+      });
+      var committed = cur != null ? String(cur) : '';
+      FE.installJscolor(inp, {
+        onInput: function (nv) {
+          /* jscolor 面板拖动实时回调：先写 draft，非法（null）则不动 */
+          if (nv == null) return;
+          committed = nv;
+          set(nv);
+        },
+        onDone: function (nv) {
+          if (nv == null) return;
+          committed = nv;
+          set(nv);
+        }
+      });
+      inp.addEventListener('change', function () {
+        var raw = inp.value.trim();
+        if (raw === '') { committed = ''; set(null); cleanupColors(); return; }
+        var n = FE.normalizeColorHex(raw);
+        if (n == null) {
+          /* 非法格式：提示并回退到上次提交值（installJscolor 内已 alert，这里只回退） */
+          inp.value = committed;
+          return;
+        }
+        committed = n;
+        inp.value = n;
+        set(n);
+      });
+      var clearBtn = h('button', {
+        type: 'button', class: 'mini-button',
+        title: '清除此颜色（恢复继承）',
+        onclick: function () {
+          committed = '';
+          inp.value = '';
+          try { if (inp.jscolor && typeof inp.jscolor.hide === 'function') inp.jscolor.hide(); } catch (e) { /* 忽略 */ }
+          set(null);
+          cleanupColors();
+          refreshStateBadges();
+        }
+      }, '清除');
+      return h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, label), inp, clearBtn);
+    }
+    function roleGetSet(role) {
+      return [
+        function () { return FE.isPlainObject(draft.colors) ? draft.colors[role] : null; },
+        function (nv) {
+          if (nv == null) {
+            if (FE.isPlainObject(draft.colors)) {
+              delete draft.colors[role];
+              cleanupColors();
+            }
+          } else draftColors()[role] = nv;
+        }
+      ];
+    }
+    function stateGetSet(st, role) {
+      return [
+        function () {
+          return (FE.isPlainObject(draft.colors) && FE.isPlainObject(draft.colors.states) &&
+            FE.isPlainObject(draft.colors.states[st])) ? draft.colors.states[st][role] : null;
+        },
+        function (nv) {
+          if (nv == null) {
+            if (FE.isPlainObject(draft.colors) && FE.isPlainObject(draft.colors.states) &&
+              FE.isPlainObject(draft.colors.states[st])) {
+              delete draft.colors.states[st][role];
+              cleanupColors();
+            }
+          } else {
+            var c = draftColors();
+            if (!FE.isPlainObject(c.states)) c.states = {};
+            if (!FE.isPlainObject(c.states[st])) c.states[st] = {};
+            c.states[st][role] = nv;
+          }
+        }
+      ];
+    }
+    var stateBadges = [];
+    function refreshStateBadges() {
+      /* 更新 states 子卡的「已配置」标记（不重建行，面板不闪断） */
+      stateBadges.forEach(function (b) {
+        var has = FE.isPlainObject(draft.colors) && FE.isPlainObject(draft.colors.states) &&
+          FE.isPlainObject(draft.colors.states[b.st]) && Object.keys(draft.colors.states[b.st]).length > 0;
+        b.card.classList.toggle('has-colors', has);
+        var sum = b.card.querySelectorAll('summary')[0];
+        if (sum) {
+          sum.textContent = '';
+          sum.appendChild(h('span', { class: 'color-state-dot' }));
+          sum.appendChild(document.createTextNode(b.title + (has ? '（已配置）' : '')));
+        }
+      });
+    }
     var colorRoles = [['text', '文字'], ['background', '背景'], ['border', '边框'], ['hint', '提示文字']];
     var cbox = h('div', { class: 'form-grid-2' });
     colorRoles.forEach(function (cr) {
-      var cur = FE.isPlainObject(draft.colors) ? draft.colors[cr[0]] : null;
-      var inp = h('input', { type: 'text', class: 'mini-input', value: cur != null ? String(cur) : '', placeholder: '#RRGGBB 或 #AARRGGBB' });
-      inp.addEventListener('change', function () {
-        if (!FE.isPlainObject(draft.colors)) draft.colors = {};
-        if (inp.value.trim() === '') {
-          delete draft.colors[cr[0]];
-          if (!Object.keys(draft.colors).length) delete draft.colors;
-        } else draft.colors[cr[0]] = inp.value.trim();
-      });
-      cbox.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, cr[1]), inp));
+      var gs = roleGetSet(cr[0]);
+      cbox.appendChild(colorRow(cr[1], gs[0], gs[1]));
     });
     cb.appendChild(cbox);
-    cb.appendChild(h('div', { class: 'status' }, '高级颜色（states、shadow 等）请使用“原始 JSON”。'));
+    /* 高级颜色：shadow + states（pressed / modifierActive / modifierLocked），同卡内子卡点选 */
+    var cadv = h('details', { class: 'card inner-card color-adv-card' });
+    cadv.appendChild(h('summary', null, '高级颜色（shadow、按下/修饰状态）'));
+    var cadvBody = h('div', { class: 'inner-card-body' });
+    var sgs = roleGetSet('shadow');
+    cadvBody.appendChild(colorRow('阴影 shadow', sgs[0], sgs[1]));
+    cadvBody.appendChild(h('div', { class: 'status' }, 'shadow 为按键阴影色（通常用半透明色，如 #40000000）。'));
+    var STATES = [
+      ['pressed', '按下 pressed', '手指按住按键时；优先级最高'],
+      ['modifierLocked', '修饰锁定 modifierLocked', 'Shift 等修饰键处于锁定态时'],
+      ['modifierActive', '修饰激活 modifierActive', 'Shift 等修饰键处于激活（单次）态时；优先级最低']
+    ];
+    STATES.forEach(function (sd) {
+      var so = FE.isPlainObject(draft.colors) && FE.isPlainObject(draft.colors.states) &&
+        FE.isPlainObject(draft.colors.states[sd[0]]) ? draft.colors.states[sd[0]] : null;
+      var card = h('details', { class: 'card inner-card color-state-card' + (so ? ' has-colors' : '') });
+      card.appendChild(h('summary', null,
+        h('span', { class: 'color-state-dot' }),
+        sd[1] + (so ? '（已配置）' : '')));
+      var body = h('div', { class: 'inner-card-body' });
+      body.appendChild(h('div', { class: 'status' }, sd[2] + '。状态配色优先于上方基础角色。'));
+      var grid = h('div', { class: 'form-grid-2' });
+      [['background', '背景'], ['text', '文字'], ['shadow', '阴影']].forEach(function (rr) {
+        var gs2 = stateGetSet(sd[0], rr[0]);
+        grid.appendChild(colorRow(rr[1], gs2[0], gs2[1]));
+      });
+      body.appendChild(grid);
+      card.appendChild(body);
+      stateBadges.push({ st: sd[0], title: sd[1], card: card });
+      cadvBody.appendChild(card);
+    });
+    cadv.appendChild(cadvBody);
+    cb.appendChild(cadv);
+    cb.appendChild(h('div', { class: 'status' }, '点击输入框弹出 jscolor 取色面板（HSV 取色区 + 透明度滑杆），也可直接输入 #RRGGBB / #AARRGGBB；留空即恢复继承。'));
     ccard.appendChild(cb);
     formHost.appendChild(ccard);
 
@@ -1013,6 +1409,10 @@ FE.openKeyDialog = function (opts) {
         }, '到弹出菜单页编辑 →')));
     }
     refreshPopupSection();
+    /* 表单已挂进 <dialog>：给所有颜色输入框补装 jscolor。
+     * 颜色行是在 row 尚未 append 时创建的，而 jscolor 构造需要能查到祖先
+     * <dialog>（面板要挂进对话框顶层，否则被 dialog/::backdrop 盖住看不见）。 */
+    FE.installPendingColorPickers(formHost);
   }
   buildForm();
 
