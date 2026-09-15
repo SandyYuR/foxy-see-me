@@ -187,6 +187,8 @@ FE.APP_COMMANDS = [
   ['floating_keyboard', '浮动键盘'], ['floating', '浮动键盘（别名）'],
   ['one_handed', '单手键盘'], ['one_handed_keyboard', '单手键盘（别名）'],
   ['keyboard_adjust_start', '开始键盘高度调整'], ['keyboard_adjust_end', '结束键盘高度调整'],
+  ['split_adjust_start', '分体键盘调整'], ['candidate_previous', '候选上一页'], ['candidate_next', '候选下一页'],
+  ['select_schema', '选择方案（需参数）'], ['select_switch_option', '选择开关项（需参数）'],
   ['undo', '撤销'], ['redo', '重做'],
   ['hide_keyboard', '收起键盘'],
   ['collapse_toolbar', '折叠工具栏'], ['expand_toolbar', '展开工具栏'],

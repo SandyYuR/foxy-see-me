@@ -246,6 +246,35 @@ kd.querySelectorAll('.dialog-toolbar .primary')[0].click(); /* 按键保存 */
 eq(FE.state.profile.keys['qwerty.q'].swipe.up.label, '大Q', 'swipe.up.label 写入 profile');
 eq(FE.state.profile.keys['qwerty.q'].swipe.up.ref, 'rime.Q', 'swipe.up.ref 保留');
 ok(q('.kb-hint-up', q('.kb-key')[0])[0].textContent === '大Q', '预览上滑提示实时更新');
+/* 提示字号编辑：统一值 → hintTextSize 数字；按方向 → 对象；清除 → null */
+documentStub._openDialogs.length = 0;
+FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q', keyType: 'LETTER', swipe: { up: { ref: 'rime.Q' }, down: { ref: 'rime.1' } } };
+FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+const kdHts = documentStub._openDialogs[0];
+const htsRow = kdHts.querySelectorAll('.form-row.form-inline').filter(function (r) { return r.textContent.indexOf('提示大小') >= 0; })[0];
+ok(!!htsRow, '存在「提示大小」统一值输入行');
+const htsInp = htsRow.querySelectorAll('input')[0];
+htsInp.value = '13';
+htsInp._fire('change');
+const htsUpInp = kdHts.querySelectorAll('.hts-dir-grid input')[0]; /* 上 */
+htsUpInp.value = '9';
+htsUpInp._fire('change');
+ok(FE.state.profile.keys['qwerty.q'].hintTextSize === undefined, '面板修改只进 draft，保存前不动 profile');
+kdHts.querySelectorAll('.dialog-toolbar .primary')[0].click();
+/* 方向输入把统一值转为对象：up 覆盖为 9，其余方向保留统一值 13 */
+eq(FE.state.profile.keys['qwerty.q'].hintTextSize.up, 9, '方向字号覆盖 up');
+eq(FE.state.profile.keys['qwerty.q'].hintTextSize.down, 13, '其余方向保留统一值');
+documentStub._openDialogs.length = 0;
+FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+const kdHts2 = documentStub._openDialogs[0];
+const htsClear2 = kdHts2.querySelectorAll('.form-row.form-inline').filter(function (r) { return r.textContent.indexOf('提示大小') >= 0; })[0].querySelectorAll('button')[0];
+htsClear2.click();
+kdHts2.querySelectorAll('.dialog-toolbar .primary')[0].click();
+ok(FE.state.profile.keys['qwerty.q'].hintTextSize === null, '「清除」写入显式 null（显式清除继承）');
+FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q', keyType: 'LETTER', swipe: { up: { ref: 'rime.Q' }, down: { ref: 'rime.1' } } };
+documentStub._openDialogs.length = 0;
+$('op-undo').click();
+eq(FE.state.profile.keys['qwerty.q'].swipe.up.label, undefined, '撤销手势修改');
 $('op-undo').click();
 eq(FE.state.profile.keys['qwerty.q'].swipe.up.label, undefined, '撤销手势修改');
 documentStub._openDialogs.length = 0;
@@ -491,10 +520,10 @@ FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
 {
   const kd = documentStub._openDialogs[0];
   const colorInputs = kd.querySelectorAll('.color-input');
-  /* 4 基础角色 + shadow + 3 states × 3 角色 = 14 个 jscolor 输入框 */
-  eq(colorInputs.length, 14, '颜色区共 14 个 jscolor 输入框（4 基础 + shadow + 3×3 states）');
+  /* 4 基础角色 + shadow + pressed + hint 四边 + 3 states × 3 角色 = 19 个 jscolor 输入框 */
+  eq(colorInputs.length, 19, '颜色区共 19 个 jscolor 输入框（4 基础 + shadow + pressed + hint 四边 + 3×3 states）');
   ok(colorInputs.every(i => i.getAttribute('data-jscolor') !== null), '全部颜色输入框带 data-jscolor');
-  ok(!!JscolorStub.instances && JscolorStub.instances.length === 14, '每个颜色输入框都安装了 jscolor 实例');
+  ok(!!JscolorStub.instances && JscolorStub.instances.length === 19, '每个颜色输入框都安装了 jscolor 实例');
   const o = __getLastJscolorOptions();
   eq(o.format, 'hexa', 'jscolor 配置 format:hexa（f5a 同款）');
   ok(o.alphaChannel === true, 'jscolor 开启 alphaChannel（f5a 同款）');
@@ -589,6 +618,18 @@ FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
   kd3.querySelectorAll('.dialog-toolbar .primary')[0].click();
   eq(FE.state.profile.keys['qwerty.q'].colors.states, undefined, '清空 states 唯一角色后整体清理');
   eq(FE.state.profile.keys['qwerty.q'].colors.shadow, '#40000000', '基础 shadow 保留');
+  /* hint 四边角色：写入 draft 并保存到 profile */
+  documentStub._openDialogs.length = 0;
+  FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+  const kd4 = documentStub._openDialogs[0];
+  const advCard4 = kd4.querySelectorAll('.color-adv-card')[0];
+  const hintInputs = advCard4.querySelectorAll('.form-row.form-inline').filter(r => r.textContent.indexOf('hintTop') >= 0 || r.textContent.indexOf('hintBottom') >= 0 || r.textContent.indexOf('hintLeft') >= 0 || r.textContent.indexOf('hintRight') >= 0);
+  ok(hintInputs.length === 4, 'hint 四边角色行存在（hintTop/hintBottom/hintLeft/hintRight）');
+  const topInp = hintInputs.filter(r => r.textContent.indexOf('hintTop') >= 0)[0].querySelectorAll('input')[0];
+  topInp.value = '#FFFF00';
+  topInp._fire('change');
+  kd4.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  eq(FE.state.profile.keys['qwerty.q'].colors.hintTop, '#FFFF00', 'hintTop 颜色写入 profile');
   FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q', keyType: 'LETTER', swipe: { up: { ref: 'rime.Q' }, down: { ref: 'rime.1' } } };
 }
 documentStub._openDialogs.length = 0;

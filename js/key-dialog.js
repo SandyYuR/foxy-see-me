@@ -930,6 +930,50 @@ FE.openKeyDialog = function (opts) {
       if (tsInp.value === '') delete draft.textSize;
       else draft.textSize = parseInt(tsInp.value, 10);
     });
+    /* 提示文字大小：统一值（数字）或按方向对象 {up,down,left,right}；「清除」写显式 null。
+     * 语义：方向输入把数字转为对象时，其余方向保留原统一值；统一值输入则整体覆盖并清空方向框。 */
+    var htsDirs = {};
+    var htsInp = h('input', { type: 'number', step: '1', min: '1', class: 'mini-input', value: typeof draft.hintTextSize === 'number' ? String(draft.hintTextSize) : '', placeholder: 'sp，留空继承' });
+    ['up', 'down', 'left', 'right'].forEach(function (d) {
+      var dv = FE.isPlainObject(draft.hintTextSize) ? draft.hintTextSize[d] : undefined;
+      var di = h('input', { type: 'number', step: '1', min: '1', class: 'mini-input', value: typeof dv === 'number' ? String(dv) : '', placeholder: 'sp', title: '该方向滑动提示字号（sp）' });
+      htsDirs[d] = di;
+      di.addEventListener('change', function () {
+        if (di.value === '') {
+          if (!FE.isPlainObject(draft.hintTextSize)) return;
+          delete draft.hintTextSize[d];
+          if (!Object.keys(draft.hintTextSize).length) delete draft.hintTextSize;
+        } else {
+          var prev = (typeof draft.hintTextSize === 'number') ? draft.hintTextSize : null;
+          if (!FE.isPlainObject(draft.hintTextSize)) {
+            delete draft.hintTextSize;
+            draft.hintTextSize = {};
+            htsInp.value = '';
+            if (prev != null) {
+              ['up', 'down', 'left', 'right'].forEach(function (od) {
+                if (od !== d) draft.hintTextSize[od] = prev;
+              });
+            }
+          }
+          draft.hintTextSize[d] = parseInt(di.value, 10);
+        }
+      });
+    });
+    var htsClear = h('button', { type: 'button', class: 'mini-button', title: '显式清除（null）：移除继承的提示字号', onclick: function () {
+      draft.hintTextSize = null;
+      htsInp.value = '';
+      ['up', 'down', 'left', 'right'].forEach(function (d) { htsDirs[d].value = ''; });
+    } }, '清除');
+    htsInp.addEventListener('change', function () {
+      if (htsInp.value === '') {
+        if (draft.hintTextSize == null || typeof draft.hintTextSize === 'number') delete draft.hintTextSize;
+      } else {
+        var nv = parseInt(htsInp.value, 10);
+        delete draft.hintTextSize;
+        draft.hintTextSize = nv;
+        ['up', 'down', 'left', 'right'].forEach(function (d) { htsDirs[d].value = ''; });
+      }
+    });
     var idInp = h('input', { type: 'text', class: 'mini-input', value: draft.id != null ? String(draft.id) : '', placeholder: '如 space（留空继承）' });
     idInp.addEventListener('change', function () {
       if (idInp.value === '') delete draft.id;
@@ -938,6 +982,13 @@ FE.openKeyDialog = function (opts) {
     b.appendChild(h('div', { class: 'form-grid-2' },
       h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '文字大小'), tsInp),
       h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, 'ID'), idInp)));
+    var htsRow = h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '提示大小'), htsInp, htsClear);
+    b.appendChild(htsRow);
+    var htsGrid = h('div', { class: 'form-grid-2 hts-dir-grid' });
+    [['up', '上'], ['down', '下'], ['left', '左'], ['right', '右']].forEach(function (dd) {
+      htsGrid.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '提示·' + dd[1]), htsDirs[dd[0]]));
+    });
+    b.appendChild(htsGrid);
 
     var slSel = h('select', { class: 'mini-select' });
     var slCur = draft.statusLabel;
@@ -1226,13 +1277,25 @@ FE.openKeyDialog = function (opts) {
       cbox.appendChild(colorRow(cr[1], gs[0], gs[1]));
     });
     cb.appendChild(cbox);
-    /* 高级颜色：shadow + states（pressed / modifierActive / modifierLocked），同卡内子卡点选 */
+    /* 高级颜色：shadow + pressed + hint 四边 + states（pressed / modifierActive / modifierLocked），
+     * 同卡内子卡点选。角色清单与 FOXY 文档一致：
+     * text / background / pressed / border / shadow / hint / hintTop / hintBottom / hintLeft / hintRight */
     var cadv = h('details', { class: 'card inner-card color-adv-card' });
-    cadv.appendChild(h('summary', null, '高级颜色（shadow、按下/修饰状态）'));
+    cadv.appendChild(h('summary', null, '高级颜色（shadow、pressed、hint 四边、按下/修饰状态）'));
     var cadvBody = h('div', { class: 'inner-card-body' });
     var sgs = roleGetSet('shadow');
     cadvBody.appendChild(colorRow('阴影 shadow', sgs[0], sgs[1]));
-    cadvBody.appendChild(h('div', { class: 'status' }, 'shadow 为按键阴影色（通常用半透明色，如 #40000000）。'));
+    var pgs = roleGetSet('pressed');
+    cadvBody.appendChild(colorRow('按下背景 pressed', pgs[0], pgs[1]));
+    cadvBody.appendChild(h('div', { class: 'status' }, 'shadow 为按键阴影色（通常半透明，如 #40000000）；pressed 为按住时的背景色。'));
+    var hintEdges = [['hintTop', '提示·上 hintTop'], ['hintBottom', '提示·下 hintBottom'], ['hintLeft', '提示·左 hintLeft'], ['hintRight', '提示·右 hintRight']];
+    var hgrid = h('div', { class: 'form-grid-2' });
+    hintEdges.forEach(function (he) {
+      var hgs = roleGetSet(he[0]);
+      hgrid.appendChild(colorRow(he[1], hgs[0], hgs[1]));
+    });
+    cadvBody.appendChild(hgrid);
+    cadvBody.appendChild(h('div', { class: 'status' }, 'hint 四边为各方向滑动提示的文字色；基础角色的「提示文字 hint」作用于全部方向，四边角色优先。'));
     var STATES = [
       ['pressed', '按下 pressed', '手指按住按键时；优先级最高'],
       ['modifierLocked', '修饰锁定 modifierLocked', 'Shift 等修饰键处于锁定态时'],

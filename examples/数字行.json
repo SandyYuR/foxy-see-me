@@ -750,39 +750,43 @@
                                 }
                             ]
                         },
-                        [
-                            {
-                                "ref": "qwerty.q"
-                            },
-                            {
-                                "ref": "qwerty.w"
-                            },
-                            {
-                                "ref": "qwerty.e"
-                            },
-                            {
-                                "ref": "qwerty.r"
-                            },
-                            {
-                                "ref": "qwerty.t"
-                            },
-                            {
-                                "ref": "qwerty.y"
-                            },
-                            {
-                                "ref": "qwerty.u"
-                            },
-                            {
-                                "ref": "qwerty.i"
-                            },
-                            {
-                                "ref": "qwerty.o"
-                            },
-                            {
-                                "ref": "qwerty.p"
-                            }
-                        ],
                         {
+                            "height": 1.0625,
+                            "keys": [
+                                {
+                                    "ref": "qwerty.q"
+                                },
+                                {
+                                    "ref": "qwerty.w"
+                                },
+                                {
+                                    "ref": "qwerty.e"
+                                },
+                                {
+                                    "ref": "qwerty.r"
+                                },
+                                {
+                                    "ref": "qwerty.t"
+                                },
+                                {
+                                    "ref": "qwerty.y"
+                                },
+                                {
+                                    "ref": "qwerty.u"
+                                },
+                                {
+                                    "ref": "qwerty.i"
+                                },
+                                {
+                                    "ref": "qwerty.o"
+                                },
+                                {
+                                    "ref": "qwerty.p"
+                                }
+                            ]
+                        },
+                        {
+                            "height": 1.0625,
                             "width": 0.9,
                             "keys": [
                                 {
@@ -814,69 +818,75 @@
                                 }
                             ]
                         },
-                        [
-                            {
-                                "ref": "qwerty.shift",
-                                "override": {
-                                    "swipe": {
-                                        "up": {
-                                            "ref": "foxy.Redo",
-                                            "label": "重做"
+                        {
+                            "height": 1.0625,
+                            "keys": [
+                                {
+                                    "ref": "qwerty.shift",
+                                    "override": {
+                                        "swipe": {
+                                            "up": {
+                                                "ref": "foxy.Redo",
+                                                "label": "重做"
+                                            }
                                         }
                                     }
+                                },
+                                {
+                                    "ref": "qwerty.z"
+                                },
+                                {
+                                    "ref": "qwerty.x"
+                                },
+                                {
+                                    "ref": "qwerty.c"
+                                },
+                                {
+                                    "ref": "qwerty.v"
+                                },
+                                {
+                                    "ref": "qwerty.b"
+                                },
+                                {
+                                    "ref": "qwerty.n"
+                                },
+                                {
+                                    "ref": "qwerty.m"
+                                },
+                                {
+                                    "ref": "qwerty.backspace"
                                 }
-                            },
-                            {
-                                "ref": "qwerty.z"
-                            },
-                            {
-                                "ref": "qwerty.x"
-                            },
-                            {
-                                "ref": "qwerty.c"
-                            },
-                            {
-                                "ref": "qwerty.v"
-                            },
-                            {
-                                "ref": "qwerty.b"
-                            },
-                            {
-                                "ref": "qwerty.n"
-                            },
-                            {
-                                "ref": "qwerty.m"
-                            },
-                            {
-                                "ref": "qwerty.backspace"
-                            }
-                        ],
-                        [
-                            {
-                                "ref": "custom.numpad",
-                                "weight": 1.5
-                            },
-                            {
-                                "ref": "qwerty.comma",
-                                "weight": 1
-                            },
-                            {
-                                "ref": "custom.shift",
-                                "weight": 1
-                            },
-                            {
-                                "ref": "qwerty.space",
-                                "weight": 4
-                            },
-                            {
-                                "ref": "qwerty.period",
-                                "weight": 1
-                            },
-                            {
-                                "ref": "qwerty.enter",
-                                "weight": 1.5
-                            }
-                        ]
+                            ]
+                        },
+                        {
+                            "height": 1.0625,
+                            "keys": [
+                                {
+                                    "ref": "custom.numpad",
+                                    "weight": 1.5
+                                },
+                                {
+                                    "ref": "qwerty.comma",
+                                    "weight": 1
+                                },
+                                {
+                                    "ref": "custom.shift",
+                                    "weight": 1
+                                },
+                                {
+                                    "ref": "qwerty.space",
+                                    "weight": 4
+                                },
+                                {
+                                    "ref": "qwerty.period",
+                                    "weight": 1
+                                },
+                                {
+                                    "ref": "qwerty.enter",
+                                    "weight": 1.5
+                                }
+                            ]
+                        }
                     ]
                 }
             ]

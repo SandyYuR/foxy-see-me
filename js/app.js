@@ -1460,6 +1460,19 @@ function applyKeyColors(el, eff, pressed) {
     }
   }
   Object.assign(el.style, col);
+  /* 提示文字颜色：基础 hint 作用于全部四向，hintTop/hintBottom/hintLeft/hintRight 按边覆盖 */
+  var hintBase = typeof c.hint === 'string' ? c.hint : null;
+  var hintEdge = { up: c.hintTop, down: c.hintBottom, left: c.hintLeft, right: c.hintRight };
+  var hints = el.querySelectorAll('.kb-hint');
+  for (var hi = 0; hi < hints.length; hi++) {
+    var hel = hints[hi];
+    var dir = null;
+    for (var dj in hintEdge) {
+      if (hel.classList.contains('kb-hint-' + dj)) { dir = dj; break; }
+    }
+    var hc = (dir && typeof hintEdge[dir] === 'string') ? hintEdge[dir] : hintBase;
+    if (hc) hel.style.color = hc;
+  }
 }
 
 function placementTooltip(ev, placement) {

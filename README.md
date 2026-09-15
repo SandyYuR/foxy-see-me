@@ -53,16 +53,19 @@
 - 引用选择器：搜索全部用户按键定义 + 内置 `rime.*` / `foxy.*`（按字母/数字/标点/
   编辑导航/功能键/修饰键/小键盘/Foxy 功能分组，带标签预览）。
 - 基本字段：`label`、`shiftedLabel`、`keyType`、`icon`、`weight`（含 auto）、`height`、
-  `textSize`、`id`、`statusLabel`、`modifier`，均支持"留空继承 / 显式清除(null)"语义。
+  `textSize`、`hintTextSize`（统一值或按方向 {up/down/left/right}，支持"显式清除(null)"）、
+  `id`、`statusLabel`、`modifier`，均支持"留空继承 / 显式清除(null)"语义。
 - 手势编辑：`tap` / `doubleTap` / 四向 `swipe` / `longPress`（repeat、`popupKey` 弹出菜单）/ 
   `hold`（start/end）。手势来源支持：引用按键、直接动作、动作名、宏调用。
 - 直接动作编辑器覆盖全部动作类型：`key`（KeyCode 分组选择 + SHIFT/CTRL/ALT/META 修饰）、
   `modifier`（SHIFT/CTRL × OFF/ONESHOT/LOCKED）、`text`/`commit`、`switch_layout`、
-  `app`（全部 Foxy 命令 + 参数）。
+  `app`（全部 Foxy 命令含 `split_adjust_start` / `candidate_previous` / `candidate_next` /
+  `select_schema` / `select_switch_option` 等带参数命令 + 参数）。
 - 状态变体编辑：`composing` / `ascii_mode` / `disabled` 三态条件（真/假/忽略）、
   变体级 `ref` 替换、`label` / `shiftedLabel` / `tap` 与其他字段 JSON。
 - 按键颜色：`text` / `background` / `border` / `hint` 四个常用角色，
-  外加 `shadow` 与 `states`（`pressed` / `modifierLocked` / `modifierActive`
+  外加 `shadow`、`pressed`、`hintTop` / `hintBottom` / `hintLeft` / `hintRight`
+  （各方向滑动提示文字色）与 `states`（`pressed` / `modifierLocked` / `modifierActive`
   各含背景 / 文字 / 阴影）。全部用 **jscolor 取色面板点选**
   （与 [f5a-see-me](https://github.com/SandyYuR/f5a-see-me) 同款交互：
   点击输入框就地弹出 HSV 取色区 + 透明度滑杆 + ✓，支持 `#RRGGBB` / `#AARRGGBB`，
@@ -253,10 +256,12 @@ foxy-editor/
 ```
 node test/test-core.js    # 164 项：解析引擎 / 变体 / 行权重 / 网格 / 校验器 /
                           #         JSON 诊断与修复 / 分体片段 / 弹出菜单候选与校验
-node test/test-ui.js      # 314 项：boot / 渲染 / 布局与状态切换 / 对话框保存 / 撤销重做 /
+node test/test-ui.js      # 322 项：boot / 渲染 / 布局与状态切换 / 对话框保存 / 撤销重做 /
                           #         示例加载 / 问题提醒与一键修复 / 片段编辑器 / 导入流程 /
                           #         宽松导入回归 / 按键颜色 jscolor 取色（面板挂进 dialog、
-                          #         定位、惰性安装、ARGB↔picker 字节序往返、states/shadow GUI） /
+                          #         定位、惰性安装、ARGB↔picker 字节序往返、
+                          #         shadow/pressed/hint四边/states GUI） /
+                          #         提示字号 hintTextSize 编辑（统一值/按方向/显式清除） /
                           #         分体生成与编辑（含横竖切换行高回归） /
                           #         弹出菜单编辑与联动（含主对话框弹出菜单 section）
 ```
