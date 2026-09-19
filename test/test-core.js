@@ -88,6 +88,17 @@ eq(gi.label, 'Q', '手势引用继承目标标签');
 gi = FE.gestureInfo({ ref: 'rime.Q', label: '大写Q' }, FE.NEUTRAL_STATUS);
 eq(gi.label, '大写Q', '手势显式标签覆盖');
 
+/* 手势级 hint 字段（与 label 并列的补丁字段，文档：gesture patch fields） */
+gi = FE.gestureInfo({ ref: 'rime.Q', hint: '提示Q' }, FE.NEUTRAL_STATUS);
+eq(gi.hint, '提示Q', '手势显式 hint 生效');
+eq(gi.label, 'Q', '显式 hint 不影响 label');
+gi = FE.gestureInfo({ ref: 'rime.Q' }, FE.NEUTRAL_STATUS);
+ok(gi.hint == null, '无 hint 的手势引用不产生 hint（回落 label）');
+profile.keys['__t.hintkey'] = { ref: 'rime.a', tap: { ref: 'rime.b', hint: '继承提示' } };
+gi = FE.gestureInfo({ ref: '__t.hintkey' }, FE.NEUTRAL_STATUS);
+eq(gi.hint, '继承提示', '手势引用继承被引用按键 tap 的 hint');
+delete profile.keys['__t.hintkey'];
+
 /* hold 引用继承 start/end（数字行示例中无，构造一个） */
 profile.keys['__t.holdkey'] = { ref: 'rime.a', hold: { label: 'Mic', start: { type: 'app', command: 'voice_start' }, end: { type: 'app', command: 'voice_stop' } } };
 gi = FE.gestureInfo({ ref: '__t.holdkey' }, FE.NEUTRAL_STATUS);
@@ -417,6 +428,63 @@ const holeGrid = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 
 ok(FE.validateProfile(holeGrid).errors.some(e => e.indexOf('未覆盖单元格') >= 0), '网格空洞被检出');
 const badVariant = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a', variants: [{ when: { rime: { composing: true } }, ref: 'missing.variant' }] }]] }] } } });
 ok(FE.validateProfile(badVariant).errors.some(e => e.indexOf('missing.variant') >= 0), 'placement 变体坏引用被检出');
+
+/* ---------------- 对齐 Foxy 文档：新增 app 命令 / text_editor / hintTextSize ---------------- */
+console.log('== 对齐 Foxy 文档更新 ==');
+/* 文档 App Commands 列表中的命令必须全部被编辑器接受 */
+['split', 'split_keyboard', 'text_editor', 'split_adjust_start', 'candidate_previous',
+  'candidate_next', 'select_schema', 'select_switch_option'].forEach(cmd => {
+  ok(FE.APP_COMMANDS.some(c => c[0] === cmd), 'APP_COMMANDS 含 ' + cmd);
+});
+const newCmds = FE.normalizeProfile({
+  layouts: {
+    default: {
+      sections: [{
+        type: 'rows',
+        rows: [[
+          { label: 'sp', tap: { type: 'app', command: 'split' } },
+          { label: 'te', tap: { type: 'app', command: 'text_editor' } },
+          { label: 'cp', tap: { type: 'app', command: 'candidate_previous' } },
+          { label: 'ss', tap: { type: 'app', command: 'select_schema', argument: 'cangjie5' } }
+        ]]
+      }]
+    }
+  }
+});
+eq(FE.validateProfile(newCmds).errors, [], '新增 app 命令全部通过校验');
+
+/* text_editor 结构约束：恰好一个 rows 区段、恰好一行 */
+const teTooMany = FE.normalizeProfile({
+  layouts: {
+    default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }] },
+    text_editor: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }], [{ ref: 'rime.b' }]] }] }
+  }
+});
+ok(FE.validateProfile(teTooMany).errors.some(e => e.indexOf('text_editor') >= 0 && e.indexOf('一行') >= 0),
+  'text_editor 多行被检出');
+const teTwoSections = FE.normalizeProfile({
+  layouts: {
+    default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }] },
+    text_editor: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }, { type: 'grid', columns: 1, rows: 1, keys: [{ column: 0, row: 0, ref: 'rime.b' }] }] }
+  }
+});
+ok(FE.validateProfile(teTwoSections).errors.some(e => e.indexOf('text_editor') >= 0 && e.indexOf('一个 rows 区段') >= 0),
+  'text_editor 多区段被检出');
+const teOk = FE.normalizeProfile({
+  layouts: {
+    default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }] },
+    text_editor: { sections: [{ type: 'rows', rows: [[{ ref: 'foxy.LayoutDefault' }, { ref: 'rime.BackSpace' }]] }] }
+  }
+});
+eq(FE.validateProfile(teOk).errors, [], '合规的 text_editor 无错误');
+
+/* hintTextSize 方向名大小写不敏感（文档：Direction names are case-insensitive） */
+eq(FE.hintSizeOf(11, 'up'), 11, '数值型 hintTextSize 对任意方向生效');
+eq(FE.hintSizeOf({ UP: 9 }, 'up'), 9, '方向名大写可被识别');
+eq(FE.hintSizeOf({ Up: 9, DoWn: 8 }, 'down'), 8, '方向名混合大小写可被识别');
+eq(FE.hintSizeOf({ left: 7 }, 'up'), null, '未指定的方向回落 null（用全局字号）');
+eq(FE.hintSizeOf(null, 'up'), null, 'hintTextSize 缺失时不报错');
+
 const renameProfile = FE.normalizeProfile({ keys: { old: { ref: 'rime.a' } }, layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'old' }]] }], split: { sections: [{ type: 'rows', rows: [[{ ref: 'old' }]] }] } } } });
 FE.state.profile = renameProfile;
 FE.renameKeyDef('old', 'renamed');

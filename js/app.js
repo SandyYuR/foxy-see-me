@@ -257,6 +257,7 @@ FE.tapInfo = function (eff, status, depth) {
     return {
       action: nested ? nested.action : null,
       label: label,
+      hint: t.hint != null ? t.hint : (nested ? nested.hint : undefined),
       popup: t.popup != null ? t.popup : (nested ? nested.popup : undefined)
     };
   }
@@ -265,7 +266,12 @@ FE.tapInfo = function (eff, status, depth) {
     (t.actions != null ? t.actions :
       (t.macro != null ? t : (t.type != null ? t : null)))
   );
-  return { action: act, label: t.label != null ? t.label : null, popup: t.popup != null ? t.popup : undefined };
+  return {
+    action: act,
+    label: t.label != null ? t.label : null,
+    hint: t.hint != null ? t.hint : null,
+    popup: t.popup != null ? t.popup : undefined
+  };
 };
 
 /* 主标签原始值（不应用 Shift 状态）：tap 标签优先，其次外层 label */
@@ -288,6 +294,7 @@ FE.gestureInfo = function (g, status, depth) {
   if (!isPlainObject(g)) return null;
   depth = depth || 0;
   var out = { raw: g };
+  var refHint = null;
   if (g.ref != null && typeof g.ref === 'string') {
     var sub = FE.evalPlacement({ ref: g.ref }, status);
     var nestedTap = FE.tapInfo(sub.eff, status, depth + 1);
@@ -296,6 +303,7 @@ FE.gestureInfo = function (g, status, depth) {
       ? String(nestedTap.label) : rawLabelOf(sub.eff, status, depth + 1);
     out.label = (g.label != null) ? g.label : inherited;
     out.popup = (g.popup != null) ? g.popup : (nestedTap ? nestedTap.popup : undefined);
+    refHint = (nestedTap && nestedTap.hint != null) ? nestedTap.hint : null;
     if (isPlainObject(sub.eff.hold)) out.inheritedHold = sub.eff.hold;
   } else {
     out.label = g.label != null ? g.label : null;
@@ -306,7 +314,9 @@ FE.gestureInfo = function (g, status, depth) {
         (g.macro != null || g.type != null ? g : null))
     );
   }
+  /* hint 是把手势对象与 label 并列的补丁字段；引用时缺省继承被引用手势的值 */
   if (g.hint != null) out.hint = g.hint;
+  else if (refHint != null) out.hint = refHint;
   if (g.repeat != null) out.repeat = g.repeat;
   if (g.popupKey != null) out.popupKey = g.popupKey;
   if (g.start != null) out.start = g.start;
@@ -571,6 +581,22 @@ FE.validateProfile = function (profile) {
           if (Math.abs(unSplit - usSplit) > 0.01) {
             warn('布局 “' + ln + '” 常规(' + (Math.round(unSplit * 100) / 100) +
               ') 与分体(' + (Math.round(usSplit * 100) / 100) + ')高度单位不一致');
+          }
+        }
+      }
+
+      /* ---- 文本编辑布局（text_editor）：必须恰好一个 rows 区段、恰好一行 ---- */
+      if (ln === 'text_editor') {
+        var tSecs = Array.isArray(L.sections) ? L.sections : [];
+        var tRowsSecs = tSecs.filter(function (s) { return isPlainObject(s) && s.type === 'rows'; });
+        if (tSecs.length !== 1 || tRowsSecs.length !== 1) {
+          err('布局 “text_editor” 必须恰好包含一个 rows 区段，当前为 ' + tSecs.length +
+            ' 个区段；Foxy 会回退到内置编辑行');
+        } else {
+          var tRows = FE.rowsOfSection(tRowsSecs[0]);
+          if (tRows.length !== 1) {
+            err('布局 “text_editor” 的 rows 区段必须恰好包含一行，当前为 ' + tRows.length +
+              ' 行；Foxy 会回退到内置编辑行');
           }
         }
       }
@@ -938,6 +964,20 @@ FE.inspectJsonText = function (text) {
 FE.sanitizeJsonText = function (text) {
   return FE.inspectJsonText(text).fixedText;
 };
+
+/* 按方向的提示字号查找：方向名大小写不敏感（Foxy 文档：Direction names are case-insensitive）。
+ * 放在 UI 段之前导出，纯逻辑测试（无 DOM）也能直接断言。 */
+function hintSizeOf(hts, dir) {
+  if (typeof hts === 'number') return hts;
+  if (!isPlainObject(hts)) return null;
+  if (typeof hts[dir] === 'number') return hts[dir];
+  for (var hk in hts) {
+    if (!Object.prototype.hasOwnProperty.call(hts, hk)) continue;
+    if (hk.toLowerCase() === dir && typeof hts[hk] === 'number') return hts[hk];
+  }
+  return null;
+}
+FE.hintSizeOf = hintSizeOf;
 
 /* ================================================================
  * ================================================================
@@ -1426,15 +1466,11 @@ function displayLabel(eff) {
   return raw;
 }
 
+/* 提示字号：按方向查找（hintSizeOf 定义在纯逻辑段，方向名大小写不敏感） */
 function hintFontPx(eff, dir, unit) {
   var base = unit * 0.24;
-  var scale = 1;
-  var hts = eff.hintTextSize;
-  if (typeof hts === 'number') scale = hts / 11;
-  else if (isPlainObject(hts)) {
-    var d = hts[dir];
-    if (typeof d === 'number') scale = d / 11;
-  }
+  var n = hintSizeOf(eff.hintTextSize, dir);
+  var scale = (typeof n === 'number') ? n / 11 : 1;
   return clamp(base * scale, 6, 16);
 }
 
@@ -1443,6 +1479,9 @@ function keyFontPx(eff, unit) {
   return clamp(unit * 0.42 * scale, 8, 42);
 }
 
+/* 阴影色 → CSS box-shadow（shadow 角色只给颜色，偏移/模糊沿用主题口径） */
+function shadowCss(color) { return '0 1px 2px ' + color; }
+
 function applyKeyColors(el, eff, pressed) {
   var c = eff.colors;
   if (!isPlainObject(c)) return;
@@ -1450,17 +1489,39 @@ function applyKeyColors(el, eff, pressed) {
   if (typeof c.background === 'string') col.background = c.background;
   if (typeof c.text === 'string') col.color = c.text;
   if (typeof c.border === 'string') { col.borderColor = c.border; el.classList.add('kb-key-hasborder'); }
+  if (typeof c.shadow === 'string') col.boxShadow = shadowCss(c.shadow);
+  /* 基础 pressed 角色：手指按住该键时的背景色（优先级低于 states.pressed） */
+  if (pressed && typeof c.pressed === 'string') col.background = c.pressed;
+
+  /* 运行时状态色：优先级 modifierActive < modifierLocked < pressed，按序叠加 */
+  var modifierOn = !pressed && eff.modifier === 'SHIFT' && state.status.shift;
+  var chain = [];
   if (isPlainObject(c.states)) {
-    var st = null;
-    if (!pressed && eff.modifier === 'SHIFT' && state.status.shift) st = c.states.modifierActive || c.states.modifierLocked;
-    if (pressed) st = c.states.pressed || st;
-    if (st) {
-      if (typeof st.background === 'string') col.background = st.background;
-      if (typeof st.text === 'string') col.color = st.text;
+    if (modifierOn) {
+      if (isPlainObject(c.states.modifierActive)) chain.push(c.states.modifierActive);
+      if (isPlainObject(c.states.modifierLocked)) chain.push(c.states.modifierLocked);
     }
+    if (pressed && isPlainObject(c.states.pressed)) chain.push(c.states.pressed);
   }
+  var stateShadow = null;
+  chain.forEach(function (st) {
+    if (typeof st.background === 'string') col.background = st.background;
+    if (typeof st.text === 'string') col.color = st.text;
+    if (typeof st.shadow === 'string') stateShadow = st.shadow;
+  });
+  /* 按下与修饰锁定的键默认隐藏普通阴影；只有该状态显式给出 shadow 才绘制（含透明值） */
+  if (pressed || modifierOn) col.boxShadow = stateShadow ? shadowCss(stateShadow) : 'none';
+
   Object.assign(el.style, col);
-  /* 提示文字颜色：基础 hint 作用于全部四向，hintTop/hintBottom/hintLeft/hintRight 按边覆盖 */
+  applyHintColors(el, eff);
+}
+
+/* 提示文字颜色：基础 hint 作用于全部四向，hintTop/hintBottom/hintLeft/hintRight 按边覆盖。
+ * 单独抽出是因为滑动提示元素是在按键主体着色之后才 append 的，
+ * buildPreviewKey 需要在挂完提示后再调用一次。 */
+function applyHintColors(el, eff) {
+  var c = eff.colors;
+  if (!isPlainObject(c)) return;
   var hintBase = typeof c.hint === 'string' ? c.hint : null;
   var hintEdge = { up: c.hintTop, down: c.hintBottom, left: c.hintLeft, right: c.hintRight };
   var hints = el.querySelectorAll('.kb-hint');
@@ -1561,13 +1622,20 @@ function buildPreviewKey(placement, ctx) {
       var g = eff.swipe[d];
       if (g == null) return;
       var gi = FE.gestureInfo(g, state.status);
-      var txt = gi && gi.label != null ? String(gi.label) : '';
+      /* 提示文字：手势 hint 优先，其次 label（含被引用按键的标签） */
+      var txt = '';
+      if (gi) {
+        if (gi.hint != null && String(gi.hint) !== '') txt = String(gi.hint);
+        else if (gi.label != null) txt = String(gi.label);
+      }
       if (!txt) return;
       el.appendChild(h('span', {
         class: 'kb-hint kb-hint-' + d,
         style: { fontSize: hintFontPx(eff, d, unit) + 'px' }
       }, txt));
     });
+    /* 提示元素刚挂上，此时再上色（applyKeyColors 调用时它们还不存在） */
+    applyHintColors(el, eff);
   }
   /* 长按徽标 */
   if (eff.longPress != null) {

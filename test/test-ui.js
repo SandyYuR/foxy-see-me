@@ -634,6 +634,119 @@ FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
 }
 documentStub._openDialogs.length = 0;
 
+console.log('== 预览颜色渲染（基础 pressed/shadow/hint 四边 + states 优先级） ==');
+/* 前面的用例已加载 cc lite.json 等示例，这里回到内置默认布局，
+ * 保证 qwerty.q / qwerty.shift 一定被渲染（否则断言取到的不是目标键）。 */
+FE.applyProfileText(FE.DEFAULT_PROFILE_TEXT, {});
+$('pt-shift').checked = false;
+$('pt-shift')._fire('change');
+FE.state.profile.keys['qwerty.q'] = {
+  ref: 'rime.q', keyType: 'LETTER',
+  swipe: { up: { ref: 'rime.Q' }, down: { ref: 'rime.1' } },
+  colors: {
+    background: '#4CAF50', text: '#FFFFFFFF', shadow: '#40000000',
+    pressed: '#388E3C', hint: '#ABCDEF', hintTop: '#123456', hintBottom: '#654321'
+  }
+};
+FE.renderAll();
+{
+  const key = q('.kb-key').find(k => String(k.getAttribute('title') || '').indexOf('qwerty.q') >= 0);
+  ok(!!key, '找到 qwerty.q 对应的预览按键');
+  eq(key.style.background, '#4CAF50', '基础 background 应用到按键');
+  eq(key.style.color, '#FFFFFFFF', '基础 text 应用到按键');
+  ok(String(key.style.boxShadow).indexOf('#40000000') >= 0, '基础 shadow 渲染为 box-shadow（含透明色）');
+  /* 提示四边：hint 是兜底，hintTop/hintBottom 按边覆盖 */
+  eq(q('.kb-hint-up', key)[0].style.color, '#123456', 'hintTop 只作用于上滑提示');
+  eq(q('.kb-hint-down', key)[0].style.color, '#654321', 'hintBottom 只作用于下滑提示');
+  /* pointerdown → 基础 pressed 角色生效（无 states.pressed 时） */
+  key._fire('pointerdown');
+  eq(key.style.background, '#388E3C', '按住时基础 pressed 角色生效');
+  key._fire('pointerup');
+  eq(key.style.background, '#4CAF50', '松开后恢复基础 background');
+
+  /* states.pressed 覆盖基础 pressed；按下时默认隐藏阴影 */
+  FE.state.profile.keys['qwerty.q'] = {
+    ref: 'rime.q', keyType: 'LETTER',
+    colors: { background: '#4CAF50', pressed: '#388E3C', shadow: '#40000000', states: { pressed: { background: '#2E7D32' } } }
+  };
+  FE.renderAll();
+  const key2 = q('.kb-key').find(k => String(k.getAttribute('title') || '').indexOf('qwerty.q') >= 0);
+  ok(String(key2.style.boxShadow).indexOf('#40000000') >= 0, '未按下时基础 shadow 生效');
+  key2._fire('pointerdown');
+  eq(key2.style.background, '#2E7D32', 'states.pressed 优先于基础 pressed');
+  eq(key2.style.boxShadow, 'none', '按下时默认隐藏普通阴影');
+  key2._fire('pointerup');
+
+  /* 状态显式给 shadow 时，按下仍绘制（含透明值 → 保持透明但存在） */
+  FE.state.profile.keys['qwerty.q'] = {
+    ref: 'rime.q', keyType: 'LETTER',
+    colors: { shadow: '#40000000', states: { pressed: { shadow: '#00000000' } } }
+  };
+  FE.renderAll();
+  const key3 = q('.kb-key').find(k => String(k.getAttribute('title') || '').indexOf('qwerty.q') >= 0);
+  key3._fire('pointerdown');
+  ok(String(key3.style.boxShadow).indexOf('#00000000') >= 0, '状态的显式透明 shadow 仍然绘制（不落回 none）');
+  key3._fire('pointerup');
+
+  /* 修饰键状态色优先级：modifierLocked 覆盖 modifierActive；pressed 最高 */
+  FE.state.profile.keys['qwerty.shift'] = {
+    ref: 'foxy.Shift',
+    colors: {
+      background: '#222222',
+      states: {
+        modifierActive: { background: '#111111', text: '#111111' },
+        modifierLocked: { background: '#222222', text: '#222222' },
+        pressed: { background: '#333333' }
+      }
+    }
+  };
+  $('pt-shift').checked = false;
+  $('pt-shift')._fire('change');
+  FE.renderAll();
+  const shiftKey = q('.kb-key').find(k => k.querySelectorAll('.kb-icon-wrap').length > 0);
+  ok(!!shiftKey, '找到带图标的 Shift 修饰键');
+  $('pt-shift').checked = true;
+  $('pt-shift')._fire('change');
+  const shiftKey2 = q('.kb-key').find(k => k.querySelectorAll('.kb-icon-wrap').length > 0);
+  eq(shiftKey2.style.background, '#222222', 'Shift 激活时 modifierLocked 覆盖 modifierActive');
+  eq(shiftKey2.style.color, '#222222', 'modifierLocked 的 text 同样生效');
+  ok(shiftKey2.style.boxShadow === 'none', '修饰键激活时默认隐藏普通阴影');
+  shiftKey2._fire('pointerdown');
+  eq(shiftKey2.style.background, '#333333', 'pressed 优先级高于 modifierLocked');
+  shiftKey2._fire('pointerup');
+  $('pt-shift').checked = false;
+  $('pt-shift')._fire('change');
+
+  FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q', keyType: 'LETTER', swipe: { up: { ref: 'rime.Q' }, down: { ref: 'rime.1' } } };
+  delete FE.state.profile.keys['qwerty.shift'];
+  FE.renderAll();
+}
+
+console.log('== 按键定义对话框：statusLabel 对象形式 / keyType 显式清除 ==');
+FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q', keyType: 'LETTER' };
+documentStub._openDialogs.length = 0;
+FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+{
+  const kd5 = documentStub._openDialogs[0];
+  const slRow = kd5.querySelectorAll('.form-row.form-inline').filter(r => r.textContent.indexOf('状态标签') >= 0 ||
+    r.querySelectorAll('select').some(s => s.querySelectorAll('option').some(o => o.textContent.indexOf('schema_name') >= 0)))[0];
+  const slSel = slRow.querySelectorAll('select')[0];
+  ok(slSel.querySelectorAll('option').some(o => o.getAttribute('value') === '__obj__schema_name'),
+    'statusLabel 提供对象形式 { source: "schema_name" } 选项');
+  slSel.value = '__obj__schema_name';
+  slSel._fire('change');
+  const ktSel = kd5.querySelectorAll('select').find(s => s.querySelectorAll('option').some(o => o.getAttribute('value') === 'FUNCTION'));
+  ok(ktSel.querySelectorAll('option').some(o => o.getAttribute('value') === '__null__'), 'keyType 提供「清除（null）」选项');
+  ktSel.value = '__null__';
+  ktSel._fire('change');
+  kd5.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  eq(FE.state.profile.keys['qwerty.q'].statusLabel, { source: 'schema_name' }, 'statusLabel 对象形式写入 profile');
+  eq(FE.state.profile.keys['qwerty.q'].keyType, null, 'keyType 显式清除写为 null');
+  FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q', keyType: 'LETTER', swipe: { up: { ref: 'rime.Q' }, down: { ref: 'rime.1' } } };
+  FE.renderAll();
+}
+documentStub._openDialogs.length = 0;
+
 console.log('== 输入时自动检查（防抖） ==');
 $('json-issues').className = 'json-issues';
 $('json-editor').value = '{"layouts": {"h": {"sections": []}},}';

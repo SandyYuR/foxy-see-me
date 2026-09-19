@@ -53,13 +53,18 @@
 - 引用选择器：搜索全部用户按键定义 + 内置 `rime.*` / `foxy.*`（按字母/数字/标点/
   编辑导航/功能键/修饰键/小键盘/Foxy 功能分组，带标签预览）。
 - 基本字段：`label`、`shiftedLabel`、`keyType`、`icon`、`weight`（含 auto）、`height`、
-  `textSize`、`hintTextSize`（统一值或按方向 {up/down/left/right}，支持"显式清除(null)"）、
-  `id`、`statusLabel`、`modifier`，均支持"留空继承 / 显式清除(null)"语义。
+  `textSize`、`hintTextSize`（统一值或按方向 {up/down/left/right}，方向名大小写不敏感，
+  支持"显式清除(null)"）、`id`、`statusLabel`（字符串或 `{ "source": "schema_name" }` 对象形式）、
+  `modifier`，均支持"留空继承 / 显式清除(null)"语义。
 - 手势编辑：`tap` / `doubleTap` / 四向 `swipe` / `longPress`（repeat、`popupKey` 弹出菜单）/ 
   `hold`（start/end）。手势来源支持：引用按键、直接动作、动作名、宏调用。
+  手势通用补丁字段含 `label` 与 `hint`（**滑动提示文字**，与 label 并列；缺省时回退
+  到 label / 被引用按键的标签；引用时缺省继承被引用手势的 `hint`）以及
+  `popup`（弹出预览显示/隐藏）。
 - 直接动作编辑器覆盖全部动作类型：`key`（KeyCode 分组选择 + SHIFT/CTRL/ALT/META 修饰）、
   `modifier`（SHIFT/CTRL × OFF/ONESHOT/LOCKED）、`text`/`commit`、`switch_layout`、
-  `app`（全部 Foxy 命令含 `split_adjust_start` / `candidate_previous` / `candidate_next` /
+  `app`（全部 Foxy 命令含 `split` / `split_keyboard` / `text_editor` /
+  `split_adjust_start` / `candidate_previous` / `candidate_next` /
   `select_schema` / `select_switch_option` 等带参数命令 + 参数）。
 - 状态变体编辑：`composing` / `ascii_mode` / `disabled` 三态条件（真/假/忽略）、
   变体级 `ref` 替换、`label` / `shiftedLabel` / `tap` 与其他字段 JSON。
@@ -200,7 +205,9 @@ node test/check-real-files.js
 - `weight: "auto"` 行必须提供足够大的 `totalWeight`；
 - 网格按键不越界、不重叠；
 - 布局变体目标存在且无循环；各布局总高度单位兼容性（警告）；
-- `split` 分体片段结构/引用独立校验；常规与分体高度单位一致性（警告）。
+- `split` 分体片段结构/引用独立校验；常规与分体高度单位一致性（警告）；
+- `text_editor` 文本编辑布局的结构约束：**恰好一个 `rows` 区段、恰好一行**
+  （不满足时 Foxy 会回退到内置编辑行，所以这里报错而不是警告）。
 
 弹出菜单（popup profile）独立校验：候选类型/结构、动作名引用、null 候选、
 错误 `type`；宏/共享键引用因位于 `definitions.json` 只给提示。
@@ -220,8 +227,8 @@ foxy-editor/
 │   │                     仅浏览器端 `<script>` 引入；见 jscolor.com）
 │   ├── key-dialog.js     按键/手势/动作/变体/选择器对话框（含 jscolor 颜色行封装）
 │   └── popup-editor.js   弹出菜单（popup profile）编辑标签页
-├── examples/             示例源文件（布局 14 个 + 弹出菜单 3 个，含 split/cangjie/
-│                         思无邪系列/万象/二十六键/七列 等）
+├── examples/             示例源文件（布局 15 个 + 弹出菜单 3 个，含 split/cangjie/
+│                         思无邪系列/万象/二十六键/七列/大同 等）
 ├── tools/
 │   └── build-examples.js 重新生成 js/examples-bundle.js（自动区分布局/弹出菜单）
 └── test/
@@ -254,14 +261,19 @@ foxy-editor/
 ## 测试
 
 ```
-node test/test-core.js    # 164 项：解析引擎 / 变体 / 行权重 / 网格 / 校验器 /
-                          #         JSON 诊断与修复 / 分体片段 / 弹出菜单候选与校验
-node test/test-ui.js      # 322 项：boot / 渲染 / 布局与状态切换 / 对话框保存 / 撤销重做 /
+node test/test-core.js    # 186 项：解析引擎 / 变体 / 行权重 / 网格 / 校验器 /
+                          #         JSON 诊断与修复 / 分体片段 / 弹出菜单候选与校验 /
+                          #         新增 app 命令 / text_editor 结构约束 /
+                          #         hintTextSize 方向名大小写 / 手势 hint 补丁字段
+node test/test-ui.js      # 343 项：boot / 渲染 / 布局与状态切换 / 对话框保存 / 撤销重做 /
                           #         示例加载 / 问题提醒与一键修复 / 片段编辑器 / 导入流程 /
                           #         宽松导入回归 / 按键颜色 jscolor 取色（面板挂进 dialog、
                           #         定位、惰性安装、ARGB↔picker 字节序往返、
                           #         shadow/pressed/hint四边/states GUI） /
+                          #         预览颜色渲染（基础 pressed·shadow·hint 四边、
+                          #         states.shadow 显隐、modifierActive<Locked<pressed 优先级） /
                           #         提示字号 hintTextSize 编辑（统一值/按方向/显式清除） /
+                          #         statusLabel 对象形式与 keyType 显式清除 /
                           #         分体生成与编辑（含横竖切换行高回归） /
                           #         弹出菜单编辑与联动（含主对话框弹出菜单 section）
 ```
