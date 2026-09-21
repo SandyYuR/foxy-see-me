@@ -407,7 +407,10 @@ FE.buildActionEditor = function (spec) {
       modSel = h('select', { class: 'mini-select' });
       FE.MODIFIERS.forEach(function (m) { modSel.appendChild(h('option', { value: m, selected: spec && spec.modifier === m }, m)); });
       modStateSel = h('select', { class: 'mini-select' });
-      ['ONESHOT', 'LOCKED', 'OFF'].forEach(function (s) { modStateSel.appendChild(h('option', { value: s, selected: !spec || spec.state === s || (s === 'ONESHOT' && !spec.state) }, s)); });
+      /* TOGGLE_LOCKED 是命令（未锁定→锁定，已锁定→关闭），文档列为合法状态 */
+      FE.MODIFIER_STATES.forEach(function (s) {
+        modStateSel.appendChild(h('option', { value: s, selected: !spec || spec.state === s || (s === 'ONESHOT' && !spec.state) }, s));
+      });
       fields.appendChild(h('div', { class: 'form-row form-inline' },
         h('label', { class: 'mini-label' }, '修饰键'), modSel,
         h('label', { class: 'mini-label' }, '状态'), modStateSel));
@@ -806,10 +809,14 @@ FE.openKeyDialog = function (opts) {
   var draft;
   if (isPlacement) {
     draft = FE.deepClone(opts.placement || {});
-    if (FE.isPlainObject(draft.override)) {  /* 扁平化 override 到直接字段 */
+    /* 扁平化 override 到直接字段：按文档优先级 直接字段 > override，
+     * 所以先铺 override，再用直接字段覆盖它（冲突时直接字段赢）。 */
+    if (FE.isPlainObject(draft.override)) {
       var ov = draft.override;
       delete draft.override;
-      Object.keys(ov).forEach(function (k) { draft[k] = FE.deepClone(ov[k]); });
+      var flat = FE.deepClone(ov);
+      Object.keys(draft).forEach(function (k) { flat[k] = FE.deepClone(draft[k]); });
+      draft = flat;
     }
   } else {
     draft = FE.deepClone((state.profile.keys || {})[opts.name] || {});

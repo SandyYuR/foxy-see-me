@@ -76,6 +76,9 @@ function mergePatch(target, patch) {
     if (k === 'ref' || k === 'when' || k === 'variants') continue;
     var v = patch[k];
     if (k === 'tap' && v === null) continue;           // tap:null 保留继承的点击动作
+    /* 文档 null 语义：label 清空为空字符串；weight/height 恢复解析器默认 1 */
+    if (v === null && k === 'label') { target.label = ''; continue; }
+    if (v === null && (k === 'weight' || k === 'height')) { target[k] = 1; continue; }
     if (k === 'swipe') {
       var base = (target.swipe && isPlainObject(target.swipe)) ? deepClone(target.swipe) : {};
       if (v === null) base = {};
@@ -165,7 +168,8 @@ function evalKeyRef(refName, status, seen) {
 FE.evalKeyRef = evalKeyRef;
 
 /* 解析一个放置（placement）为有效按键对象。
- * 优先级：定义链(含定义变体) < 直接放置字段(含放置变体) < override 变体与字段 */
+ * 优先级（Foxy 文档）：定义链(含定义变体) < override 变体与字段 < 直接放置字段(含放置变体)。
+ * 注意：早期文档写的是「直接字段 < override」，现已反转为直接字段优先。 */
 FE.evalPlacement = function (placement, status) {
   status = status || NEUTRAL_STATUS;
   var out = { eff: {}, chain: [], unresolved: null, cycle: null, placement: placement || {} };
@@ -177,12 +181,12 @@ FE.evalPlacement = function (placement, status) {
     out.cycle = sub.cycle;
   }
   if (isPlainObject(placement)) {
-    mergePatch(out.eff, omit(placement, ['ref', 'override', 'variants']));
-    out.eff = applyVariants(out.eff, placement.variants, status);
     if (isPlainObject(placement.override)) {
       mergePatch(out.eff, omit(placement.override, ['variants']));
       out.eff = applyVariants(out.eff, placement.override.variants, status);
     }
+    mergePatch(out.eff, omit(placement, ['ref', 'override', 'variants']));
+    out.eff = applyVariants(out.eff, placement.variants, status);
   }
   return out;
 };
@@ -235,7 +239,9 @@ FE.resolveActionSpec = function (spec) {
   return null;
 };
 
-/* 有效点击手势信息：{action, label, popup} */
+/* 有效点击手势信息：{action, label, ownLabel, hint, popup}
+ * ownLabel 区分「tap 对象里直接写的 label」与「经 tap.ref 从被引用按键继承的 label」：
+ * 前者优先级最高，后者低于外层的 key/variant label（见 Foxy 文档 label 优先级规则）。 */
 FE.tapInfo = function (eff, status, depth) {
   depth = depth || 0;
   if (depth > 12 || !isPlainObject(eff)) return null;
@@ -243,49 +249,63 @@ FE.tapInfo = function (eff, status, depth) {
   if (t == null) return null;
   if (typeof t === 'string') {
     var r = FE.resolveActionSpec(t);
-    return r ? { action: r, label: null, popup: undefined } : null;
+    return r ? { action: r, label: null, ownLabel: false, popup: undefined } : null;
   }
   if (!isPlainObject(t)) return null;
+  var hasOwn = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
   if (t.ref != null) {
     if (typeof t.ref !== 'string') return null;
     var sub = FE.evalPlacement({ ref: t.ref }, status);
     var nested = FE.tapInfo(sub.eff, status, depth + 1);
-    var label = null;
-    if (t.label != null) label = t.label;
+    var label, ownLabel = hasOwn(t, 'label');
+    if (ownLabel) label = (t.label == null) ? '' : t.label;   /* tap 自带 label（含 null 清空）最高 */
     else if (nested && nested.label != null && nested.label !== '') label = nested.label;
     else label = rawLabelOf(sub.eff, status, depth + 1);
-    return {
-      action: nested ? nested.action : null,
-      label: label,
-      hint: t.hint != null ? t.hint : (nested ? nested.hint : undefined),
-      popup: t.popup != null ? t.popup : (nested ? nested.popup : undefined)
-    };
+    var act = nested ? nested.action : null;
+    if (hasOwn(t, 'action') || hasOwn(t, 'actions')) {
+      var spec = hasOwn(t, 'action') ? t.action : t.actions;
+      act = (spec === null) ? FE.resolveActionSpec([]) : FE.resolveActionSpec(spec);
+    }
+    var hint = hasOwn(t, 'hint') ? ((t.hint == null) ? '' : t.hint)
+      : (nested && nested.hint !== undefined ? nested.hint : undefined);
+    var popup = hasOwn(t, 'popup') ? ((t.popup === null) ? false : t.popup)
+      : (nested ? nested.popup : undefined);
+    return { action: act, label: label, ownLabel: ownLabel, hint: hint, popup: popup };
   }
-  var act = FE.resolveActionSpec(
+  var act2 = FE.resolveActionSpec(
     t.action != null ? t.action :
     (t.actions != null ? t.actions :
       (t.macro != null ? t : (t.type != null ? t : null)))
   );
+  if (hasOwn(t, 'action') && t.action === null) act2 = FE.resolveActionSpec([]);
+  if (hasOwn(t, 'actions') && t.actions === null) act2 = FE.resolveActionSpec([]);
   return {
-    action: act,
-    label: t.label != null ? t.label : null,
-    hint: t.hint != null ? t.hint : null,
-    popup: t.popup != null ? t.popup : undefined
+    action: act2,
+    label: hasOwn(t, 'label') ? ((t.label == null) ? '' : t.label) : null,
+    ownLabel: hasOwn(t, 'label'),
+    /* undefined = 未指定（回退 label）；'' = 显式 null 清空 */
+    hint: hasOwn(t, 'hint') ? ((t.hint == null) ? '' : t.hint) : undefined,
+    popup: hasOwn(t, 'popup') ? ((t.popup === null) ? false : t.popup) : undefined
   };
 };
 
-/* 主标签原始值（不应用 Shift 状态）：tap 标签优先，其次外层 label */
+/* 主标签原始值（不应用 Shift 状态）。
+ * Foxy 文档优先级：tap 对象自带 label > 外层 key/variant label > 被引用 tap 的 label。
+ * 外层 label 显式为 null 时按「清空为空字符串」处理，不再回退到被引用按键的标签。 */
 function rawLabelOf(eff, status, depth) {
   depth = depth || 0;
   if (depth > 12 || !isPlainObject(eff)) return null;
   var ti = FE.tapInfo(eff, status, depth + 1);
-  if (ti && ti.label != null && String(ti.label) !== '') return String(ti.label);
+  if (ti && ti.ownLabel) return (ti.label == null) ? '' : String(ti.label);
+  if (eff.label === null) return '';
   if (eff.label != null) return String(eff.label);
+  if (ti && ti.label != null && String(ti.label) !== '') return String(ti.label);
   return null;
 }
 FE.rawLabelOf = rawLabelOf;
 
-/* 手势对象 → {label, action, popup, repeat, popupKey, start, end, raw} */
+/* 手势对象 → {label, action, hint, popup, repeat, popupKey, start, end, raw}
+ * null 语义（Foxy 文档）：label/hint 清空为空串、popup 变 false、action/actions 变空列表。 */
 FE.gestureInfo = function (g, status, depth) {
   if (g == null) return null;
   if (typeof g === 'string') {
@@ -293,36 +313,44 @@ FE.gestureInfo = function (g, status, depth) {
   }
   if (!isPlainObject(g)) return null;
   depth = depth || 0;
+  var has = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
   var out = { raw: g };
-  var refHint = null;
+  var refLabel = null, refHint, refPopup;
   if (g.ref != null && typeof g.ref === 'string') {
     var sub = FE.evalPlacement({ ref: g.ref }, status);
     var nestedTap = FE.tapInfo(sub.eff, status, depth + 1);
     out.action = nestedTap ? nestedTap.action : null;
-    var inherited = (nestedTap && nestedTap.label != null && String(nestedTap.label) !== '')
+    refLabel = (nestedTap && nestedTap.label != null && String(nestedTap.label) !== '')
       ? String(nestedTap.label) : rawLabelOf(sub.eff, status, depth + 1);
-    out.label = (g.label != null) ? g.label : inherited;
-    out.popup = (g.popup != null) ? g.popup : (nestedTap ? nestedTap.popup : undefined);
-    refHint = (nestedTap && nestedTap.hint != null) ? nestedTap.hint : null;
+    refHint = nestedTap ? nestedTap.hint : undefined;
+    refPopup = nestedTap ? nestedTap.popup : undefined;
     if (isPlainObject(sub.eff.hold)) out.inheritedHold = sub.eff.hold;
   } else {
-    out.label = g.label != null ? g.label : null;
-    out.popup = g.popup != null ? g.popup : undefined;
     out.action = FE.resolveActionSpec(
       g.action != null ? g.action :
       (g.actions != null ? g.actions :
         (g.macro != null || g.type != null ? g : null))
     );
+    refHint = undefined;
+    refPopup = undefined;
   }
-  /* hint 是把手势对象与 label 并列的补丁字段；引用时缺省继承被引用手势的值 */
-  if (g.hint != null) out.hint = g.hint;
-  else if (refHint != null) out.hint = refHint;
+  if (has(g, 'label')) out.label = (g.label == null) ? '' : g.label;
+  else out.label = refLabel;
+  if (has(g, 'hint')) out.hint = (g.hint == null) ? '' : g.hint;
+  else if (refHint !== undefined) out.hint = refHint;
+  if (has(g, 'popup')) out.popup = (g.popup === null) ? false : g.popup;
+  else out.popup = refPopup;
+  /* 手势引用可用 action/actions 覆盖被引用手势的动作；null 表示空动作列表 */
+  if (has(g, 'action') || has(g, 'actions')) {
+    var spec = has(g, 'action') ? g.action : g.actions;
+    out.action = (spec == null) ? FE.resolveActionSpec([]) : FE.resolveActionSpec(spec);
+  }
   if (g.repeat != null) out.repeat = g.repeat;
   if (g.popupKey != null) out.popupKey = g.popupKey;
-  if (g.start != null) out.start = g.start;
+  if (has(g, 'start')) out.start = (g.start == null) ? null : g.start;
   else if (out.inheritedHold && out.inheritedHold.start != null) out.start = out.inheritedHold.start;
-  if (g.end != null) out.end = g.end;
-  else if (g.endAction != null) out.end = g.endAction;
+  if (has(g, 'end')) out.end = (g.end == null) ? null : g.end;
+  else if (has(g, 'endAction')) out.end = (g.endAction == null) ? null : g.endAction;
   else if (out.inheritedHold && out.inheritedHold.end != null) out.end = out.inheritedHold.end;
   return out;
 };
@@ -426,7 +454,9 @@ function validateAction(action, where, err, profile) {
     }
   } else if (t === 'modifier') {
     if (FE.MODIFIERS.indexOf(action.modifier) < 0) err(where + ' 使用了不支持的 modifier: ' + action.modifier);
-    if (action.state != null && ['OFF', 'ONESHOT', 'LOCKED'].indexOf(action.state) < 0) err(where + ' 使用了不支持的 modifier state: ' + action.state);
+    if (action.state != null && FE.MODIFIER_STATES.indexOf(action.state) < 0) {
+      err(where + ' 使用了不支持的 modifier state: ' + action.state);
+    }
   } else if (t === 'text' || t === 'commit') {
     if (typeof action.text !== 'string') err(where + ' 的 ' + t + ' 动作缺少字符串 text');
   } else if (t === 'switch_layout') {
@@ -1622,10 +1652,11 @@ function buildPreviewKey(placement, ctx) {
       var g = eff.swipe[d];
       if (g == null) return;
       var gi = FE.gestureInfo(g, state.status);
-      /* 提示文字：手势 hint 优先，其次 label（含被引用按键的标签） */
+      /* 提示文字优先级：手势 hint > 手势 label（含被引用按键的标签）。
+       * hint 显式写 null 时被清空为 ''，此时不再回退到 label（文档 null 语义）。 */
       var txt = '';
       if (gi) {
-        if (gi.hint != null && String(gi.hint) !== '') txt = String(gi.hint);
+        if (gi.hint !== undefined) txt = String(gi.hint);
         else if (gi.label != null) txt = String(gi.label);
       }
       if (!txt) return;

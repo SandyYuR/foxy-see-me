@@ -62,7 +62,9 @@
   到 label / 被引用按键的标签；引用时缺省继承被引用手势的 `hint`）以及
   `popup`（弹出预览显示/隐藏）。
 - 直接动作编辑器覆盖全部动作类型：`key`（KeyCode 分组选择 + SHIFT/CTRL/ALT/META 修饰）、
-  `modifier`（SHIFT/CTRL × OFF/ONESHOT/LOCKED）、`text`/`commit`、`switch_layout`、
+  `modifier`（SHIFT/CTRL × `OFF`/`ONESHOT`/`LOCKED`/`TOGGLE_LOCKED`，
+  其中 `TOGGLE_LOCKED` 是命令：未锁定→锁定、已锁定→关闭）、
+  `text`/`commit`、`switch_layout`、
   `app`（全部 Foxy 命令含 `split` / `split_keyboard` / `text_editor` /
   `split_adjust_start` / `candidate_previous` / `candidate_next` /
   `select_schema` / `select_switch_option` 等带参数命令 + 参数）。
@@ -240,8 +242,15 @@ foxy-editor/
 
 ## 实现说明
 
-- 放置（placement）编辑保存时会将其 `override` 字段扁平化为直接字段
-  （两者在格式中优先级为 直接字段 < override，扁平化不改变语义，导出 JSON 更整洁）。
+- 放置（placement）编辑保存时会将其 `override` 字段扁平化为直接字段。
+  **优先级（Foxy 文档）：定义链 < override 字段 < 直接放置字段**——直接字段赢；
+  扁平化按此顺序合并，冲突时保留直接字段，语义不变、导出 JSON 更整洁。
+- `null` 语义与 Foxy 运行时一致：`label: null` 清空为空字符串（不再回退继承标签）、
+  `weight`/`height: null` 恢复解析器默认 `1`、`colors: null` 清除继承的颜色覆盖；
+  手势引用里 `label`/`hint: null` 清空、`popup: null` 变 `false`、
+  `action`/`actions: null` 变空列表；`tap: null` 是唯一例外——保留继承的点击手势。
+- `label` 优先级：`tap` 对象自带 `label` > 外层 key/variant `label` >
+  被引用 `tap` 继承来的标签；`tap` 的 `ref` 只提供动作与默认标签。
 - 编辑器内置的 `rime.*` 标签表用于无显式 `label` 时的预览回退；个别无公开
   KeyCode 名称的内置动作（如 `rime.exclam`、`rime.F1`）以"内置动作"形式展示，
   不影响引用与校验。
@@ -261,10 +270,13 @@ foxy-editor/
 ## 测试
 
 ```
-node test/test-core.js    # 186 项：解析引擎 / 变体 / 行权重 / 网格 / 校验器 /
+node test/test-core.js    # 206 项：解析引擎 / 变体 / 行权重 / 网格 / 校验器 /
                           #         JSON 诊断与修复 / 分体片段 / 弹出菜单候选与校验 /
                           #         新增 app 命令 / text_editor 结构约束 /
-                          #         hintTextSize 方向名大小写 / 手势 hint 补丁字段
+                          #         hintTextSize 方向名大小写 / 手势 hint 补丁字段 /
+                          #         label 优先级（tap 自带 > 外层 > tap.ref 继承）/
+                          #         override 与直接字段优先级 / null 语义 /
+                          #         TOGGLE_LOCKED 修饰键状态
 node test/test-ui.js      # 343 项：boot / 渲染 / 布局与状态切换 / 对话框保存 / 撤销重做 /
                           #         示例加载 / 问题提醒与一键修复 / 片段编辑器 / 导入流程 /
                           #         宽松导入回归 / 按键颜色 jscolor 取色（面板挂进 dialog、

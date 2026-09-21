@@ -485,6 +485,77 @@ eq(FE.hintSizeOf({ Up: 9, DoWn: 8 }, 'down'), 8, '方向名混合大小写可被
 eq(FE.hintSizeOf({ left: 7 }, 'up'), null, '未指定的方向回落 null（用全局字号）');
 eq(FE.hintSizeOf(null, 'up'), null, 'hintTextSize 缺失时不报错');
 
+/* ---------------- 对齐 Foxy 文档（9/21）：label 优先级 / null 语义 / TOGGLE_LOCKED ---------------- */
+console.log('== 对齐 Foxy 文档：label 优先级与 null 语义 ==');
+
+/* label 优先级：tap 自带 label > 外层 key/variant label > 被引用 tap 的标签 */
+let lEff = FE.evalPlacement({ ref: 'rime.q', label: '手', tap: { ref: 'rime.a' } }, FE.NEUTRAL_STATUS).eff;
+eq(FE.rawLabelOf(lEff, FE.NEUTRAL_STATUS), '手', '外层 label 优先于 tap.ref 继承的标签');
+lEff = FE.evalPlacement({ ref: 'rime.q', label: '手', tap: { ref: 'rime.a', label: 'A标' } }, FE.NEUTRAL_STATUS).eff;
+eq(FE.rawLabelOf(lEff, FE.NEUTRAL_STATUS), 'A标', 'tap 自带 label 优先于外层 label');
+lEff = FE.evalPlacement({ ref: 'rime.q' }, FE.NEUTRAL_STATUS).eff;
+eq(FE.rawLabelOf(lEff, FE.NEUTRAL_STATUS), 'q', '无外层 label 时用被引用按键的标签');
+
+/* override 与直接字段：直接字段赢（9/21 文档反转后的优先级） */
+lEff = FE.evalPlacement({ ref: 'rime.a', label: '直接', override: { label: '覆盖' } }, FE.NEUTRAL_STATUS).eff;
+eq(lEff.label, '直接', '直接放置字段优先于 override（文档已反转）');
+lEff = FE.evalPlacement({ ref: 'rime.a', override: { label: '仅覆盖' } }, FE.NEUTRAL_STATUS).eff;
+eq(lEff.label, '仅覆盖', '只写 override 时仍然生效');
+
+/* label:null 清空为空字符串，不再回退 */
+lEff = FE.evalPlacement({ ref: 'rime.q', label: null }, FE.NEUTRAL_STATUS).eff;
+eq(lEff.label, '', 'label:null 清空为空字符串');
+eq(FE.rawLabelOf(lEff, FE.NEUTRAL_STATUS), '', 'label:null 后不再回退到继承标签');
+
+/* weight / height:null 恢复解析器默认 1 */
+lEff = FE.evalPlacement({ ref: 'rime.a', weight: null, height: null }, FE.NEUTRAL_STATUS).eff;
+eq(lEff.weight, 1, 'weight:null 恢复默认 1');
+eq(lEff.height, 1, 'height:null 恢复默认 1');
+
+/* colors:null 清除继承的颜色覆盖（放在 override 里、且无同名直接字段时生效） */
+profile.keys['__t.colorkey'] = { ref: 'rime.a', colors: { text: '#FFFFFF' } };
+lEff = FE.evalPlacement({ ref: '__t.colorkey', override: { colors: null } }, FE.NEUTRAL_STATUS).eff;
+ok(lEff.colors == null, 'colors:null 清除继承的颜色覆盖');
+lEff = FE.evalPlacement({ ref: '__t.colorkey', colors: { text: '#000000' }, override: { colors: null } }, FE.NEUTRAL_STATUS).eff;
+eq(lEff.colors && lEff.colors.text, '#000000', '直接字段的 colors 优先于 override 的 colors:null');
+delete profile.keys['__t.colorkey'];
+
+/* 手势引用字段的 null 语义：label/hint 清空、popup 变 false、action 变空列表 */
+const gNull = FE.gestureInfo({ ref: 'rime.q', label: null, hint: null, popup: null, action: null }, FE.NEUTRAL_STATUS);
+eq(gNull.label, '', '手势 label:null 清空为空串');
+eq(gNull.hint, '', '手势 hint:null 清空为空串');
+eq(gNull.popup, false, '手势 popup:null 变为 false');
+eq(gNull.action.actions, [], '手势 action:null 变为空动作列表');
+/* 未指定 ≠ 显式 null：未指定时 hint 应保持 undefined 以便回退 label */
+const gPlain = FE.gestureInfo({ ref: 'rime.q' }, FE.NEUTRAL_STATUS);
+ok(gPlain.hint === undefined, '未指定 hint 时为 undefined（仍回退 label）');
+eq(gPlain.popup, undefined, '未指定 popup 时为 undefined（继承被引用手势）');
+
+/* TOGGLE_LOCKED：合法修饰键状态（命令而非持久状态）；非法状态仍被检出 */
+ok(FE.MODIFIER_STATES.indexOf('TOGGLE_LOCKED') >= 0, 'MODIFIER_STATES 含 TOGGLE_LOCKED');
+const modOk = FE.normalizeProfile({
+  layouts: {
+    default: {
+      sections: [{
+        type: 'rows',
+        rows: [[{ label: 'L', tap: { type: 'modifier', modifier: 'SHIFT', state: 'TOGGLE_LOCKED' } }]]
+      }]
+    }
+  }
+});
+eq(FE.validateProfile(modOk).errors, [], 'TOGGLE_LOCKED 通过校验');
+const modBad = FE.normalizeProfile({
+  layouts: {
+    default: {
+      sections: [{
+        type: 'rows',
+        rows: [[{ label: 'X', tap: { type: 'modifier', modifier: 'SHIFT', state: 'NOT_A_STATE' } }]]
+      }]
+    }
+  }
+});
+ok(FE.validateProfile(modBad).errors.some(e => e.indexOf('NOT_A_STATE') >= 0), '非法 modifier state 仍被检出');
+
 const renameProfile = FE.normalizeProfile({ keys: { old: { ref: 'rime.a' } }, layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'old' }]] }], split: { sections: [{ type: 'rows', rows: [[{ ref: 'old' }]] }] } } } });
 FE.state.profile = renameProfile;
 FE.renameKeyDef('old', 'renamed');

@@ -204,6 +204,8 @@ FE.APP_COMMANDS = [
 FE.KEY_TYPES = ['LETTER', 'FUNCTION', 'ACTION'];
 FE.ICONS = ['backspace', 'shift', 'enter', 'return'];
 FE.MODIFIERS = ['SHIFT', 'CTRL'];
+/* 修饰键状态：TOGGLE_LOCKED 是命令而非持久状态（未锁定→锁定，已锁定→关闭） */
+FE.MODIFIER_STATES = ['OFF', 'ONESHOT', 'LOCKED', 'TOGGLE_LOCKED'];
 FE.GESTURE_FIELDS = ['tap', 'doubleTap', 'swipe', 'longPress', 'hold'];
 FE.SWIPE_DIRS = ['up', 'down', 'left', 'right'];
 FE.STATUS_CONDS = ['composing', 'ascii_mode', 'disabled'];
