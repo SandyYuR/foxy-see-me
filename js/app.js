@@ -1432,7 +1432,6 @@ function activateTab(id) {
   document.querySelectorAll('.tabpanel').forEach(function (p) { p.classList.remove('active'); });
   var panel = document.getElementById(id);
   if (panel) panel.classList.add('active');
-  if (id === 'tab-layout-json') renderJsonTab();
   if (id === 'tab-keys') renderKeysTab();
   if (id === 'tab-popup' && FE.renderPopupTab) FE.renderPopupTab();
 }
@@ -2715,8 +2714,7 @@ function initTabs() {
       if (ta) {
         // 布局类各页（布局编辑/按键定义/动作与宏）与布局 JSON 上下文联动；
         // 弹出菜单是独立文档，不联动。
-        if (btn.dataset.tab === 'tab-layout-json') checkJsonText();
-        else if (btn.dataset.tab === 'tab-layout' || btn.dataset.tab === 'tab-keys' ||
+        if (btn.dataset.tab === 'tab-layout' || btn.dataset.tab === 'tab-keys' ||
           btn.dataset.tab === 'tab-actions') renderJsonTab();
       }
     });
