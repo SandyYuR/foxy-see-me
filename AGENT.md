@@ -4,7 +4,26 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 215 / UI 355 / 真实文件体检 18 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 267 / UI 386 / 真实文件体检 18 个示例 0 错误。
+
+### ⚠️ 本文件有两份，必须保持一致
+
+同一个 `AGENT.md` 放在两处：
+
+- `<工作区根>/AGENT.md`            ← 仓库外层，供在整个工作区里工作时先读到
+- `<工作区根>/foxy-editor/AGENT.md` ← 仓库内，随项目一起分发
+
+**两份要求逐字节相同**：只改其中一份 = 另一份立刻过期，后续代理会照着旧约定改代码。
+
+```bash
+# 改完 AGENT.md 后：一条命令同步 + 校验（两处都跑同样的命令）
+node tools/check-agent-sync.js --write   # 以 foxy-editor/AGENT.md 为准，覆盖根目录副本
+node tools/check-agent-sync.js           # 只校验，不一致则退出码 1
+```
+
+- **权威副本是仓库内的 `foxy-editor/AGENT.md`**：改内容改这一份，然后 `--write` 同步出去。
+- 根目录不是 git 仓库，所以外层那份**不会被提交**——它纯粹是本工作区的便捷副本。
+- 忘了同步也不致命：校验脚本会报出来（退出码 1），照上面重跑即可。
 
 ---
 
@@ -107,7 +126,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ … → 现在 **215 core + 355 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **267 core + 386 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -146,7 +165,7 @@ foxy-editor/
 │   │                        / ICONS / MODIFIERS / MODIFIER_STATES
 │   ├── default-profile.js  内置默认布局文本（FE.DEFAULT_PROFILE_TEXT）
 │   ├── examples-bundle.js  示例打包产物（**生成的文件，不要手改**）
-│   ├── app.js         主体（3300+ 行）：状态 / 解析引擎 / 校验器 / 预览 / 布局编辑 UI
+│   ├── app.js         主体（3600+ 行）：状态 / 解析引擎 / 校验器 / 编译层 / 预览 / 布局编辑 UI
 │   ├── key-dialog.js  对话框：按键 / 手势 / 动作 / 变体 / 按键选择器 / jscolor 取色
 │   ├── popup-editor.js 弹出菜单编辑（纯逻辑 + 该标签页 UI）
 │   └── jscolor/jscolor.js  vendor 取色器（GPLv3，**不要改**）
@@ -155,8 +174,10 @@ foxy-editor/
 │   ├── DEFAULT_LAYOUT_V0.0.1.md  Foxy Layout File v0.0.1 完整规范
 │   ├── SKILL.md                  面向 AI 的编辑技能说明
 │   └── FOXY_JSON_CONFIGS.md      三种 Foxy JSON 的 type 判别与共享 definitions
-├── AGENT.md           本文件（改前必读）
-├── tools/build-examples.js  重新生成 examples-bundle.js
+├── AGENT.md           本文件（改前必读；工作区根还有一份副本，见开头「本文件有两份」）
+├── tools/
+│   ├── build-examples.js      重新生成 examples-bundle.js
+│   └── check-agent-sync.js    校验/同步两处 AGENT.md（--write 以外层副本同步）
 └── test/
     ├── test-core.js   纯逻辑测试（Node，无 DOM）
     ├── test-ui.js     UI 冒烟测试（Node + 自制 DOM 桩）
@@ -200,6 +221,8 @@ data.js → default-profile.js → examples-bundle.js → app.js
   - `state.profile` 布局文档、`state.popupProfile` 弹出菜单文档
   - `state.status`（composing/ascii_mode/disabled/shift）驱动预览状态变体
   - `state.splitMode` 分体模式；`state.portraitW` 竖屏基准宽度（见 §5.2）
+  - `state.compiled` 预览的编译产物（`FE.compileLayout` 结果）。每次 `renderPreview` 重建，
+    **是缓存不是事实来源**，随时可丢弃重算（见 §3.3）
   - `state.jsonDirty` 标记布局 JSON 卡片里用户手改未应用的文本
 - **渲染入口**：`renderAll()` 依次调
   `renderPreview / renderLayoutTab / renderKeysTab / renderActionsTab / renderJsonTab
@@ -216,7 +239,41 @@ data.js → default-profile.js → examples-bundle.js → app.js
   FE.buildPopupKeyEditor(...)           // ❌ 未加载时会抛
   ```
 
-### 3.3 DOM 构建
+### 3.3 编译中间层（渲染与编辑器共用的纯数据）
+
+`FE.compileSections(sections, status, scope)` / `FE.compileLayout(profile, layoutName, opts)`
+把 profile + 状态编译成**纯数据快照（无 DOM）**，渲染器与编辑器都消费它：
+
+- **为什么**：让每个键的引用解析 / 手势摘要 / 提示文字**只算一次**。此前预览、行 chip、
+  网格单元格、tooltip 各自 `evalPlacement` 一遍，大布局每次重渲染要重复解析数百次。
+- **消费方**：`buildKeyEl(item, unit, opts)`（预览）、`keyChip(item)`（行 chip）、
+  `gridEditor`（网格单元格）——它们**只读编译产物，不再自行解析**。新增渲染处请照此接入。
+- **按键项字段**：`placement / eff / s,r,k / group / weight / grow / label / hints /
+  summaries / isBroken / unresolved / popupKey / lpLabel / holdLabel`。
+  其中 `grow` 只取**放置位**的 `weight`（定义链上的 weight 不参与行宽分配，见
+  `FE.rowWeights`）；`weight` 则是解析后的有效权重，供检查器展示。
+- **索引对齐**：`s` 是区段索引（对应源 `sections` 下标）；网格 `keys[i]` 与源
+  `sections[i].keys[i]` **一一对应**——非法项以 `null` 占位而非跳过，否则索引错位。
+  区段编辑器与「点击错误定位」都依赖这个对应关系。
+- **`opts.noVariants`**：不做布局变体解析。**区段编辑器必须用它**——它编辑的是当前布局的
+  `sections` 数组，若跟着变体跳到别的布局，键索引会与编辑目标错位。
+- `FE.eachCompiledKey(compiled, cb)` 遍历全部按键项。
+
+### 3.4 解析作用域（scope）——不要临时改写全局 state
+
+解析器（`lookupDef` / `evalKeyRef` / `evalPlacement` / `tapInfo` / `gestureInfo` /
+`resolveActionSpec`）都接受**可选末位参数 `scope`**：
+
+- 省略 → 读 `state.profile`（浏览器主路径行为不变）。
+- 显式传入 → 完全独立于全局状态；用 `FE.scopeFrom(profile)` 构造。
+
+`FE.validateProfile(profile)` 全程走 `scopeFrom(profile)`，**因此可重入、可并发**，
+也不会污染 `state.profile`。历史上的写法是 `state.profile = profile; try{…}finally{恢复}`，
+**已移除，不要改回去**：那个 hack 让校验器不可重入，还逼得离线体检脚本自己伪造全局状态。
+
+> 新增解析类函数时，请一并接受并向下传递 `scope`，否则会在校验 / 离线体检路径上读错表。
+
+### 3.5 DOM 构建
 
 统一用 `h(tag, attrs, ...children)`（app.js 的 `function h(tag, attrs)`）：
 
@@ -277,10 +334,38 @@ data.js → default-profile.js → examples-bundle.js → app.js
 加校验时：**错误用 `err(...)`，可疑但合法用 `warn(...)`**。消息里带上布局名/区段/行号，
 现有消息格式是 `布局 “xxx” 区段 1 行 2 按键 3 ...`，保持一致。
 
+#### 结构化 issue 与「点击定位」
+
+`FE.validateProfile` 返回 `{ errors, warnings, issues }`：
+
+- `errors` / `warnings` 是**字符串数组**（历史 API，40+ 处旧断言依赖，**不要改**）。
+- `issues` 是**等长的结构化版本**——每条带 `level / message / path`，以及可定位坐标：
+  `code`（如 `unresolved-ref` / `no-tap` / `grid-overlap` / `hold-longpress`）、
+  `layout`、`isSplit`、`sectionIndex`、`rowIndex`、`keyIndex`、`group`。
+
+坐标由 `err/warn` 自动从**当前定位上下文**带上：
+
+- `inCtx({...}, fn)` 进入区段 / 行 / 按键时设置 `ctx`（可嵌套：区段 → 行 → 按键）。
+- 显式传入的 `loc` **只覆盖它写出的键**，其余沿用 `ctx`（`Object.assign({}, ctx, loc)`）。
+  早期实现是 `loc || ctx`，导致在 `checkPlacement` 里写 `err(msg, {code:'no-tap'})`
+  会把坐标整块丢掉——**改动时保持合并语义**。
+
+UI 侧：`appendValidationDetails` 把可定位条目渲染成可点击项，
+`FE.issueLocatable(it)` 判断能否定位，`FE.locateIssue(it)` 切布局 / 切分体 → 选中目标键 →
+滚动到它（`scrollToSelection` 靠 `__chipLoc` / `__gridKey` 找节点，并展开所在卡片）。
+新增校验规则时**顺手带上 `code` 与坐标**，定位能力才覆盖得到。
+
 ### 4.3 预览渲染（app.js 的 `displayLabel` → `renderMeta` 一段）
 
-`buildPreviewKey(placement, ctx)` 一个按键的全部渲染；`buildRowsSection` / `buildGridSection`
-是两种区段。角标含义（`index.html` 有图例，改样式时同步改图例文字）：
+渲染**吃编译产物**（见 §3.3）：`buildKeyEl(item, unit, opts)` 渲染单个键，
+`buildRowsSection(compiledSection, unit)` / `buildGridSection(compiledSection, unit)` 渲染区段，
+`renderCompiledInto(host, compiled, unit)` 组装进容器。
+
+**不要在这些函数里重新 `evalPlacement`** —— 引用解析、手势摘要、提示文字都已在编译期算好。
+tooltip 由 `itemTooltip(item, shift)` 生成（读 `item.summaries` / `item.hints`），
+不是从原始 placement 现算。
+
+角标含义（`index.html` 有图例，改样式时同步改图例文字）：
 
 - 右上蓝 `kb-badge-lp` = `longPress.label`
 - 右上橙 `kb-badge-hold` = `hold.label`
@@ -288,10 +373,12 @@ data.js → default-profile.js → examples-bundle.js → app.js
 - 四角 `kb-hint-up/down/left/right` = 滑动提示
 - `kb-key-broken` = 引用无法解析；`kb-key-sel` = 选中
 
-颜色：`applyKeyColors(el, eff, pressed)` 处理 `text/background/border/shadow/pressed`
+颜色：`applyKeyColors(el, eff, pressed, status)` 处理 `text/background/border/shadow/pressed`
 与 `states.{modifierActive,modifierLocked,pressed}.{background,text,shadow}`，
 优先级 `modifierActive < modifierLocked < pressed`；按下或修饰激活时默认 `box-shadow: none`，
 只有该状态显式给了 `shadow` 才画。`applyHintColors` 处理 `hint` + 四边 `hintTop/Bottom/Left/Right`。
+`applyKeyColors` / `displayLabel` 的 `status` 参数可省略（回落 `state.status`），
+但**显式传入才能对任意状态渲染**（无头测试 / 将来的导出）。
 
 ### 4.4 拖动排序（app.js 的「指针拖动（鼠标 + 触屏统一）」一段）
 
@@ -311,8 +398,11 @@ data.js → default-profile.js → examples-bundle.js → app.js
 - `openModal({title, wide})` → `{el, body, toolbar, close}`；`FE.openModal` 已导出。
 - `FE.openKeyDialog({mode:'placement'|'definition', placement?, name?, location?, grid?})`
   主对话框，内部 `buildForm()` 重建整个表单（任何局部改动想立即反映 → 调 `buildForm()`）。
-  折叠 section 顺序：**基本信息 → 手势 → 状态变体 → 按键颜色覆盖 → 高级 → 弹出菜单**
-  （最后一个是内嵌的 `FE.buildPopupKeyEditor`，见 §4.6）。
+  折叠 section 顺序（**7 个**，改顺序要同步这里）：
+  **基本信息 → 手势 → 状态变体 → 按键颜色覆盖 → 高级颜色 → 高级 → 弹出菜单**
+  - 「按键颜色覆盖」是 4 个常用角色；「高级颜色」（`color-adv-card`）含 `shadow` / `pressed` /
+    `hint` 四边，以及 `pressed` / `modifierLocked` / `modifierActive` 三个 `states` 子卡。
+  - 最后一个「弹出菜单」是内嵌的 `FE.buildPopupKeyEditor`（见 §4.6）。
 - `FE.openGestureDialog` / `FE.openVariantDialog` / `FE.openKeyPicker` / `FE.buildActionEditor`。
 - **jscolor 取色（`FE.installJscolor` 一段，踩过坑，改前必读该段注释）**：面板必须挂进最近的 `<dialog>`
   并对输入框做 `position: fixed`，否则被 `dialog` 与 `::backdrop` 盖住表现为"点了没反应"；
@@ -383,6 +473,9 @@ data.js → default-profile.js → examples-bundle.js → app.js
 | 改折叠卡片数量/顺序/标题 | `test-ui.js` 里对应的顺序断言（布局页、弹出菜单页都有） |
 | 改角标含义或样式类 | `index.html` 预览下方的图例文字 |
 | 改校验规则 | `test-core.js` 的校验器断言；并对照 skill 文档 |
+| 新增校验规则 | 顺手带上 `code` 与定位坐标（否则「点击定位」覆盖不到） |
+| 新增解析类函数 | 接受并向下传 `scope`（见 §3.4） |
+| 新增渲染处 | 消费编译产物，别自己 `evalPlacement`（见 §3.3） |
 
 ### 5.2 分体（split）预览的宽高（**曾经改错三轮**）
 
@@ -449,13 +542,16 @@ cd foxy-editor
 node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
-node test/test-core.js       # 期望：215 通过, 0 失败
-node test/test-ui.js         # 期望：355 通过, 0 失败
+node test/test-core.js       # 期望：267 通过, 0 失败
+node test/test-ui.js         # 期望：386 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
 node test/check-real-files.js   # 期望：共 18 个文件，0 个存在错误
 
-# 5) 浏览器里手动确认一次交互（拖动、取色、对话框这几类桩覆盖不到）
+# 5) 改过本文件（AGENT.md）就同步两处副本（见开头「本文件有两份」）
+node tools/check-agent-sync.js --write
+
+# 6) 浏览器里手动确认一次交互（拖动、取色、对话框这几类桩覆盖不到）
 ```
 
 ### 改动前的自查清单
@@ -465,10 +561,11 @@ node test/check-real-files.js   # 期望：共 18 个文件，0 个存在错误
 - [ ] 加了折叠卡片或改了顺序？→ 同步 `test-ui.js` 的顺序断言。
 - [ ] 数据变更走 `mutate()` 了吗？跨文件调用加了 `FE.xxx` 存在性判断吗？
 - [ ] 动了 `examples/`？→ 跑 `build-examples.js`。
+- [ ] 改过 `AGENT.md`？→ 跑 `node tools/check-agent-sync.js --write` 同步两处副本。
 - [ ] 两个测试套件都 0 失败了吗？
 
 ### 版本信息（改动可能影响这些对外说法）
 
-- 测试基线：core **215** / UI **355** / 示例 **18**（15 布局 + 3 弹出菜单）
+- 测试基线：core **267** / UI **386** / 示例 **18**（15 布局 + 3 弹出菜单）
 - 仓库 `README.md` 里的功能描述与 `index.html` 的图例，与实现同步维护；
   新增用户可见功能时一并更新，避免文档漂移。

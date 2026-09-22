@@ -44,6 +44,7 @@ var state = {
   includeType: true,
   sel: null,              // 选中按键 {s, r, k}
   validation: { errors: [], warnings: [] },
+  compiled: null,         // 预览的编译产物（FE.compileLayout 结果，随时可重建）
   history: [],
   future: [],
   splitMode: false,       // 分体键盘：预览与区段编辑作用于 split 片段
@@ -62,8 +63,24 @@ FE.NEUTRAL_STATUS = NEUTRAL_STATUS;
  * ================================================================ */
 function userKeys() { return (state.profile && isPlainObject(state.profile.keys)) ? state.profile.keys : {}; }
 
-function lookupDef(name) {
-  if (Object.prototype.hasOwnProperty.call(userKeys(), name)) return userKeys()[name];
+/* ---------------- 定义作用域 ----------------
+ * 解析器默认读 state.profile（浏览器主路径行为不变）。需要解析「一份尚未装入 state 的
+ * profile」的场合（如校验、离线体检）可显式传入 scope，从而不再临时改写全局 state——
+ * 后者会让 validateProfile 不可重入、不可并发。 */
+function scopeFrom(profile) {
+  var p = isPlainObject(profile) ? profile : {};
+  return {
+    profile: p,
+    keys: isPlainObject(p.keys) ? p.keys : {},
+    actions: isPlainObject(p.actions) ? p.actions : {},
+    macros: isPlainObject(p.macros) ? p.macros : {}
+  };
+}
+FE.scopeFrom = scopeFrom;
+
+function lookupDef(name, scope) {
+  var keys = scope ? scope.keys : userKeys();
+  if (Object.prototype.hasOwnProperty.call(keys, name)) return keys[name];
   if (FE.BUILTIN_KEYS && FE.BUILTIN_KEYS[name]) return FE.BUILTIN_KEYS[name];
   return null;
 }
@@ -125,7 +142,7 @@ function variantMatches(when, status) {
 }
 FE.variantMatches = variantMatches;
 
-function applyVariants(eff, variants, status, seen) {
+function applyVariants(eff, variants, status, seen, scope) {
   if (!Array.isArray(variants) || !variants.length) return eff;
   var match = null;
   for (var i = 0; i < variants.length; i++) {
@@ -134,7 +151,7 @@ function applyVariants(eff, variants, status, seen) {
   if (!match) return eff;
   var patch = omit(match, ['when']);
   if (typeof match.ref === 'string' && match.ref) {
-    var sub = evalKeyRef(match.ref, status, seen);
+    var sub = evalKeyRef(match.ref, status, seen, scope);
     var eff2 = sub.eff;
     mergePatch(eff2, omit(patch, ['ref']));
     return eff2;
@@ -144,10 +161,11 @@ function applyVariants(eff, variants, status, seen) {
 }
 FE.applyVariants = applyVariants;
 
-/* 解析用户按键定义引用链：name → ... → 内置/终点 */
-function evalKeyRef(refName, status, seen) {
+/* 解析用户按键定义引用链：name → ... → 内置/终点
+ * scope 可选：省略时读 state.profile（浏览器主路径），显式传入则完全独立于全局状态。 */
+function evalKeyRef(refName, status, seen, scope) {
   seen = seen || {};
-  var node = lookupDef(refName);
+  var node = lookupDef(refName, scope);
   var result = { eff: {}, chain: [], unresolved: null, cycle: null };
   if (!node) { result.unresolved = refName; return result; }
   if (seen[refName]) { result.cycle = refName; return result; }
@@ -155,14 +173,14 @@ function evalKeyRef(refName, status, seen) {
   result.chain.push(refName);
   if (node.ref != null) {
     if (typeof node.ref !== 'string') { result.unresolved = String(node.ref); return result; }
-    var sub = evalKeyRef(node.ref, status, seen);
+    var sub = evalKeyRef(node.ref, status, seen, scope);
     result.eff = sub.eff;
     result.chain = sub.chain.concat(result.chain);
     if (sub.unresolved) result.unresolved = sub.unresolved;
     if (sub.cycle) result.cycle = sub.cycle;
   }
   mergePatch(result.eff, omit(node, ['ref', 'variants']));
-  result.eff = applyVariants(result.eff, node.variants, status, seen);
+  result.eff = applyVariants(result.eff, node.variants, status, seen, scope);
   return result;
 }
 FE.evalKeyRef = evalKeyRef;
@@ -170,11 +188,11 @@ FE.evalKeyRef = evalKeyRef;
 /* 解析一个放置（placement）为有效按键对象。
  * 优先级（Foxy 文档）：定义链(含定义变体) < override 变体与字段 < 直接放置字段(含放置变体)。
  * 注意：早期文档写的是「直接字段 < override」，现已反转为直接字段优先。 */
-FE.evalPlacement = function (placement, status) {
+FE.evalPlacement = function (placement, status, scope) {
   status = status || NEUTRAL_STATUS;
   var out = { eff: {}, chain: [], unresolved: null, cycle: null, placement: placement || {} };
   if (isPlainObject(placement) && typeof placement.ref === 'string' && placement.ref) {
-    var sub = evalKeyRef(placement.ref, status);
+    var sub = evalKeyRef(placement.ref, status, null, scope);
     out.eff = sub.eff;
     out.chain = sub.chain;
     out.unresolved = sub.unresolved;
@@ -183,10 +201,10 @@ FE.evalPlacement = function (placement, status) {
   if (isPlainObject(placement)) {
     if (isPlainObject(placement.override)) {
       mergePatch(out.eff, omit(placement.override, ['variants']));
-      out.eff = applyVariants(out.eff, placement.override.variants, status);
+      out.eff = applyVariants(out.eff, placement.override.variants, status, null, scope);
     }
     mergePatch(out.eff, omit(placement, ['ref', 'override', 'variants']));
-    out.eff = applyVariants(out.eff, placement.variants, status);
+    out.eff = applyVariants(out.eff, placement.variants, status, null, scope);
   }
   return out;
 };
@@ -213,11 +231,13 @@ FE.actionDisplay = function (a) {
 };
 
 /* 动作规格 → { actions:[...], display, unresolved? } 或 null
- * 支持字符串(actions 名)、数组、{macro}、{action}/{actions}、直接动作对象 */
-FE.resolveActionSpec = function (spec) {
+ * 支持字符串(actions 名)、数组、{macro}、{action}/{actions}、直接动作对象
+ * scope 可选：省略时读 state.profile，显式传入则完全独立于全局状态。 */
+FE.resolveActionSpec = function (spec, scope) {
   if (spec == null) return null;
   if (typeof spec === 'string') {
-    var a = (state.profile && isPlainObject(state.profile.actions)) ? state.profile.actions[spec] : null;
+    var actions = scope ? scope.actions : ((state.profile && isPlainObject(state.profile.actions)) ? state.profile.actions : {});
+    var a = actions[spec];
     if (a != null) return { actions: [deepClone(a)], display: '动作 ' + spec, kind: 'action-name', name: spec };
     return { actions: [], display: '未解析动作 ' + spec, unresolved: spec, kind: 'action-name', name: spec };
   }
@@ -226,14 +246,15 @@ FE.resolveActionSpec = function (spec) {
   }
   if (isPlainObject(spec)) {
     if (spec.macro != null) {
-      var m = (state.profile && isPlainObject(state.profile.macros)) ? state.profile.macros[spec.macro] : null;
+      var macros = scope ? scope.macros : ((state.profile && isPlainObject(state.profile.macros)) ? state.profile.macros : {});
+      var m = macros[spec.macro];
       var disp = '宏 ' + spec.macro + (Array.isArray(m) ? '（' + m.length + ' 步）' : '');
       var r = { actions: [deepClone(spec)], display: m ? disp : '未解析宏 ' + spec.macro, kind: 'macro', name: spec.macro };
       if (!m) r.unresolved = spec.macro;
       return r;
     }
-    if (spec.action != null) return FE.resolveActionSpec(spec.action);
-    if (spec.actions != null) return FE.resolveActionSpec(spec.actions);
+    if (spec.action != null) return FE.resolveActionSpec(spec.action, scope);
+    if (spec.actions != null) return FE.resolveActionSpec(spec.actions, scope);
     if (spec.type != null) return { actions: [deepClone(spec)], display: FE.actionDisplay(spec), kind: 'direct' };
   }
   return null;
@@ -242,29 +263,29 @@ FE.resolveActionSpec = function (spec) {
 /* 有效点击手势信息：{action, label, ownLabel, hint, popup}
  * ownLabel 区分「tap 对象里直接写的 label」与「经 tap.ref 从被引用按键继承的 label」：
  * 前者优先级最高，后者低于外层的 key/variant label（见 Foxy 文档 label 优先级规则）。 */
-FE.tapInfo = function (eff, status, depth) {
+FE.tapInfo = function (eff, status, depth, scope) {
   depth = depth || 0;
   if (depth > 12 || !isPlainObject(eff)) return null;
   var t = eff.tap;
   if (t == null) return null;
   if (typeof t === 'string') {
-    var r = FE.resolveActionSpec(t);
+    var r = FE.resolveActionSpec(t, scope);
     return r ? { action: r, label: null, ownLabel: false, popup: undefined } : null;
   }
   if (!isPlainObject(t)) return null;
   var hasOwn = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
   if (t.ref != null) {
     if (typeof t.ref !== 'string') return null;
-    var sub = FE.evalPlacement({ ref: t.ref }, status);
-    var nested = FE.tapInfo(sub.eff, status, depth + 1);
+    var sub = FE.evalPlacement({ ref: t.ref }, status, scope);
+    var nested = FE.tapInfo(sub.eff, status, depth + 1, scope);
     var label, ownLabel = hasOwn(t, 'label');
     if (ownLabel) label = (t.label == null) ? '' : t.label;   /* tap 自带 label（含 null 清空）最高 */
     else if (nested && nested.label != null && nested.label !== '') label = nested.label;
-    else label = rawLabelOf(sub.eff, status, depth + 1);
+    else label = rawLabelOf(sub.eff, status, depth + 1, scope);
     var act = nested ? nested.action : null;
     if (hasOwn(t, 'action') || hasOwn(t, 'actions')) {
       var spec = hasOwn(t, 'action') ? t.action : t.actions;
-      act = (spec === null) ? FE.resolveActionSpec([]) : FE.resolveActionSpec(spec);
+      act = (spec === null) ? FE.resolveActionSpec([], scope) : FE.resolveActionSpec(spec, scope);
     }
     var hint = hasOwn(t, 'hint') ? ((t.hint == null) ? '' : t.hint)
       : (nested && nested.hint !== undefined ? nested.hint : undefined);
@@ -275,10 +296,10 @@ FE.tapInfo = function (eff, status, depth) {
   var act2 = FE.resolveActionSpec(
     t.action != null ? t.action :
     (t.actions != null ? t.actions :
-      (t.macro != null ? t : (t.type != null ? t : null)))
+      (t.macro != null ? t : (t.type != null ? t : null))), scope
   );
-  if (hasOwn(t, 'action') && t.action === null) act2 = FE.resolveActionSpec([]);
-  if (hasOwn(t, 'actions') && t.actions === null) act2 = FE.resolveActionSpec([]);
+  if (hasOwn(t, 'action') && t.action === null) act2 = FE.resolveActionSpec([], scope);
+  if (hasOwn(t, 'actions') && t.actions === null) act2 = FE.resolveActionSpec([], scope);
   return {
     action: act2,
     label: hasOwn(t, 'label') ? ((t.label == null) ? '' : t.label) : null,
@@ -292,10 +313,10 @@ FE.tapInfo = function (eff, status, depth) {
 /* 主标签原始值（不应用 Shift 状态）。
  * Foxy 文档优先级：tap 对象自带 label > 外层 key/variant label > 被引用 tap 的 label。
  * 外层 label 显式为 null 时按「清空为空字符串」处理，不再回退到被引用按键的标签。 */
-function rawLabelOf(eff, status, depth) {
+function rawLabelOf(eff, status, depth, scope) {
   depth = depth || 0;
   if (depth > 12 || !isPlainObject(eff)) return null;
-  var ti = FE.tapInfo(eff, status, depth + 1);
+  var ti = FE.tapInfo(eff, status, depth + 1, scope);
   if (ti && ti.ownLabel) return (ti.label == null) ? '' : String(ti.label);
   if (eff.label === null) return '';
   if (eff.label != null) return String(eff.label);
@@ -306,10 +327,10 @@ FE.rawLabelOf = rawLabelOf;
 
 /* 手势对象 → {label, action, hint, popup, repeat, popupKey, start, end, raw}
  * null 语义（Foxy 文档）：label/hint 清空为空串、popup 变 false、action/actions 变空列表。 */
-FE.gestureInfo = function (g, status, depth) {
+FE.gestureInfo = function (g, status, depth, scope) {
   if (g == null) return null;
   if (typeof g === 'string') {
-    return { raw: g, action: FE.resolveActionSpec(g), label: null };
+    return { raw: g, action: FE.resolveActionSpec(g, scope), label: null };
   }
   if (!isPlainObject(g)) return null;
   depth = depth || 0;
@@ -317,11 +338,11 @@ FE.gestureInfo = function (g, status, depth) {
   var out = { raw: g };
   var refLabel = null, refHint, refPopup;
   if (g.ref != null && typeof g.ref === 'string') {
-    var sub = FE.evalPlacement({ ref: g.ref }, status);
-    var nestedTap = FE.tapInfo(sub.eff, status, depth + 1);
+    var sub = FE.evalPlacement({ ref: g.ref }, status, scope);
+    var nestedTap = FE.tapInfo(sub.eff, status, depth + 1, scope);
     out.action = nestedTap ? nestedTap.action : null;
     refLabel = (nestedTap && nestedTap.label != null && String(nestedTap.label) !== '')
-      ? String(nestedTap.label) : rawLabelOf(sub.eff, status, depth + 1);
+      ? String(nestedTap.label) : rawLabelOf(sub.eff, status, depth + 1, scope);
     refHint = nestedTap ? nestedTap.hint : undefined;
     refPopup = nestedTap ? nestedTap.popup : undefined;
     if (isPlainObject(sub.eff.hold)) out.inheritedHold = sub.eff.hold;
@@ -329,7 +350,7 @@ FE.gestureInfo = function (g, status, depth) {
     out.action = FE.resolveActionSpec(
       g.action != null ? g.action :
       (g.actions != null ? g.actions :
-        (g.macro != null || g.type != null ? g : null))
+        (g.macro != null || g.type != null ? g : null)), scope
     );
     refHint = undefined;
     refPopup = undefined;
@@ -343,7 +364,7 @@ FE.gestureInfo = function (g, status, depth) {
   /* 手势引用可用 action/actions 覆盖被引用手势的动作；null 表示空动作列表 */
   if (has(g, 'action') || has(g, 'actions')) {
     var spec = has(g, 'action') ? g.action : g.actions;
-    out.action = (spec == null) ? FE.resolveActionSpec([]) : FE.resolveActionSpec(spec);
+    out.action = (spec == null) ? FE.resolveActionSpec([], scope) : FE.resolveActionSpec(spec, scope);
   }
   if (g.repeat != null) out.repeat = g.repeat;
   if (g.popupKey != null) out.popupKey = g.popupKey;
@@ -484,24 +505,23 @@ function refNameOf(placement) {
   return (isPlainObject(placement) && typeof placement.ref === 'string') ? placement.ref : '内联按键';
 }
 
-function checkGestureRefs(container, where, err, profile) {
+function checkGestureRefs(container, where, err, profile, scope) {
+  var acts = scope ? scope.actions : ((state.profile && isPlainObject(state.profile.actions)) ? state.profile.actions : {});
+  var macros = scope ? scope.macros : ((state.profile && isPlainObject(state.profile.macros)) ? state.profile.macros : {});
   function checkOne(g, gw) {
     if (g == null) return;
-    if (isPlainObject(g) && typeof g.ref === 'string' && !lookupDef(g.ref)) err(gw + '.ref 引用无法解析: ' + g.ref);
+    if (isPlainObject(g) && typeof g.ref === 'string' && !lookupDef(g.ref, scope)) err(gw + '.ref 引用无法解析: ' + g.ref);
     if (typeof g === 'string') {
-      var acts = (state.profile && isPlainObject(state.profile.actions)) ? state.profile.actions : {};
       if (!acts[g]) err(gw + ' 引用动作名不存在: ' + g);
       return;
     }
     if (!isPlainObject(g)) { err(gw + ' 的手势结构无效'); return; }
     if (g.macro != null) {
-      var macros = (state.profile && isPlainObject(state.profile.macros)) ? state.profile.macros : {};
       if (!macros[g.macro]) err(gw + ' 引用宏不存在: ' + g.macro);
     }
     if (g.action != null) {
       if (typeof g.action === 'string') {
-        var named = (state.profile && isPlainObject(state.profile.actions)) ? state.profile.actions : {};
-        if (!named[g.action]) err(gw + ' 引用动作名不存在: ' + g.action);
+        if (!acts[g.action]) err(gw + ' 引用动作名不存在: ' + g.action);
       } else if (Array.isArray(g.action)) {
         g.action.forEach(function (a, i) { validateAction(a, gw + '.action[' + i + ']', err, profile); });
       } else validateAction(g.action, gw + '.action', err, profile);
@@ -519,14 +539,44 @@ function checkGestureRefs(container, where, err, profile) {
 }
 
 FE.validateProfile = function (profile) {
-  var errors = [], warnings = [];
-  function err(msg) { errors.push(msg); }
-  function warn(msg) { warnings.push(msg); }
+  var errors = [], warnings = [], issues = [];
+  /* 定位上下文：进入区段/行/按键时设置，err/warn 自动带上坐标，
+   * 这样 UI 能「点击错误 → 跳转并选中该键」。字符串版 errors/warnings 保持原样。 */
+  var ctx = null;
+  function addIssue(level, msg, loc) {
+    if (level === 'error') errors.push(msg); else warnings.push(msg);
+    /* loc 只覆盖它显式给出的键，其余坐标沿用当前 ctx：
+     * 否则在 checkPlacement 里写 err(msg, {code:'no-tap'}) 会把区段/行/键坐标整块丢掉。 */
+    var src = null;
+    if (ctx && loc) src = Object.assign({}, ctx, loc);
+    else src = loc || ctx;
+    var it = { level: level, message: msg, path: (src && src.path) || '配置' };
+    if (src) {
+      if (src.code) it.code = src.code;
+      if (src.layout != null) it.layout = src.layout;
+      if (src.isSplit) it.isSplit = true;
+      if (src.section != null) it.sectionIndex = src.section;
+      if (src.row != null) it.rowIndex = src.row;
+      if (src.key != null) it.keyIndex = src.key;
+      if (src.group) it.group = src.group;
+    }
+    issues.push(it);
+  }
+  function err(msg, loc) { addIssue('error', msg, loc); }
+  function warn(msg, loc) { addIssue('warn', msg, loc); }
+  /* 在给定定位上下文中执行 fn，结束后恢复（支持嵌套：区段 → 行 → 按键） */
+  function inCtx(next, fn) {
+    var prev = ctx;
+    ctx = next;
+    try { return fn(); } finally { ctx = prev; }
+  }
 
-  var oldProfile = state.profile;
-  state.profile = profile; // 供 lookupDef / resolveActionSpec 使用
-  try {
-    if (!isPlainObject(profile)) { err('配置不是 JSON 对象'); return { errors: errors, warnings: warnings }; }
+  /* 显式作用域：解析器（lookupDef / evalPlacement / resolveActionSpec）全部走 scope，
+   * 不再临时改写 state.profile。因此 validateProfile 现在可重入、可并发，
+   * 也能校验一份尚未装入编辑器状态的 profile（如 check-real-files）。 */
+  var scope = scopeFrom(profile);
+  {
+    if (!isPlainObject(profile)) { err('配置不是 JSON 对象'); return { errors: errors, warnings: warnings, issues: issues }; }
     if (profile.type != null && profile.type !== 'foxy.keyboard-layout') {
       err('type 字段必须为 "foxy.keyboard-layout"，当前为 ' + JSON.stringify(profile.type));
     }
@@ -552,15 +602,15 @@ FE.validateProfile = function (profile) {
       var kd = keys[kn];
       if (!isPlainObject(kd)) { err('按键定义 “' + kn + '” 不是对象'); continue; }
       if (kd.ref != null && typeof kd.ref !== 'string') err('按键定义 “' + kn + '” 的 ref 必须是字符串');
-      else if (typeof kd.ref === 'string' && !lookupDef(kd.ref)) err('按键定义 “' + kn + '” 的 ref 无法解析: ' + kd.ref);
+      else if (typeof kd.ref === 'string' && !lookupDef(kd.ref, scope)) err('按键定义 “' + kn + '” 的 ref 无法解析: ' + kd.ref);
       if (kd.ref === kn) err('按键定义 “' + kn + '” 引用了自身');
       if (kd.hold != null && kd.longPress != null) err('按键定义 “' + kn + '” 同时定义了 hold 与 longPress');
-      checkGestureRefs(kd, '按键定义 “' + kn + '”', err, profile);
+      checkGestureRefs(kd, '按键定义 “' + kn + '”', err, profile, scope);
       if (Array.isArray(kd.variants)) {
         kd.variants.forEach(function (v, vi) {
           if (!isPlainObject(v)) { err('按键定义 “' + kn + '” 的变体 ' + vi + ' 不是对象'); return; }
-          if (typeof v.ref === 'string' && !lookupDef(v.ref)) err('按键定义 “' + kn + '” 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref);
-          checkGestureRefs(v, '按键定义 “' + kn + '” 变体 ' + vi, err, profile);
+          if (typeof v.ref === 'string' && !lookupDef(v.ref, scope)) err('按键定义 “' + kn + '” 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref);
+          checkGestureRefs(v, '按键定义 “' + kn + '” 变体 ' + vi, err, profile, scope);
         });
       }
     }
@@ -642,48 +692,52 @@ FE.validateProfile = function (profile) {
     function validateSectionsArr(sections, ln, isSplit) {
       var pfx = '布局 “' + ln + '”' + (isSplit ? ' 分体片段' : '');
       sections.forEach(function (s, si) {
-        if (!isPlainObject(s)) { err(pfx + ' 的区段 ' + si + ' 不是对象'); return; }
+        inCtx({ path: pfx + ' 区段 ' + si, layout: ln, isSplit: !!isSplit, section: si }, function () {
+        if (!isPlainObject(s)) { err(pfx + ' 的区段 ' + si + ' 不是对象', { code: 'section-not-object', path: pfx + ' 区段 ' + si, layout: ln, isSplit: !!isSplit, section: si }); return; }
         if (s.type === 'rows') {
           FE.rowsOfSection(s).forEach(function (row, ri) {
+            inCtx({ path: pfx + ' 区段 ' + si + ' 行 ' + ri, layout: ln, isSplit: !!isSplit, section: si, row: ri, group: 'rows' }, function () {
             var hasAuto = false, fixedSum = 0;
             row.keys.forEach(function (k) {
               var w = isPlainObject(k) && k.weight != null ? k.weight : 1;
               if (w === 'auto') hasAuto = true; else fixedSum += (Number(w) || 0);
             });
             if (hasAuto && row.totalWeight == null) {
-              err(pfx + ' 区段 ' + si + ' 行 ' + ri + ' 使用了 weight:"auto" 但未提供 totalWeight');
+              err(pfx + ' 区段 ' + si + ' 行 ' + ri + ' 使用了 weight:"auto" 但未提供 totalWeight', { code: 'auto-without-totalweight' });
             } else if (hasAuto && row.totalWeight <= fixedSum + 1e-9) {
-              err(pfx + ' 区段 ' + si + ' 行 ' + ri + ' 的 totalWeight(' + row.totalWeight + ') 不足以分配 auto 权重');
+              err(pfx + ' 区段 ' + si + ' 行 ' + ri + ' 的 totalWeight(' + row.totalWeight + ') 不足以分配 auto 权重', { code: 'totalweight-too-small' });
             }
             row.keys.forEach(function (k, ki) {
-              checkPlacement(k, pfx, si, '行 ' + ri + ' 按键 ' + ki);
+              checkPlacement(k, pfx, si, '行 ' + ri + ' 按键 ' + ki, { code: null, path: pfx + ' 区段 ' + si + ' 行 ' + ri + ' 按键 ' + ki, layout: ln, isSplit: !!isSplit, section: si, row: ri, key: ki, group: 'rows' });
+            });
             });
           });
         } else if (s.type === 'grid') {
           var cols = s.columns, rws = s.rows;
-          if (!Number.isInteger(cols) || cols < 1) err(pfx + ' 区段 ' + si + ' 的 columns 无效');
-          if (!Number.isInteger(rws) || rws < 1) err(pfx + ' 区段 ' + si + ' 的 rows 无效');
-          if (s.rowHeights != null && !Array.isArray(s.rowHeights)) err(pfx + ' 区段 ' + si + ' 的 rowHeights 必须是数组');
+          if (!Number.isInteger(cols) || cols < 1) err(pfx + ' 区段 ' + si + ' 的 columns 无效', { code: 'bad-grid-columns' });
+          if (!Number.isInteger(rws) || rws < 1) err(pfx + ' 区段 ' + si + ' 的 rows 无效', { code: 'bad-grid-rows' });
+          if (s.rowHeights != null && !Array.isArray(s.rowHeights)) err(pfx + ' 区段 ' + si + ' 的 rowHeights 必须是数组', { code: 'bad-rowheights' });
           var C = Number.isInteger(cols) ? cols : 1, R = Number.isInteger(rws) ? rws : 1;
           var occ = {};
           (Array.isArray(s.keys) ? s.keys : []).forEach(function (k, ki) {
-            if (!isPlainObject(k)) { err(pfx + ' 区段 ' + si + ' 网格按键 ' + ki + ' 不是对象'); return; }
+            var gkey = { path: pfx + ' 区段 ' + si + ' 网格按键 ' + ki, layout: ln, isSplit: !!isSplit, section: si, key: ki, group: 'grid' };
+            if (!isPlainObject(k)) { err(pfx + ' 区段 ' + si + ' 网格按键 ' + ki + ' 不是对象', Object.assign({}, gkey, { code: 'key-not-object' })); return; }
             var c = k.column, r = k.row, cs = k.columnSpan != null ? k.columnSpan : 1, rs = k.rowSpan != null ? k.rowSpan : 1;
             var label = refNameOf(k);
-            if (!Number.isInteger(c) || !Number.isInteger(r)) { err(pfx + ' 网格按键 ' + label + ' 缺少整数 column/row'); }
+            if (!Number.isInteger(c) || !Number.isInteger(r)) { err(pfx + ' 网格按键 ' + label + ' 缺少整数 column/row', Object.assign({}, gkey, { code: 'grid-missing-cell' })); }
             else {
-              if (cs < 1 || rs < 1) err(pfx + ' 网格按键 ' + label + ' 的跨距必须 ≥1');
-              if (c < 0 || r < 0 || c + cs > C || r + rs > R) err(pfx + ' 网格按键 ' + label + ' 超出网格范围');
+              if (cs < 1 || rs < 1) err(pfx + ' 网格按键 ' + label + ' 的跨距必须 ≥1', Object.assign({}, gkey, { code: 'grid-bad-span' }));
+              if (c < 0 || r < 0 || c + cs > C || r + rs > R) err(pfx + ' 网格按键 ' + label + ' 超出网格范围', Object.assign({}, gkey, { code: 'grid-out-of-range' }));
               var limC = Math.min(c + cs, C), limR = Math.min(r + rs, R);
               for (var y = Math.max(0, r); y < limR; y++) {
                 for (var x = Math.max(0, c); x < limC; x++) {
                   var id = x + ',' + y;
-                  if (occ[id] != null) err(pfx + ' 网格按键 ' + label + ' 与 ' + occ[id] + ' 在单元格 (' + id + ') 重叠');
+                  if (occ[id] != null) err(pfx + ' 网格按键 ' + label + ' 与 ' + occ[id] + ' 在单元格 (' + id + ') 重叠', Object.assign({}, gkey, { code: 'grid-overlap' }));
                   else occ[id] = label;
                 }
               }
             }
-            checkPlacement(k, pfx, si, '网格按键 ' + label);
+            checkPlacement(k, pfx, si, '网格按键 ' + label, gkey);
           });
           if (Number.isInteger(cols) && cols > 0 && Number.isInteger(rws) && rws > 0) {
             var holes = [];
@@ -692,48 +746,52 @@ FE.validateProfile = function (profile) {
             }
             /* 文档只要求网格不重叠、不越界，并未要求铺满；空格子会渲染为留白，
              * 属合法（如异形回车、留白布局）。这里给提示而非错误，避免误报。 */
-            if (holes.length) warn(pfx + ' 区段 ' + si + ' 网格有 ' + holes.length + ' 个空单元格（将渲染为留白）: ' + holes.slice(0, 8).join('、') + (holes.length > 8 ? '…' : ''));
+            if (holes.length) warn(pfx + ' 区段 ' + si + ' 网格有 ' + holes.length + ' 个空单元格（将渲染为留白）: ' + holes.slice(0, 8).join('、') + (holes.length > 8 ? '…' : ''), { code: 'grid-holes' });
           }
         } else {
-          err(pfx + ' 区段 ' + si + ' 的 type 必须是 rows 或 grid');
+          err(pfx + ' 区段 ' + si + ' 的 type 必须是 rows 或 grid', { code: 'bad-section-type' });
         }
+        });
       });
     }
 
-    function checkPlacement(k, pfx, si, where) {
-      if (!isPlainObject(k)) { err(pfx + ' ' + where + ' 不是对象'); return; }
+    function checkPlacement(k, pfx, si, where, kctx) {
+      if (!isPlainObject(k)) { err(pfx + ' ' + where + ' 不是对象', Object.assign({}, kctx, { code: 'key-not-object' })); return; }
       var full = pfx + ' ' + where;
-      if (k.ref != null && typeof k.ref !== 'string') err(full + ' 的 ref 必须是字符串');
-      else if (typeof k.ref === 'string' && k.ref && !lookupDef(k.ref)) err(full + ' 的 ref 无法解析: ' + k.ref);
-      var ev = FE.evalPlacement(k, NEUTRAL_STATUS);
-      if (ev.unresolved) err(full + ' 引用链无法解析: ' + ev.unresolved);
-      if (ev.cycle) err(full + ' 引用链存在循环: ' + ev.cycle);
-      if (ev.eff.tap == null) err(full + '（' + refNameOf(k) + '）解析后缺少点击动作 tap');
-      if (ev.eff.hold != null && ev.eff.longPress != null) err(full + '（' + refNameOf(k) + '）同时定义了 hold 与 longPress');
-      checkGestureRefs(k, full, err, profile);
+      /* 该按键内的所有问题都带上 kctx（区段/行/键坐标），供 UI 跳转定位 */
+      inCtx(kctx, function () {
+      if (k.ref != null && typeof k.ref !== 'string') err(full + ' 的 ref 必须是字符串', { code: 'bad-ref-type' });
+      else if (typeof k.ref === 'string' && k.ref && !lookupDef(k.ref, scope)) err(full + ' 的 ref 无法解析: ' + k.ref, { code: 'unresolved-ref' });
+      var ev = FE.evalPlacement(k, NEUTRAL_STATUS, scope);
+      if (ev.unresolved) err(full + ' 引用链无法解析: ' + ev.unresolved, { code: 'unresolved-ref' });
+      if (ev.cycle) err(full + ' 引用链存在循环: ' + ev.cycle, { code: 'ref-cycle' });
+      if (ev.eff.tap == null) err(full + '（' + refNameOf(k) + '）解析后缺少点击动作 tap', { code: 'no-tap' });
+      if (ev.eff.hold != null && ev.eff.longPress != null) err(full + '（' + refNameOf(k) + '）同时定义了 hold 与 longPress', { code: 'hold-longpress' });
+      checkGestureRefs(k, full, err, profile, scope);
       if (Array.isArray(k.variants)) k.variants.forEach(function (v, vi) {
-        if (!isPlainObject(v)) { err(full + ' 的变体 ' + vi + ' 不是对象'); return; }
-        if (typeof v.ref === 'string' && !lookupDef(v.ref)) err(full + ' 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref);
-        checkGestureRefs(v, full + ' 变体 ' + vi, err, profile);
+        if (!isPlainObject(v)) { err(full + ' 的变体 ' + vi + ' 不是对象', { code: 'variant-not-object' }); return; }
+        if (typeof v.ref === 'string' && !lookupDef(v.ref, scope)) err(full + ' 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref, { code: 'unresolved-ref' });
+        checkGestureRefs(v, full + ' 变体 ' + vi, err, profile, scope);
       });
       if (isPlainObject(k.override)) {
-        checkGestureRefs(k.override, full + ' override', err, profile);
+        checkGestureRefs(k.override, full + ' override', err, profile, scope);
         if (Array.isArray(k.override.variants)) k.override.variants.forEach(function (v, vi) {
-          if (!isPlainObject(v)) { err(full + ' override 变体 ' + vi + ' 不是对象'); return; }
-          if (typeof v.ref === 'string' && !lookupDef(v.ref)) err(full + ' override 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref);
-          checkGestureRefs(v, full + ' override 变体 ' + vi, err, profile);
+          if (!isPlainObject(v)) { err(full + ' override 变体 ' + vi + ' 不是对象', { code: 'variant-not-object' }); return; }
+          if (typeof v.ref === 'string' && !lookupDef(v.ref, scope)) err(full + ' override 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref, { code: 'unresolved-ref' });
+          checkGestureRefs(v, full + ' override 变体 ' + vi, err, profile, scope);
         });
       }
       /* 三个布尔状态共 8 种组合，逐一验证最终引用、tap 与手势冲突。 */
       for (var mask = 0; mask < 8; mask++) {
         var st = { composing: !!(mask & 1), ascii_mode: !!(mask & 2), disabled: !!(mask & 4) };
-        var sev = FE.evalPlacement(k, st);
+        var sev = FE.evalPlacement(k, st, scope);
         var suffix = '（状态 composing=' + st.composing + ', ascii_mode=' + st.ascii_mode + ', disabled=' + st.disabled + '）';
-        if (sev.unresolved) err(full + suffix + ' 引用链无法解析: ' + sev.unresolved);
-        if (sev.cycle) err(full + suffix + ' 引用链存在循环: ' + sev.cycle);
-        if (sev.eff.tap == null) err(full + suffix + ' 解析后缺少点击动作 tap');
-        if (sev.eff.hold != null && sev.eff.longPress != null) err(full + suffix + ' 同时定义了 hold 与 longPress');
+        if (sev.unresolved) err(full + suffix + ' 引用链无法解析: ' + sev.unresolved, { code: 'unresolved-ref', state: st });
+        if (sev.cycle) err(full + suffix + ' 引用链存在循环: ' + sev.cycle, { code: 'ref-cycle', state: st });
+        if (sev.eff.tap == null) err(full + suffix + ' 解析后缺少点击动作 tap', { code: 'no-tap', state: st });
+        if (sev.eff.hold != null && sev.eff.longPress != null) err(full + suffix + ' 同时定义了 hold 与 longPress', { code: 'hold-longpress', state: st });
       }
+      });
     }
 
     /* ---- 顶层动作 ---- */
@@ -769,10 +827,10 @@ FE.validateProfile = function (profile) {
         }
       });
     }
-  } finally {
-    state.profile = oldProfile;
   }
-  return { errors: errors, warnings: warnings };
+  /* errors/warnings 保持字符串数组（历史 API 与既有断言不变）；
+   * issues 为等长的结构化版本，带 code 与区段/行/键坐标，供 UI 跳转定位。 */
+  return { errors: errors, warnings: warnings, issues: issues };
 };
 
 /* ================================================================
@@ -1016,6 +1074,190 @@ function hintSizeOf(hts, dir) {
   return null;
 }
 FE.hintSizeOf = hintSizeOf;
+
+/* ================================================================
+ * 四之二、布局编译（纯数据中间层）
+ * ================================================================ */
+/* 把 profile + 布局名 + 状态编译成纯数据快照。渲染器与编辑器都消费这份快照，因此：
+ *   1. 每个键的引用解析/手势解析只做一次——此前预览、chip、网格单元格各自 evalPlacement
+ *      一遍，大布局每次重渲染要重复解析数百次；
+ *   2. 渲染只读编译产物，不再逐处解析（tooltip/标签/提示都在编译期算好）。
+ * 本函数不产生任何 DOM，可在 Node 中直接断言。
+ * 入口：FE.compileSections(sections, status, scope) 与 FE.compileLayout(profile, name, opts)。 */
+function compileKeyItem(placement, loc, status, scope) {
+  var ev = FE.evalPlacement(placement, status, scope);
+  var eff = ev.eff;
+  var item = {
+    placement: placement, eff: eff,
+    chain: ev.chain, unresolved: ev.unresolved, cycle: ev.cycle,
+    s: loc.s, r: loc.r, k: loc.k, group: loc.group,
+    ref: (isPlainObject(placement) && typeof placement.ref === 'string') ? placement.ref : null,
+    /* 宽度权重：放置位直接字段优先于解析结果 */
+    weight: (isPlainObject(placement) && placement.weight != null) ? placement.weight
+      : (eff.weight != null ? eff.weight : 1),
+    height: (typeof eff.height === 'number' && eff.height > 0) ? eff.height : 1,
+    keyType: eff.keyType || null,
+    icon: eff.icon || null,
+    modifier: eff.modifier || null,
+    spacer: !!eff.spacer,
+    isBroken: !!(ev.unresolved || ev.cycle),
+    isStatusLabel: eff.statusLabel != null,
+    hints: {},        /* 四向滑动提示：{ text, display, label } */
+    summaries: {}     /* 手势动作摘要：{ display, label, popupKey? } */
+  };
+  /* 主标签原始值（未应用 Shift）；渲染时按状态决定最终显示 */
+  item.label = rawLabelOf(eff, status, 0, scope);
+  item.shiftedLabel = (typeof eff.shiftedLabel === 'string') ? eff.shiftedLabel : null;
+
+  function summarize(g) {
+    var gi = FE.gestureInfo(g, status, 0, scope);
+    if (!gi) return null;
+    return {
+      display: gi.action ? gi.action.display : '',
+      label: (gi.label != null && String(gi.label) !== '') ? String(gi.label) : null,
+      popupKey: gi.popupKey != null ? String(gi.popupKey) : null
+    };
+  }
+
+  item.summaries.tap = summarize(eff.tap);
+  /* 与旧 tooltip 行为一致：手势存在就给摘要行（即使动作未能解析） */
+  ['doubleTap', 'longPress', 'hold'].forEach(function (f) {
+    if (eff[f] == null) return;
+    item.summaries[f] = summarize(eff[f]) || { display: '', label: null, popupKey: null };
+  });
+  /* 四向滑动提示：文字优先级 hint > label（hint 显式 null 视为清空，不回退） */
+  if (isPlainObject(eff.swipe)) {
+    FE.SWIPE_DIRS.forEach(function (d) {
+      var g = eff.swipe[d];
+      if (g == null) return;
+      var gi = FE.gestureInfo(g, status, 0, scope);
+      var txt = '';
+      if (gi) {
+        if (gi.hint !== undefined) txt = String(gi.hint);
+        else if (gi.label != null) txt = String(gi.label);
+      }
+      if (!txt) return;
+      item.hints[d] = {
+        text: txt,
+        display: gi && gi.action ? gi.action.display : '',
+        label: (gi && gi.label != null && String(gi.label) !== '') ? String(gi.label) : null
+      };
+    });
+  }
+  /* 徽标标签：长按（蓝）、按住（橙） */
+  if (item.summaries.longPress && item.summaries.longPress.label) item.lpLabel = item.summaries.longPress.label;
+  if (item.summaries.hold && item.summaries.hold.label) item.holdLabel = item.summaries.hold.label;
+  /* 长按弹出菜单键（键下方 ⌄ 徽标） */
+  if (isPlainObject(eff.longPress) && eff.longPress.popupKey != null && eff.longPress.popupKey !== '') {
+    item.popupKey = String(eff.longPress.popupKey);
+  }
+  return item;
+}
+
+/* 编译一个 sections 数组（常规布局、split 片段、编辑器当前区段共用同一实现）。
+ * 返回 { sections, totalUnits }，键项带 s/k 坐标，与源数组索引一一对应。 */
+FE.compileSections = function (sections, status, scope) {
+  status = status || NEUTRAL_STATUS;
+  var out = { sections: [], totalUnits: 0 };
+  (Array.isArray(sections) ? sections : []).forEach(function (s, si) {
+    /* 非法/未知区段压入占位项：保持 sections[i] 与源码索引对齐，
+     * 区段编辑器与「点击错误定位」都依赖这个对应关系。 */
+    if (!isPlainObject(s)) { out.sections.push({ type: null, sectionIndex: si, invalid: true }); return; }
+    if (s.type === 'rows') {
+      var rows = [], total = 0;
+      FE.rowsOfSection(s).forEach(function (row, ri) {
+        var weights = FE.rowWeights(row);
+        var maxKH = 1;
+        row.keys.forEach(function (kk) {
+          var kh = isPlainObject(kk) && typeof kk.height === 'number' && kk.height > 0 ? kk.height : 1;
+          if (kh > maxKH) maxKH = kh;
+        });
+        var items = row.keys.map(function (kk, ki) {
+          var it = compileKeyItem(kk, { s: si, r: ri, k: ki, group: 'rows' }, status, scope);
+          it.grow = Number(weights[ki]) || 0;
+          it.maxKeyHeight = maxKH;
+          return it;
+        });
+        rows.push({ heightUnits: row.heightUnits, width: row.width, totalWeight: row.totalWeight, keys: items, rowIndex: ri });
+        total += row.heightUnits;
+      });
+      out.sections.push({ type: 'rows', sectionIndex: si, rows: rows, heightUnits: total, keys: null });
+      out.totalUnits += total;
+    } else if (s.type === 'grid') {
+      var dims = FE.gridDims(s);
+      var gUnits = (dims.rowHeights && dims.rowHeights.length)
+        ? dims.rowHeights.reduce(function (a, b) { return a + (Number(b) || 0); }, 0) : 5;
+      /* 用 map 而非 push：保留与源 keys 数组一致的索引（含 null 占位），
+       * 编辑器与定位功能都依赖 items[i] 与 section.keys[i] 一一对应。 */
+      var gItems = (Array.isArray(s.keys) ? s.keys : []).map(function (kk, gi) {
+        if (!isPlainObject(kk)) return null;
+        var it = compileKeyItem(kk, { s: si, r: null, k: gi, group: 'grid' }, status, scope);
+        it.column = Number.isInteger(kk.column) ? kk.column : 0;
+        it.row = Number.isInteger(kk.row) ? kk.row : 0;
+        it.columnSpan = kk.columnSpan != null ? kk.columnSpan : 1;
+        it.rowSpan = kk.rowSpan != null ? kk.rowSpan : 1;
+        return it;
+      });
+      out.sections.push({
+        type: 'grid', sectionIndex: si, columns: dims.columns, rows: dims.rows,
+        rowHeights: dims.rowHeights, totalUnits: gUnits, keys: gItems
+      });
+      out.totalUnits += gUnits;
+    } else {
+      out.sections.push({ type: null, sectionIndex: si, invalid: true });
+    }
+  });
+  return out;
+};
+
+FE.compileLayout = function (profile, layoutName, opts) {
+  opts = opts || {};
+  var status = opts.status || NEUTRAL_STATUS;
+  var scope = opts.scope || scopeFrom(profile);
+  var out = {
+    ok: true, layoutName: layoutName, resolvedName: layoutName, split: !!opts.split,
+    status: status, sections: [], totalUnits: 0, hasSplit: false, issues: []
+  };
+  if (!isPlainObject(profile) || !isPlainObject(profile.layouts)) {
+    out.ok = false; out.issues.push({ code: 'missing-layout', message: '配置没有 layouts' });
+    return out;
+  }
+  /* 布局级状态变体先解析，再决定取常规片段还是 split 片段。
+   * opts.noVariants：不解析变体，编译 layoutName 本身——区段编辑器编辑的是当前布局的
+   * sections 数组，若这里跟着变体跳到别的布局，键索引会与编辑目标错位。 */
+  var resolvedName = opts.noVariants ? layoutName : FE.resolvePreviewLayout(profile, layoutName, status);
+  out.resolvedName = resolvedName;
+  var L = profile.layouts[resolvedName] || profile.layouts[layoutName];
+  if (!isPlainObject(L)) {
+    out.ok = false; out.issues.push({ code: 'missing-layout', message: '找不到布局 ' + layoutName });
+    return out;
+  }
+  out.hasSplit = isPlainObject(L.split);
+  var frag = L;
+  if (opts.split) {
+    if (!out.hasSplit) {
+      out.ok = false; out.issues.push({ code: 'no-split', message: '该布局没有 split 片段' });
+      return out;
+    }
+    frag = L.split;
+  }
+  out.fragment = frag;
+  var compiled = FE.compileSections(frag.sections, status, scope);
+  out.sections = compiled.sections;
+  out.totalUnits = compiled.totalUnits;
+  return out;
+};
+
+/* 遍历编译结果中的所有键项（渲染/统计/检查器共用同一份产物） */
+FE.eachCompiledKey = function (compiled, cb) {
+  (compiled && compiled.sections ? compiled.sections : []).forEach(function (sec) {
+    if (sec.type === 'rows') {
+      sec.rows.forEach(function (row) { row.keys.forEach(function (k) { cb(k, sec, row); }); });
+    } else if (sec.type === 'grid') {
+      (sec.keys || []).forEach(function (k) { cb(k, sec, null); });
+    }
+  });
+};
 
 /* ================================================================
  * ================================================================
@@ -1471,16 +1713,6 @@ function ensureCurSections() {
   if (!Array.isArray(L.sections)) L.sections = [];
   return L.sections;
 }
-/* 预览使用的布局片段：先解析命名布局（含状态变体），split 模式再取其 split */
-function previewFragment() {
-  var L = curLayout();
-  if (!L) return null;
-  var resolvedName = FE.resolvePreviewLayout(state.profile, state.layoutName, state.status);
-  var RL = state.profile.layouts[resolvedName] || L;
-  if (state.splitMode) return isPlainObject(RL.split) ? RL.split : null;
-  return RL;
-}
-
 /* ================================================================
  * 预览渲染
  * ================================================================ */
@@ -1491,12 +1723,15 @@ var ICONS_SVG = {
   enter: '<svg viewBox="0 0 24 24" class="kb-icon"><path d="M19 6.5v5.6c0 .9-.72 1.6-1.6 1.6H6.7l2.6-2.6-1.2-1.2-4.6 4.6 4.6 4.6 1.2-1.2-2.6-2.6h11.1c1.66 0 3-1.34 3-3V6.5h-2.2z" fill="currentColor"/></svg>'
 };
 
-function displayLabel(eff) {
+/* 有效标签（应用 Shift 与状态标签示例）。
+ * status / statusSample 由调用方传入，不再隐式读全局 state，便于任意状态渲染。 */
+function displayLabel(eff, status, statusSample) {
+  status = status || state.status;
   if (eff.statusLabel != null) {
-    return state.statusSample || '示例';
+    return statusSample != null ? statusSample : (state.statusSample || '示例');
   }
-  var raw = rawLabelOf(eff, state.status) || '';
-  if (state.status.shift) {
+  var raw = rawLabelOf(eff, status) || '';
+  if (status.shift) {
     if (typeof eff.shiftedLabel === 'string') return eff.shiftedLabel;
     if (/^[a-z]$/.test(raw)) return raw.toUpperCase();
   }
@@ -1519,7 +1754,9 @@ function keyFontPx(eff, unit) {
 /* 阴影色 → CSS box-shadow（shadow 角色只给颜色，偏移/模糊沿用主题口径） */
 function shadowCss(color) { return '0 1px 2px ' + color; }
 
-function applyKeyColors(el, eff, pressed) {
+/* 键面着色。status 显式传入（不再隐式读全局 state），使渲染可对任意状态进行。 */
+function applyKeyColors(el, eff, pressed, status) {
+  status = status || state.status;
   var c = eff.colors;
   if (!isPlainObject(c)) return;
   var col = {};
@@ -1531,7 +1768,7 @@ function applyKeyColors(el, eff, pressed) {
   if (pressed && typeof c.pressed === 'string') col.background = c.pressed;
 
   /* 运行时状态色：优先级 modifierActive < modifierLocked < pressed，按序叠加 */
-  var modifierOn = !pressed && eff.modifier === 'SHIFT' && state.status.shift;
+  var modifierOn = !pressed && eff.modifier === 'SHIFT' && status.shift;
   var chain = [];
   if (isPlainObject(c.states)) {
     if (modifierOn) {
@@ -1573,63 +1810,63 @@ function applyHintColors(el, eff) {
   }
 }
 
-function placementTooltip(ev, placement) {
+/* 键位 tooltip：直接由编译产物生成，不再逐次解析手势与动作 */
+function itemTooltip(item, shift) {
   var lines = [];
-  lines.push('引用: ' + (placement && placement.ref ? placement.ref : '（内联按键）'));
-  if (ev.chain && ev.chain.length) lines.push('解析链: ' + ev.chain.join(' → '));
-  var ti = FE.tapInfo(ev.eff, state.status);
-  lines.push('点击: ' + (ti && ti.action ? ti.action.display : '（继承）'));
+  lines.push('引用: ' + (item.ref || '（内联按键）'));
+  if (item.chain && item.chain.length) lines.push('解析链: ' + item.chain.join(' → '));
+  var tap = item.summaries.tap;
+  lines.push('点击: ' + (tap && tap.display ? tap.display : '（继承）'));
   FE.SWIPE_DIRS.forEach(function (d) {
-    var g = ev.eff.swipe && ev.eff.swipe[d];
-    if (!g) return;
-    var gi = FE.gestureInfo(g, state.status);
-    if (gi) lines.push('滑动' + ({ up: '上', down: '下', left: '左', right: '右' })[d] + ': ' + (gi.action ? gi.action.display : '') + (gi.label ? ' 「' + gi.label + '」' : ''));
+    var hh = item.hints[d];
+    if (!hh) return;
+    lines.push('滑动' + ({ up: '上', down: '下', left: '左', right: '右' })[d] + ': ' +
+      (hh.display || '') + (hh.label ? ' 「' + hh.label + '」' : ''));
   });
   ['longPress', 'hold', 'doubleTap'].forEach(function (f) {
-    var g = ev.eff[f];
-    if (g == null) return;
-    var gi = FE.gestureInfo(g, state.status);
-    lines.push((f === 'longPress' ? '长按' : f === 'hold' ? '按住' : '双击') + ': ' + (gi && gi.action ? gi.action.display : '') + (gi && gi.label ? ' 「' + gi.label + '」' : ''));
+    var s = item.summaries[f];
+    if (!s) return;
+    lines.push((f === 'longPress' ? '长按' : f === 'hold' ? '按住' : '双击') + ': ' +
+      (s.display || '') + (s.label ? ' 「' + s.label + '」' : ''));
   });
-  var pkTip = isPlainObject(ev.eff.longPress) ? ev.eff.longPress.popupKey : null;
-  if (pkTip != null && pkTip !== '') {
-    var tipLine = '长按弹出: popupKey=' + pkTip;
+  if (item.popupKey) {
+    var tipLine = '长按弹出: popupKey=' + item.popupKey;
     if (state.popupProfile && FE.popupCandidates) {
       var popupSchema = FE.popupSchemaName ? FE.popupSchemaName(state.popupProfile, state.popupSchema) : 'default';
-      var pc = FE.popupCandidates(state.popupProfile, popupSchema, String(pkTip), state.status.shift);
+      var pc = FE.popupCandidates(state.popupProfile, popupSchema, item.popupKey, shift);
       tipLine += pc ? ' · ' + pc.length + ' 个候选' : ' · 弹出菜单未定义';
     }
     lines.push(tipLine);
   }
-  if (ev.unresolved) lines.push('⚠ 引用无法解析: ' + ev.unresolved);
+  if (item.unresolved) lines.push('⚠ 引用无法解析: ' + item.unresolved);
   return lines.join('\n');
 }
 
-function buildPreviewKey(placement, ctx) {
-  var ev = FE.evalPlacement(placement, state.status);
-  var eff = ev.eff;
+/* 由编译产物渲染单个键：引用解析、手势摘要、提示文字都已在编译期算好。
+ * 这里不再调用 evalPlacement，大布局重渲染时省掉数百次重复解析。 */
+function buildKeyEl(item, unit, opts) {  opts = opts || {};
+  var eff = item.eff;
+  var status = state.status;
+  var maxKeyHeight = opts.maxKeyHeight != null ? opts.maxKeyHeight : 1;
   // 全链路只用一个 unit（竖屏口径）：行高、字号、图标、提示全部由此算。
   // 分体的"变宽"只靠容器 kb-split + flex 拉伸，绝不在这里乘系数。
-  // 兼容旧调用：若有人传 {x,y} 对象，取 y（行高口径）为准。
-  var unit = (ctx.unit && typeof ctx.unit === 'object')
-    ? (ctx.unit.y != null ? ctx.unit.y : ctx.unit.x) : ctx.unit;
   var el = h('div', {
-    class: 'kb-key' + (eff.keyType ? ' kt-' + String(eff.keyType).toLowerCase() : '') +
-      (ev.unresolved || ev.cycle ? ' kb-key-broken' : '') +
-      (isSel(ctx.s, ctx.r, ctx.k) ? ' kb-key-sel' : ''),
-    title: placementTooltip(ev, placement)
+    class: 'kb-key' + (item.keyType ? ' kt-' + String(item.keyType).toLowerCase() : '') +
+      (item.isBroken ? ' kb-key-broken' : '') +
+      (isSel(item.s, item.r, item.k) ? ' kb-key-sel' : ''),
+    title: itemTooltip(item, status.shift)
   });
-  if (eff.spacer) el.classList.add('kb-spacer');
-  el.style.flexGrow = String(ctx.weight);
+  if (item.spacer) el.classList.add('kb-spacer');
+  el.style.flexGrow = String(opts.grow != null ? opts.grow : 0);
   el.style.flexBasis = '0';
-  if (ctx.maxKeyHeight > 0) {
-    var hfrac = ((typeof eff.height === 'number' && eff.height > 0) ? eff.height : 1) / ctx.maxKeyHeight;
+  if (maxKeyHeight > 0) {
+    var hfrac = item.height / maxKeyHeight;
     if (hfrac < 0.999) {
       el.style.height = (hfrac * 100) + '%';
       el.style.alignSelf = 'center';
     }
   }
-  applyKeyColors(el, eff, false);
+  applyKeyColors(el, eff, false, status);
 
   if (eff.icon && ICONS_SVG[eff.icon]) {
     var wrap = h('span', { class: 'kb-icon-wrap' });
@@ -1653,60 +1890,50 @@ function buildPreviewKey(placement, ctx) {
     }
   }
 
-  /* 滑动提示 */
-  if (isPlainObject(eff.swipe)) {
-    FE.SWIPE_DIRS.forEach(function (d) {
-      var g = eff.swipe[d];
-      if (g == null) return;
-      var gi = FE.gestureInfo(g, state.status);
-      /* 提示文字优先级：手势 hint > 手势 label（含被引用按键的标签）。
-       * hint 显式写 null 时被清空为 ''，此时不再回退到 label（文档 null 语义）。 */
-      var txt = '';
-      if (gi) {
-        if (gi.hint !== undefined) txt = String(gi.hint);
-        else if (gi.label != null) txt = String(gi.label);
-      }
-      if (!txt) return;
-      el.appendChild(h('span', {
-        class: 'kb-hint kb-hint-' + d,
-        style: { fontSize: hintFontPx(eff, d, unit) + 'px' }
-      }, txt));
-    });
+  /* 滑动提示：文字与动作摘要在编译期已算好 */
+  var hasHints = false;
+  FE.SWIPE_DIRS.forEach(function (d) {
+    var hh = item.hints[d];
+    if (!hh) return;
+    hasHints = true;
+    el.appendChild(h('span', {
+      class: 'kb-hint kb-hint-' + d,
+      style: { fontSize: hintFontPx(eff, d, unit) + 'px' }
+    }, hh.text));
+  });
+  if (hasHints) {
     /* 提示元素刚挂上，此时再上色（applyKeyColors 调用时它们还不存在） */
     applyHintColors(el, eff);
   }
-  /* 长按徽标 */
-  if (eff.longPress != null) {
-    var lp = FE.gestureInfo(eff.longPress, state.status);
-    if (lp && lp.label) el.appendChild(h('span', { class: 'kb-badge-lp', style: { fontSize: hintFontPx(eff, 'up', unit) + 'px' } }, lp.label));
+  /* 长按徽标（蓝） */
+  if (item.lpLabel) {
+    el.appendChild(h('span', { class: 'kb-badge-lp', style: { fontSize: hintFontPx(eff, 'up', unit) + 'px' } }, item.lpLabel));
   }
-  /* 按住徽标 */
-  if (eff.hold != null) {
-    var hd = FE.gestureInfo(eff.hold, state.status);
-    if (hd && hd.label) el.appendChild(h('span', { class: 'kb-badge-lp kb-badge-hold', style: { fontSize: hintFontPx(eff, 'up', unit) + 'px' } }, hd.label));
+  /* 按住徽标（橙） */
+  if (item.holdLabel) {
+    el.appendChild(h('span', { class: 'kb-badge-lp kb-badge-hold', style: { fontSize: hintFontPx(eff, 'up', unit) + 'px' } }, item.holdLabel));
   }
   /* 长按弹出菜单徽标（键下方中央的 ⌄） */
-  var pk = isPlainObject(eff.longPress) ? eff.longPress.popupKey : null;
-  if (pk != null && pk !== '') {
-    var pkTitle = '长按弹出菜单 popupKey: ' + pk;
+  if (item.popupKey) {
+    var pkTitle = '长按弹出菜单 popupKey: ' + item.popupKey;
     if (state.popupProfile && FE.popupCandidates) {
       var popupSchema = FE.popupSchemaName ? FE.popupSchemaName(state.popupProfile, state.popupSchema) : 'default';
-      var cands = FE.popupCandidates(state.popupProfile, popupSchema, String(pk), state.status.shift);
+      var cands = FE.popupCandidates(state.popupProfile, popupSchema, item.popupKey, status.shift);
       pkTitle += cands ? '（' + cands.length + ' 个候选）' : '（当前弹出菜单未定义该键）';
     }
     el.appendChild(h('span', { class: 'kb-badge-popup', title: pkTitle }, '⌄'));
   }
 
-  el.addEventListener('pointerdown', function () { el.classList.add('pressed'); applyKeyColors(el, eff, true); });
-  el.addEventListener('pointerup', function () { el.classList.remove('pressed'); applyKeyColors(el, eff, false); });
-  el.addEventListener('pointerleave', function () { el.classList.remove('pressed'); applyKeyColors(el, eff, false); });
+  el.addEventListener('pointerdown', function () { el.classList.add('pressed'); applyKeyColors(el, eff, true, status); });
+  el.addEventListener('pointerup', function () { el.classList.remove('pressed'); applyKeyColors(el, eff, false, status); });
+  el.addEventListener('pointerleave', function () { el.classList.remove('pressed'); applyKeyColors(el, eff, false, status); });
   el.addEventListener('click', function (e) {
     e.stopPropagation();
-    state.sel = { s: ctx.s, r: ctx.r, k: ctx.k };
+    state.sel = { s: item.s, r: item.r, k: item.k };
     renderPreview();
     renderLayoutTab();
     if (FE.openKeyDialog) {
-      FE.openKeyDialog({ mode: 'placement', placement: placement, location: { s: ctx.s, r: ctx.r, k: ctx.k } });
+      FE.openKeyDialog({ mode: 'placement', placement: item.placement, location: { s: item.s, r: item.r, k: item.k } });
     }
   });
   return el;
@@ -1717,9 +1944,10 @@ function isSel(s, r, k) {
   return !!sel && sel.s === s && sel.r === r && sel.k === k;
 }
 
-function buildRowsSection(section, si, unit) {
+/* 以下三个 build* 都吃 FE.compileLayout 的编译产物（纯数据），不再自行解析引用。 */
+function buildRowsSection(compiledSection, unit) {
   var wrap = h('div', { class: 'kb-section' });
-  FE.rowsOfSection(section).forEach(function (row, ri) {
+  compiledSection.rows.forEach(function (row) {
     var rowEl = h('div', { class: 'kb-row' });
     if (row.width != null) {
       rowEl.style.width = (row.width * 100) + '%';
@@ -1727,51 +1955,48 @@ function buildRowsSection(section, si, unit) {
       rowEl.style.marginRight = 'auto';
     }
     rowEl.style.height = Math.max(18, row.heightUnits * unit) + 'px';
-    var weights = FE.rowWeights(row);
-    var maxKH = 1;
-    row.keys.forEach(function (kk) {
-      var kh = isPlainObject(kk) && typeof kk.height === 'number' && kk.height > 0 ? kk.height : 1;
-      if (kh > maxKH) maxKH = kh;
-    });
-    row.keys.forEach(function (kk, ki) {
-      rowEl.appendChild(buildPreviewKey(kk, { s: si, r: ri, k: ki, unit: unit, maxKeyHeight: maxKH, weight: weights[ki] }));
+    row.keys.forEach(function (item) {
+      rowEl.appendChild(buildKeyEl(item, unit, { grow: item.grow, maxKeyHeight: item.maxKeyHeight }));
     });
     wrap.appendChild(rowEl);
   });
   return wrap;
 }
 
-function buildGridSection(section, si, unit) {
-  var dims = FE.gridDims(section);
+function buildGridSection(compiledSection, unit) {
   var el = h('div', { class: 'kb-grid' });
-  el.style.gridTemplateColumns = 'repeat(' + dims.columns + ', 1fr)';
-  if (dims.rowHeights && dims.rowHeights.length) {
-    el.style.gridTemplateRows = dims.rowHeights.map(function (x) { return (Number(x) || 1) + 'fr'; }).join(' ');
+  el.style.gridTemplateColumns = 'repeat(' + compiledSection.columns + ', 1fr)';
+  if (compiledSection.rowHeights && compiledSection.rowHeights.length) {
+    el.style.gridTemplateRows = compiledSection.rowHeights.map(function (x) { return (Number(x) || 1) + 'fr'; }).join(' ');
   } else {
-    el.style.gridTemplateRows = 'repeat(' + dims.rows + ', 1fr)';
+    el.style.gridTemplateRows = 'repeat(' + compiledSection.rows + ', 1fr)';
   }
-  var totalUnits = (dims.rowHeights && dims.rowHeights.length)
-    ? dims.rowHeights.reduce(function (a, b) { return a + (Number(b) || 0); }, 0) : 5;
-  el.style.height = Math.max(24, totalUnits * unit) + 'px';
-  (Array.isArray(section.keys) ? section.keys : []).forEach(function (kk, gi) {
-    if (!isPlainObject(kk)) return;
-    var c = Number.isInteger(kk.column) ? kk.column : 0;
-    var r = Number.isInteger(kk.row) ? kk.row : 0;
-    var cs = kk.columnSpan != null ? kk.columnSpan : 1;
-    var rs = kk.rowSpan != null ? kk.rowSpan : 1;
-    var keyEl = buildPreviewKey(kk, { s: si, r: null, k: gi, unit: unit, maxKeyHeight: 1, weight: 1 });
-    keyEl.style.gridColumn = (c + 1) + ' / span ' + Math.max(1, cs);
-    keyEl.style.gridRow = (r + 1) + ' / span ' + Math.max(1, rs);
+  el.style.height = Math.max(24, compiledSection.totalUnits * unit) + 'px';
+  (compiledSection.keys || []).forEach(function (item) {
+    var keyEl = buildKeyEl(item, unit, { grow: '', maxKeyHeight: 1 });
+    keyEl.style.gridColumn = (item.column + 1) + ' / span ' + Math.max(1, item.columnSpan);
+    keyEl.style.gridRow = (item.row + 1) + ' / span ' + Math.max(1, item.rowSpan);
     keyEl.style.flexGrow = '';
     el.appendChild(keyEl);
   });
   return el;
 }
 
+/* 把编译产物渲染进容器（预览与将来的导出/对比渲染共用） */
+function renderCompiledInto(host, compiled, unit) {
+  (compiled.sections || []).forEach(function (sec) {
+    if (sec.type === 'rows') host.appendChild(buildRowsSection(sec, unit));
+    else if (sec.type === 'grid') host.appendChild(buildGridSection(sec, unit));
+  });
+}
+
 function renderPreview() {
   var host = $('preview-kb');
   if (!host) return;
   clearEl(host);
+  /* 先清空编译产物：提前返回的分支若留着上一次的结果，
+   * renderMeta 的键数统计与后续消费 state.compiled 的逻辑会读到过期数据。 */
+  state.compiled = null;
   host.className = 'kb ' + (state.theme === 'light' ? 'kb-light' : 'kb-dark') +
     (state.splitMode ? ' kb-split' : '');
   var L = curLayout();
@@ -1780,8 +2005,7 @@ function renderPreview() {
     renderMeta();
     return;
   }
-  var frag = previewFragment();
-  if (!frag) {
+  if (state.splitMode && !isPlainObject(L.split)) {
     host.appendChild(h('div', { class: 'kb-empty' },
       '布局 “' + state.layoutName + '” 没有分体（split）片段。',
       h('div', { class: 'status' }, '在“布局编辑”底部的区段工具栏切换到「分体布局」并生成片段。')));
@@ -1804,13 +2028,13 @@ function renderPreview() {
     state.portraitW = W / 2;
   }
   var unit = state.portraitW / 10;
-  var sections = Array.isArray(frag.sections) ? frag.sections : [];
-  sections.forEach(function (s, si) {
-    if (!isPlainObject(s)) return;
-    if (s.type === 'rows') host.appendChild(buildRowsSection(s, si, unit));
-    else if (s.type === 'grid') host.appendChild(buildGridSection(s, si, unit));
+  /* 一次性编译：引用解析与手势摘要在编译期完成，渲染只读结果 */
+  var compiled = FE.compileLayout(state.profile, state.layoutName, {
+    split: state.splitMode, status: state.status
   });
-  if (!sections.length) {
+  state.compiled = compiled;
+  renderCompiledInto(host, compiled, unit);
+  if (!compiled.sections.length) {
     host.appendChild(h('div', { class: 'kb-empty' },
       state.splitMode ? '分体片段没有区段。' : '布局没有区段。'));
   }
@@ -1840,34 +2064,121 @@ function renderMeta() {
     } else {
       parts.push(' · 高度 ' + (Math.round(FE.layoutHeightUnits(L) * 100) / 100) + ' 单位');
     }
-    var frag = previewFragment();
+    /* 键数直接由编译产物统计，避免再遍历一遍原始 sections */
     var keyCount = 0;
-    if (frag) {
-      (Array.isArray(frag.sections) ? frag.sections : []).forEach(function (s) {
-        if (s.type === 'rows') FE.rowsOfSection(s).forEach(function (r) { keyCount += r.keys.length; });
-        else if (s.type === 'grid' && Array.isArray(s.keys)) keyCount += s.keys.length;
-      });
-    }
+    (state.compiled ? state.compiled.sections : []).forEach(function (sec) {
+      if (sec.type === 'rows') sec.rows.forEach(function (r) { keyCount += r.keys.length; });
+      else if (sec.type === 'grid' && Array.isArray(sec.keys)) keyCount += sec.keys.length;
+    });
     parts.push(' · ' + keyCount + ' 键');
   }
   meta.appendChild(h('span', null, parts));
   appendValidationDetails(meta);
 }
 
+/* 该条问题能否定位：有布局名，或有区段/键坐标 */
+function issueLocatable(it) {
+  if (!it) return false;
+  if (it.layout && state.profile && isPlainObject(state.profile.layouts) && state.profile.layouts[it.layout]) return true;
+  return it.sectionIndex != null;
+}
+
+/* 点击校验条目 → 切到对应布局 / 分体片段，选中目标键并滚动到它。
+ * 校验结果里的坐标（layout / isSplit / sectionIndex / rowIndex / keyIndex）由
+ * validateProfile 的结构化 issues 提供。 */
+function locateIssue(it) {
+  if (!it) return;
+  if (it.layout && state.profile && isPlainObject(state.profile.layouts) && state.profile.layouts[it.layout]) {
+    state.layoutName = it.layout;
+  }
+  var L = curLayout();
+  var wantSplit = !!it.isSplit;
+  /* 只在布局确实有 split 片段时切到分体模式，否则会落到空 sections */
+  state.splitMode = !!(wantSplit && L && isPlainObject(L.split));
+  if (it.sectionIndex != null) {
+    var isGrid = it.group === 'grid' || it.rowIndex == null;
+    state.sel = {
+      s: it.sectionIndex,
+      r: isGrid ? null : it.rowIndex,
+      k: it.keyIndex != null ? it.keyIndex : 0
+    };
+  } else {
+    state.sel = null;
+  }
+  activateTab('tab-layout');
+  renderAll();
+  scrollToSelection();
+}
+
+function scrollToSelection() {
+  var sel = state.sel;
+  if (!sel) return;
+  var target = null, i, nodes;
+  if (sel.r == null) {
+    nodes = document.querySelectorAll('.gedit-cell');
+    for (i = 0; i < nodes.length; i++) {
+      var gk = nodes[i].__gridKey;
+      if (gk && gk.si === sel.s && gk.gi === sel.k) { target = nodes[i]; break; }
+    }
+  } else {
+    nodes = document.querySelectorAll('.chip');
+    for (i = 0; i < nodes.length; i++) {
+      var cl = nodes[i].__chipLoc;
+      if (cl && cl.s === sel.s && cl.r === sel.r && cl.k === sel.k) { target = nodes[i]; break; }
+    }
+  }
+  if (!target) return;
+  var card = (target.closest && target.closest('details.card')) || null;
+  if (card) card.open = true;
+  /* dom-stub 不实现 scrollIntoView，测试环境下静默跳过 */
+  if (target.scrollIntoView) target.scrollIntoView({ block: 'center' });
+  else if (card && card.scrollIntoView) card.scrollIntoView({ block: 'center' });
+  target.classList.add('issue-flash');
+}
+FE.locateIssue = locateIssue;
+FE.issueLocatable = issueLocatable;
+
 function appendValidationDetails(meta) {
-  var v = state.validation;
+  var v = state.validation || {};
+  var errs = v.errors || [], warns = v.warnings || [];
   var vparts = [];
-  if (v.errors.length) vparts.push(h('span', { class: 'st-error' }, ' ✗ ' + v.errors.length + ' 个错误'));
-  if (v.warnings.length) vparts.push(h('span', { class: 'st-warn' }, ' ⚠ ' + v.warnings.length + ' 个警告'));
-  if (!v.errors.length && !v.warnings.length) vparts.push(h('span', { class: 'st-ok' }, ' ✓ 校验通过'));
+  if (errs.length) vparts.push(h('span', { class: 'st-error' }, ' ✗ ' + errs.length + ' 个错误'));
+  if (warns.length) vparts.push(h('span', { class: 'st-warn' }, ' ⚠ ' + warns.length + ' 个警告'));
+  /* 可定位条目的提示，让用户知道能点 */
+  var issues = Array.isArray(v.issues) ? v.issues : null;
+  var locatable = 0;
+  if (issues) issues.forEach(function (it) { if (issueLocatable(it)) locatable++; });
+  if (!errs.length && !warns.length) vparts.push(h('span', { class: 'st-ok' }, ' ✓ 校验通过'));
+  else if (locatable) vparts.push(h('span', { class: 'st-dim' }, ' · 点击条目可定位'));
   meta.appendChild(h('span', null, vparts));
+
   var det = h('details', { class: 'meta-details' });
-  var sum = h('summary', null, '校验详情');
-  det.appendChild(sum);
+  det.appendChild(h('summary', null, '校验详情'));
   var list = h('ul', { class: 'meta-list' });
-  v.errors.forEach(function (m) { list.appendChild(h('li', { class: 'st-error' }, m)); });
-  v.warnings.forEach(function (m) { list.appendChild(h('li', { class: 'st-warn' }, m)); });
-  if (!v.errors.length && !v.warnings.length) list.appendChild(h('li', { class: 'st-ok' }, '没有发现问题'));
+  if (issues && issues.length) {
+    issues.forEach(function (it) {
+      var cls = it.level === 'error' ? 'st-error' : 'st-warn';
+      var li = h('li', { class: cls });
+      if (issueLocatable(it)) {
+        li.classList.add('issue-locatable');
+        li.setAttribute('role', 'button');
+        li.setAttribute('tabindex', '0');
+        li.title = '点击定位到 ' + (it.path || '该位置');
+        li.addEventListener('click', function () { locateIssue(it); });
+        li.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); locateIssue(it); }
+        });
+      }
+      li.appendChild(h('span', { class: 'issue-msg' }, it.message));
+      if (it.path) li.appendChild(h('span', { class: 'issue-path', title: it.path }, it.path));
+      list.appendChild(li);
+    });
+  } else {
+    /* 回退：老式字符串数组（例如外部传入的校验结果） */
+    errs.forEach(function (m) { list.appendChild(h('li', { class: 'st-error' }, m)); });
+    warns.forEach(function (m) { list.appendChild(h('li', { class: 'st-warn' }, m)); });
+  }
+  if (!errs.length && !warns.length) list.appendChild(h('li', { class: 'st-ok' }, '没有发现问题'));
   det.appendChild(list);
   meta.appendChild(det);
 }
@@ -2042,10 +2353,14 @@ function renderSectionsEditor() {
   }
 
   var sections = curSections();
+  /* 一次性编译当前编辑片段：键的引用解析与手势摘要在编译期完成，
+   * chip / 网格单元格只读结果（原来每渲染一个 chip 就 evalPlacement 一次）。 */
+  var compiled = FE.compileSections(sections, state.status).sections;
   sections.forEach(function (s, si) {
-    if (!isPlainObject(s)) { host.appendChild(sectionCardBroken(si)); return; }
-    if (s.type === 'rows') host.appendChild(rowsSectionCard(s, si));
-    else if (s.type === 'grid') host.appendChild(gridSectionCard(s, si));
+    var csec = compiled[si];
+    if (!isPlainObject(s) || !csec || csec.invalid) { host.appendChild(sectionCardBroken(si)); return; }
+    if (s.type === 'rows') host.appendChild(rowsSectionCard(s, si, csec));
+    else if (s.type === 'grid') host.appendChild(gridSectionCard(s, si, csec));
     else host.appendChild(sectionCardBroken(si));
   });
   host.appendChild(h('div', { class: 'toolbar' },
@@ -2127,7 +2442,7 @@ function addSection(type) {
 }
 
 /* ---- 行区段卡片 ---- */
-function rowsSectionCard(section, si) {
+function rowsSectionCard(section, si, csec) {
   var card = h('details', { class: 'card section-card', open: true });
   card.appendChild(h('summary', null, '区段 ' + (si + 1) + ' · 行'));
   var body = h('div', { class: 'section-body' });
@@ -2139,7 +2454,7 @@ function rowsSectionCard(section, si) {
     return card;
   }
   rows.forEach(function (r, ri) {
-    body.appendChild(rowEditor(section, si, ri));
+    body.appendChild(rowEditor(section, si, ri, csec.rows[ri]));
   });
   body.appendChild(h('div', { class: 'toolbar' },
     h('button', {
@@ -2152,11 +2467,12 @@ function rowsSectionCard(section, si) {
   return card;
 }
 
-function rowEditor(section, si, ri) {
+function rowEditor(section, si, ri, crow) {
   var rows = section.rows;
   var raw = rows[ri];
   var isObj = isPlainObject(raw);
-  var keysArr = isObj ? (Array.isArray(raw.keys) ? raw.keys : []) : (Array.isArray(raw) ? raw : []);
+  /* 编译产物提供每个键项的解析结果；缺失时回退为就地编译（例如结构正在被编辑） */
+  var items = (crow && crow.keys) || null;
 
   function getKeys() {
     var r = section.rows[ri];
@@ -2195,8 +2511,9 @@ function rowEditor(section, si, ri) {
 
   var chipBox = h('div', { class: 'chip-box' });
   chipBox.__boxLoc = { s: si, r: ri };   /* 供指针拖动识别“落到该行末尾” */
-  keysArr.forEach(function (k, ki) {
-    chipBox.appendChild(keyChip(k, { s: si, r: ri, k: ki }));
+  (items || []).forEach(function (item) {
+    if (!item) return;
+    chipBox.appendChild(keyChip(item));
   });
   chipBox.appendChild(h('button', {
     class: 'chip chip-add',
@@ -2424,16 +2741,16 @@ function performGridDrop(si, gi, target) {
   });
 }
 
-/* ---- 按键 chip ---- */
-function keyChip(placement, loc) {
-  var ev = FE.evalPlacement(placement, state.status);
-  var eff = ev.eff;
-  var label = rawLabelOf(eff, state.status) || (eff.icon ? '⚙' : '？');
+/* ---- 按键 chip（吃编译产物，不再自行解析引用） ---- */
+function keyChip(item) {
+  var placement = item.placement;
+  var loc = { s: item.s, r: item.r, k: item.k };
+  var label = item.label || (item.icon ? '⚙' : '？');
   var chip = h('div', {
-    class: 'chip' + (eff.keyType === 'FUNCTION' || eff.keyType === 'ACTION' ? ' chip-fn' : '') +
+    class: 'chip' + (item.keyType === 'FUNCTION' || item.keyType === 'ACTION' ? ' chip-fn' : '') +
       (isSel(loc.s, loc.r, loc.k) ? ' chip-sel' : '') +
-      (ev.unresolved || ev.cycle ? ' chip-broken' : ''),
-    title: placementTooltip(ev, placement),
+      (item.isBroken ? ' chip-broken' : ''),
+    title: itemTooltip(item, state.status.shift),
     onclick: function () {
       if (pointerDragSuppressClick()) return;   /* 刚拖动完，不当作点击 */
       state.sel = loc;
@@ -2480,7 +2797,7 @@ function addKeyToRow(si, ri) {
 }
 
 /* ---- 网格区段卡片 ---- */
-function gridSectionCard(section, si) {
+function gridSectionCard(section, si, csec) {
   var card = h('details', { class: 'card section-card', open: true });
   card.appendChild(h('summary', null, '区段 ' + (si + 1) + ' · 网格'));
   var body = h('div', { class: 'section-body' });
@@ -2521,12 +2838,12 @@ function gridSectionCard(section, si) {
       })())
   );
   body.appendChild(ctrls);
-  body.appendChild(gridEditor(section, si));
+  body.appendChild(gridEditor(section, si, csec));
   card.appendChild(body);
   return card;
 }
 
-function gridEditor(section, si) {
+function gridEditor(section, si, csec) {
   var dims = FE.gridDims(section);
   var cols = dims.columns, rws = dims.rows;
   var wrap = h('div', { class: 'gedit-wrap' });
@@ -2561,22 +2878,21 @@ function gridEditor(section, si) {
           return;
         }
         if (info) {
-          var k = keysArr[info.gi];
-          var ev = FE.evalPlacement(k, state.status);
-          var eff = ev.eff;
-          var label = rawLabelOf(eff, state.status) || (eff.icon ? '⚙' : '？');
-          var cs = k.columnSpan != null ? k.columnSpan : 1;
-          var rs = k.rowSpan != null ? k.rowSpan : 1;
+          var item = csec.keys[info.gi];
+          if (!item) return;
+          var cs = item.columnSpan;
+          var rs = item.rowSpan;
           if (cs > 1) place.gridColumn = (x + 1) + ' / span ' + cs;
           if (rs > 1) place.gridRow = (y + 1) + ' / span ' + rs;
           var cell = h('div', {
-            class: 'gedit-cell gedit-key' + (isSel(si, null, info.gi) ? ' chip-sel' : '') + (ev.unresolved ? ' chip-broken' : ''),
-            title: placementTooltip(ev, k),
+            class: 'gedit-cell gedit-key' + (isSel(si, null, info.gi) ? ' chip-sel' : '') + (item.isBroken ? ' chip-broken' : ''),
+            title: itemTooltip(item, state.status.shift),
             style: place
           });
           cell.style.zIndex = '1';
+          var label = item.label || (item.icon ? '⚙' : '？');
           cell.appendChild(h('span', { class: 'gedit-label' }, String(label).slice(0, 4)));
-          cell.appendChild(h('span', { class: 'gedit-sub' }, k.ref || '内联'));
+          cell.appendChild(h('span', { class: 'gedit-sub' }, item.ref || '内联'));
           if (cs > 1 || rs > 1) cell.appendChild(h('span', { class: 'gedit-span' }, cs + '×' + rs));
           cell.__gridKey = { si: si, gi: info.gi };
           (function (gi) {
@@ -2854,9 +3170,19 @@ function renderOps() {
 }
 
 function updateUndoButtons() {
+  /* 两处入口：顶栏右侧常驻按钮 + 「布局与文件操作」卡片内按钮，状态保持同步 */
   var u = $('op-undo'), r = $('op-redo');
   if (u) { u.disabled = !state.history.length; u.title = state.history.length ? '撤销' : '没有可撤销的操作'; }
   if (r) { r.disabled = !state.future.length; r.title = state.future.length ? '重做' : '没有可重做的操作'; }
+  var tu = $('top-undo'), tr = $('top-redo');
+  if (tu) {
+    tu.disabled = !state.history.length;
+    tu.title = (state.history.length ? '撤销' : '没有可撤销的操作') + ' (Ctrl+Z)';
+  }
+  if (tr) {
+    tr.disabled = !state.future.length;
+    tr.title = (state.future.length ? '重做' : '没有可重做的操作') + ' (Ctrl+Y)';
+  }
 }
 
 /* ================================================================
@@ -3011,6 +3337,9 @@ function initToolbar() {
 
   $('op-undo').addEventListener('click', undo);
   $('op-redo').addEventListener('click', redo);
+  var topUndo = $('top-undo'), topRedo = $('top-redo');
+  if (topUndo) topUndo.addEventListener('click', undo);
+  if (topRedo) topRedo.addEventListener('click', redo);
 
   /* author / type */
   var authorInp = $('op-author');

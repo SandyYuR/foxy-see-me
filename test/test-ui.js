@@ -298,7 +298,7 @@ $('json-editor').value = '{ invalid json !!!';
 $('json-apply').click();
 ok(JSON.stringify(FE.state.profile) === before, '无效 JSON 未应用');
 ok($('op-status').textContent.indexOf('解析失败') >= 0, '操作状态显示解析失败');
-ok($('json-status').textContent.indexOf('未应用') >= 0, 'JSON 标签页内同步显示错误（不再无反应）');
+ok($('json-status').textContent.indexOf('未应用') >= 0, '布局 JSON 卡片内同步显示错误（不再无反应）');
 
 console.log('== 尾逗号 JSON 可正常导入（cc lite 场景） ==');
 $('json-editor').value = '{\n  "keys": {},\n  "layouts": { "a": { "sections": [{ "type": "rows", "rows": [[{ "ref": "rime.q", }],] }] }, },\n}';
@@ -1152,6 +1152,89 @@ setTimeout(async function () {
   FE.applyProfileText(FE.DEFAULT_PROFILE_TEXT, {});
   const anyChip = q('#layout-sections .chip')[0];
   ok(anyChip && anyChip.getAttribute('draggable') == null, 'chip 不再设 draggable 属性（改用 Pointer Events，触屏可拖）');
+
+  console.log('== 顶栏撤销/重做按钮 ==');
+  FE.applyProfileText(FE.DEFAULT_PROFILE_TEXT, {});
+  ok($('top-undo') && $('top-redo'), '顶栏存在撤销/重做按钮');
+  ok($('top-undo').disabled === true, '无历史时顶栏撤销禁用');
+  ok($('top-redo').disabled === true, '无历史时顶栏重做禁用');
+  const authorBefore = FE.state.profile.author;
+  FE.mutate(function () { FE.state.profile.author = '顶栏测试'; });
+  ok($('top-undo').disabled === false, '有历史后顶栏撤销可用');
+  $('top-undo').click();
+  eq(FE.state.profile.author, authorBefore, '顶栏撤销按钮生效');
+  ok($('top-redo').disabled === false, '撤销后顶栏重做可用');
+  $('top-redo').click();
+  eq(FE.state.profile.author, '顶栏测试', '顶栏重做按钮生效');
+  /* 顶栏与卡片内按钮状态同步 */
+  eq($('op-undo').disabled, $('top-undo').disabled, '顶栏与卡片内撤销按钮同步');
+
+  console.log('== 顶栏项目链接 ==');
+  const titleLink = $('repo-title-link');
+  const repoLink = $('repo-link');
+  const REPO_URL = 'https://github.com/SandyYuR/foxy-see-me';
+  ok(titleLink && repoLink, '顶栏存在两处项目仓库链接（标题 + 右侧）');
+  eq(titleLink.getAttribute('href'), REPO_URL, '标题链接指向本项目仓库');
+  eq(repoLink.getAttribute('href'), REPO_URL, '右侧链接指向本项目仓库');
+  eq(repoLink.getAttribute('target'), '_blank', '右侧链接在新标签页打开');
+  eq(titleLink.getAttribute('rel'), 'noopener noreferrer', '标题链接带 rel=noopener noreferrer');
+  eq(repoLink.getAttribute('rel'), 'noopener noreferrer', '右侧链接带 rel=noopener noreferrer');
+  ok(/小狐狸 see me/.test(titleLink.textContent), '标题链接文本仍含项目名');
+  /* 参照项目的说明链接在 index.html 的副标题里（DOM 桩只还原顶栏骨架，故查源码） */
+  const htmlSrc = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  ok(htmlSrc.indexOf('github.com/SandyYuR/f5a-see-me') >= 0, '正文仍保留参照项目 f5a-see-me 的说明链接');
+  /* 标签栏标题不应重复狐狸图标（已有 favicon），避免视觉重复 */
+  const pageTitle = htmlSrc.match(/<title>([\s\S]*?)<\/title>/)[1];
+  ok(pageTitle.indexOf('🦊') < 0, '页面 <title> 不再带狐狸图标（避免与 favicon 重复）');
+  ok(pageTitle.indexOf('小狐狸 see me') >= 0, '页面 <title> 仍含项目名');
+
+  console.log('== 校验条目点击定位 ==');
+  FE.applyProfileText(JSON.stringify({
+    keys: { good: { ref: 'rime.a' } },
+    layouts: {
+      default: {
+        sections: [{ type: 'rows', rows: [[{ ref: 'good' }, { ref: 'missing.ref' }]] }]
+      }
+    }
+  }), {});
+  const vIssues = FE.state.validation.issues;
+  ok(Array.isArray(vIssues) && vIssues.length > 0, '校验产生结构化 issues');
+  const badIssue = vIssues.find(i => i.code === 'unresolved-ref');
+  ok(!!badIssue, '存在 unresolved-ref 结构化条目');
+  eq([badIssue.sectionIndex, badIssue.rowIndex, badIssue.keyIndex], [0, 0, 1], '条目带出错键坐标');
+  ok(FE.issueLocatable(badIssue) === true, 'issueLocatable 判定为可定位');
+  /* 面板里渲染出可点击条目 */
+  ok(q('.issue-locatable').length > 0, '校验详情渲染出可点击条目');
+  /* 先切到别处，确认定位会切回来 */
+  FE.state.sel = null;
+  FE.locateIssue(badIssue);
+  eq(FE.state.layoutName, 'default', '定位切到问题所在布局');
+  eq(FE.state.sel, { s: 0, r: 0, k: 1 }, '定位选中出错的键');
+  eq(FE.state.splitMode, false, '常规片段的问题不切到分体模式');
+  ok(q('.chip-sel').length > 0, '定位后该键带选中样式');
+
+  /* split 片段的问题带 isSplit，定位时切到分体模式 */
+  FE.applyProfileText(JSON.stringify({
+    layouts: {
+      default: {
+        sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }],
+        split: { sections: [{ type: 'rows', rows: [[{ ref: 'nope.split' }]] }] }
+      }
+    }
+  }), {});
+  const spIssue = FE.state.validation.issues.find(i => i.code === 'unresolved-ref');
+  ok(spIssue && spIssue.isSplit === true, 'split 问题带 isSplit 标记');
+  FE.locateIssue(spIssue);
+  eq(FE.state.splitMode, true, 'split 问题定位切到分体模式');
+  eq(FE.state.sel, { s: 0, r: 0, k: 0 }, 'split 问题定位选中对应键');
+  /* 布局没有 split 片段时不应误切分体（否则落到空 sections） */
+  FE.applyProfileText(JSON.stringify({
+    layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'nope2' }]] }] } }
+  }), {});
+  const noSplitIssue = FE.state.validation.issues.find(i => i.code === 'unresolved-ref');
+  FE.state.splitMode = true;   /* 模拟用户手动切到分体模式 */
+  FE.locateIssue(noSplitIssue);
+  eq(FE.state.splitMode, false, '无 split 片段的问题定位回落到常规模式');
 
   console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
   process.exit(failed ? 1 : 0);

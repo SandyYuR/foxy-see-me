@@ -605,5 +605,163 @@ eq(renameProfile.layouts.default.sections[0].rows[0][0].ref, 'renamed', '重命�
 eq(renameProfile.layouts.default.split.sections[0].rows[0][0].ref, 'renamed', '重命名更新 split 引用');
 FE.state.profile = profile;
 
+/* ---------------- 布局编译中间层 ---------------- */
+console.log('== 布局编译层（compileSections / compileLayout） ==');
+const cmpProfile = FE.normalizeProfile(JSON.parse(FE.DEFAULT_PROFILE_TEXT));
+const cmpScope = FE.scopeFrom(cmpProfile);
+const cmp = FE.compileSections(cmpProfile.layouts.default.sections, FE.NEUTRAL_STATUS, cmpScope);
+eq(cmp.sections.length, 1, '编译出 1 个区段');
+eq(cmp.sections[0].rows.length, 4, 'default 四行');
+ok(Math.abs(cmp.totalUnits - 5) < 1e-6, '编译总高度 5 单位', cmp.totalUnits);
+
+/* 编译项与源数组索引一一对应（编辑与定位都依赖） */
+const srcRow0 = cmpProfile.layouts.default.sections[0].rows[0];
+const item0 = cmp.sections[0].rows[0].keys[0];
+ok(item0.placement === srcRow0[0], '编译项保留原始 placement 引用');
+eq([item0.s, item0.r, item0.k, item0.group], [0, 0, 0, 'rows'], '编译项带区段/行/键坐标与分组');
+eq(item0.label, 'q', '标签在编译期算好');
+/* grow 沿用 FE.rowWeights：只读「放置位」的 weight（定义里的 weight 不参与行宽分配） */
+eq(item0.grow, 1, '编译项带 flex 权重（默认 1）');
+const explicitW = FE.compileSections(
+  [{ type: 'rows', rows: [[{ ref: 'rime.a', weight: 2 }]] }], FE.NEUTRAL_STATUS, cmpScope);
+eq(explicitW.sections[0].rows[0].keys[0].grow, 2, '放置位显式 weight 编译为 flex 权重');
+/* item.weight 反映解析后的有效权重（含定义链），供检查器展示 */
+const defW = FE.compileSections(
+  [{ type: 'rows', rows: [[{ ref: 'qwerty.shift' }]] }], FE.NEUTRAL_STATUS, cmpScope);
+eq(defW.sections[0].rows[0].keys[0].weight, 1.5, 'item.weight 反映定义链上的有效权重');
+eq(item0.hints.up.text, 'Q', '编译项含上滑提示文字');
+ok(item0.summaries.tap && item0.summaries.tap.display, '编译项含点击动作摘要');
+eq(item0.isBroken, false, '正常键不标记破损');
+
+/* 网格：非法项以 null 占位，索引不错位 */
+const gridProfile = FE.normalizeProfile({
+  layouts: { default: { sections: [{ type: 'grid', columns: 2, rows: 1, keys: [
+    { column: 0, row: 0, ref: 'rime.a' }, null, { column: 1, row: 0, ref: 'rime.b' }
+  ] }] } }
+});
+const gcmp = FE.compileSections(gridProfile.layouts.default.sections, FE.NEUTRAL_STATUS, FE.scopeFrom(gridProfile));
+eq(gcmp.sections[0].keys.length, 3, '网格编译保留源数组长度');
+ok(gcmp.sections[0].keys[1] === null, '非法网格项为 null 占位');
+eq([gcmp.sections[0].keys[2].k, gcmp.sections[0].keys[2].column], [2, 1], '占位后索引与坐标未错位');
+
+/* 破损引用在编译期即被标记 */
+const brokenCmp = FE.compileSections([{ type: 'rows', rows: [[{ ref: 'no.such.key' }]] }], FE.NEUTRAL_STATUS, cmpScope);
+ok(brokenCmp.sections[0].rows[0].keys[0].isBroken === true, '未解析引用标记 isBroken');
+eq(brokenCmp.sections[0].rows[0].keys[0].unresolved, 'no.such.key', '编译项记录未解析的引用名');
+
+/* eachCompiledKey 覆盖全部键 */
+let visited = 0;
+FE.eachCompiledKey(cmp, function () { visited++; });
+eq(visited, cmp.sections[0].rows.reduce((a, r) => a + r.keys.length, 0), 'eachCompiledKey 覆盖全部键');
+
+/* compileLayout：布局级入口 */
+const lc = FE.compileLayout(cmpProfile, 'default', { status: FE.NEUTRAL_STATUS });
+ok(lc.ok, 'compileLayout default 通过');
+eq(lc.resolvedName, 'default', '无变体时 resolvedName 即布局名');
+ok(lc.hasSplit === false, 'default 无 split 片段');
+ok(Math.abs(lc.totalUnits - 5) < 1e-6, 'compileLayout 总高度与 compileSections 一致');
+const lcSplit = FE.compileLayout(cmpProfile, 'default', { split: true });
+ok(!lcSplit.ok && lcSplit.issues.some(i => i.code === 'no-split'), '无 split 时编译失败并带 no-split');
+const lcMissing = FE.compileLayout(cmpProfile, '不存在的布局', {});
+ok(!lcMissing.ok && lcMissing.issues.some(i => i.code === 'missing-layout'), '布局不存在时带 missing-layout');
+/* 布局变体：noVariants 时不跳到目标布局（区段编辑器必须编辑当前布局本身） */
+const varProfile = FE.normalizeProfile({
+  layouts: {
+    default: { variants: [{ when: { rime: { ascii_mode: true } }, layout: 'other' }], sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }] },
+    other: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.b' }], [{ ref: 'rime.c' }]] }] }
+  }
+});
+const asciiStatus = { composing: false, ascii_mode: true, disabled: false };
+eq(FE.compileLayout(varProfile, 'default', { status: asciiStatus }).resolvedName, 'other', 'ASCII 下解析到变体目标');
+eq(FE.compileLayout(varProfile, 'default', { status: asciiStatus, noVariants: true }).resolvedName, 'default', 'noVariants 时不解析变体');
+
+/* ---------------- 结构化校验 issue ---------------- */
+console.log('== 结构化校验 issue ==');
+const locProfile = FE.normalizeProfile({
+  keys: { good: { ref: 'rime.a' } },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'good' }, { ref: 'missing.ref' }]] }] } }
+});
+const lv = FE.validateProfile(locProfile);
+ok(Array.isArray(lv.issues), 'validateProfile 返回 issues 数组');
+eq(lv.issues.length, lv.errors.length + lv.warnings.length, 'issues 与 errors+warnings 等长');
+const missIssue = lv.issues.find(i => i.code === 'unresolved-ref');
+ok(!!missIssue, '未解析引用产生 unresolved-ref 条目');
+eq([missIssue.sectionIndex, missIssue.rowIndex, missIssue.keyIndex, missIssue.group],
+  [0, 0, 1, 'rows'], '未解析引用带区段/行/键坐标与分组');
+eq(missIssue.layout, 'default', '未解析引用带布局名');
+ok(missIssue.path.indexOf('按键 1') >= 0, 'path 含可读位置', missIssue.path);
+eq(missIssue.level, 'error', '未解析引用为 error 级');
+const noTapIssue = lv.issues.find(i => i.code === 'no-tap');
+ok(!!noTapIssue, '缺 tap 也产生结构化条目（带 code no-tap）');
+
+/* path 未被 code 覆盖：显式传 loc 时仍保留 ctx 坐标 */
+ok(noTapIssue.sectionIndex === 0 && noTapIssue.keyIndex === 1,
+  '显式 loc 与 ctx 合并（坐标不丢失）', [noTapIssue.sectionIndex, noTapIssue.keyIndex]);
+
+/* split 片段的问题带 isSplit 标记 */
+const spProfile = FE.normalizeProfile({
+  layouts: {
+    default: {
+      sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }],
+      split: { sections: [{ type: 'rows', rows: [[{ ref: 'nope.split' }]] }] }
+    }
+  }
+});
+const spv = FE.validateProfile(spProfile);
+const spIssue = spv.issues.find(i => i.code === 'unresolved-ref');
+ok(spIssue && spIssue.isSplit === true, 'split 片段的问题带 isSplit 标记');
+eq(spIssue.rowIndex, 0, 'split 问题带行索引');
+
+/* 网格问题带 grid 分组、无行索引 */
+const gIssueProfile = FE.normalizeProfile({
+  layouts: { default: { sections: [{ type: 'grid', columns: 2, rows: 2, keys: [
+    { column: 0, row: 0, ref: 'rime.a' },
+    { column: 0, row: 0, ref: 'rime.b' }
+  ] }] } }
+});
+const gv = FE.validateProfile(gIssueProfile);
+const overlapIssue = gv.issues.find(i => i.code === 'grid-overlap');
+ok(!!overlapIssue, '网格重叠产生 grid-overlap');
+eq([overlapIssue.group, overlapIssue.keyIndex], ['grid', 1], '网格问题带 grid 分组与键索引');
+ok(overlapIssue.rowIndex == null, '网格问题不带行索引');
+
+/* 警告也进入 issues */
+const holeIssue = gv.issues.find(i => i.code === 'grid-holes');
+ok(holeIssue && holeIssue.level === 'warn', '空格子警告也带 code 且为 warn 级');
+
+/* ---------------- 校验器作用域（不污染全局 state） ---------------- */
+console.log('== 校验器作用域化 ==');
+const keepProfile = FE.state.profile;
+const otherProfile = FE.normalizeProfile({
+  keys: { only_here: { ref: 'rime.a' } },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'only_here' }]] }] } }
+});
+eq(FE.validateProfile(otherProfile).errors, [], '显式作用域下 only_here 可解析');
+ok(FE.state.profile === keepProfile, '校验过程不修改 state.profile（不再临时篡改全局）');
+/* 定义不跨 profile 泄漏：同一份引用在别的作用域下必须解析失败 */
+const leakCheck = FE.validateProfile(FE.normalizeProfile({
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'only_here' }]] }] } }
+}));
+ok(leakCheck.errors.some(e => e.indexOf('only_here') >= 0), '定义不跨 profile 泄漏');
+/* 可重入：连续两次结果一致 */
+eq(FE.validateProfile(otherProfile).errors, FE.validateProfile(otherProfile).errors, '重复校验结果一致（可重入）');
+
+/* 解析器显式 scope */
+const oScope = FE.scopeFrom(otherProfile);
+eq(FE.lookupDef('only_here', oScope), otherProfile.keys.only_here, 'lookupDef 用显式 scope 查到定义');
+ok(FE.lookupDef('only_here') === null, '默认作用域（state.profile）查不到 only_here');
+ok(!FE.evalPlacement({ ref: 'only_here' }, FE.NEUTRAL_STATUS, oScope).unresolved, 'evalPlacement 支持显式 scope');
+eq(FE.evalPlacement({ ref: 'only_here' }, FE.NEUTRAL_STATUS).unresolved, 'only_here', '无 scope 时沿用全局并解析失败');
+/* 动作名/宏同样走 scope */
+const actScope = FE.scopeFrom(FE.normalizeProfile({
+  actions: { my_action: { type: 'key', key: 'A' } },
+  macros: { my_macro: [{ action: 'my_action' }] },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }] } }
+}));
+eq(FE.resolveActionSpec('my_action', actScope).kind, 'action-name', 'resolveActionSpec 用显式 scope 解析动作名');
+/* 宏名要经 {macro:...} 规格，字符串形式只查 actions 表 */
+eq(FE.resolveActionSpec({ macro: 'my_macro' }, actScope).unresolved, undefined, '宏在显式 scope 下可解析');
+eq(FE.resolveActionSpec({ macro: 'my_macro' }).unresolved, 'my_macro', '无 scope 时宏走全局并解析失败');
+
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
 process.exit(failed ? 1 : 0);

@@ -392,7 +392,8 @@ function buildSkeleton() {
     '角标说明：右上蓝色 = 长按提示 · 右上橙色 = 按住提示 · 底中 ⌄ = 长按弹出菜单 · 红色虚线框 = 引用无法解析 · 黄色框 = 选中按键');
   previewPanel.append(pToolbar, pStage, pLegend, el('div', { id: 'preview-meta', class: 'status' }));
 
-  /* 标签栏：5 个按钮，JSON 是独立布局文档标签 */
+  /* 标签栏：4 个按钮（布局编辑 / 按键定义 / 动作与宏 / 弹出菜单）。
+   * 布局 JSON 卡片在「布局编辑」页内，不是独立标签页——见 AGENT.md §5.4。 */
   const tabs = el('div', { class: 'tabs' });
   [['tab-layout', true], ['tab-keys', false], ['tab-actions', false], ['tab-popup', false]].forEach(([t, active]) => {
     tabs.appendChild(el('button', { class: 'tab' + (t === 'tab-popup' ? ' tab-popup' : ''), 'data-tab': t }));
@@ -489,7 +490,26 @@ function buildSkeleton() {
       el('div', { id: 'popup-json-status', class: 'status' })));
 
   main.append(previewPanel, tabs, tabLayout, tabKeys, tabActions, tabPopup);
-  body.appendChild(el('header', { class: 'topbar' }));
+  /* 顶栏：标题（本身是仓库链接）+ 右侧仓库链接与常驻撤销/重做按钮（与 index.html 保持同步） */
+  const header = el('header', { class: 'topbar' });
+  header.appendChild(el('div', { class: 'topbar-main' },
+    el('div', { class: 'topbar-title' },
+      el('h1', null, el('a', {
+        class: 'brand-link', id: 'repo-title-link',
+        href: 'https://github.com/SandyYuR/foxy-see-me',
+        target: '_blank', rel: 'noopener noreferrer'
+      }, '🦊 小狐狸 see me')),
+      el('h2', null, 'Foxy 键盘布局可视化编辑器')),
+    el('div', { class: 'topbar-actions' },
+      el('a', {
+        class: 'repo-link', id: 'repo-link',
+        href: 'https://github.com/SandyYuR/foxy-see-me',
+        target: '_blank', rel: 'noopener noreferrer'
+      }, 'GitHub'),
+      el('span', { class: 'topbar-sep' }),
+      el('button', { id: 'top-undo', class: 'mini-button', disabled: 'disabled' }),
+      el('button', { id: 'top-redo', class: 'mini-button', disabled: 'disabled' }))));
+  body.appendChild(header);
   body.appendChild(main);
   return body;
 }

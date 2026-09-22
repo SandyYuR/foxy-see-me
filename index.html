@@ -4,13 +4,31 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>小狐狸 see me — Foxy 键盘布局可视化编辑器</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦊</text></svg>">
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
   <header class="topbar">
-    <h1>小狐狸 see me</h1>
-    <h2>Foxy 键盘布局可视化编辑器 · 匹配 <code>foxy.keyboard-layout</code> JSON 格式（仿
-      <a href="https://github.com/SandyYuR/f5a-see-me" target="_blank" rel="noopener noreferrer">f5a-see-me</a>）</h2>
+    <div class="topbar-main">
+      <div class="topbar-title">
+        <h1><a class="brand-link" id="repo-title-link"
+            href="https://github.com/SandyYuR/foxy-see-me" target="_blank" rel="noopener noreferrer"
+            title="打开本项目的 GitHub 仓库"><span class="logo" aria-hidden="true">🦊</span>小狐狸 see me</a></h1>
+        <h2>Foxy 键盘布局可视化编辑器 · 匹配 <code>foxy.keyboard-layout</code> JSON 格式（仿
+          <a href="https://github.com/SandyYuR/f5a-see-me" target="_blank" rel="noopener noreferrer">f5a-see-me</a>）</h2>
+      </div>
+      <div class="topbar-actions">
+        <a class="repo-link" id="repo-link"
+          href="https://github.com/SandyYuR/foxy-see-me" target="_blank" rel="noopener noreferrer"
+          title="本项目的 GitHub 仓库（源码 / 问题反馈）">
+          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          <span>GitHub</span>
+        </a>
+        <span class="topbar-sep" aria-hidden="true"></span>
+        <button type="button" id="top-undo" class="mini-button" disabled title="撤销 (Ctrl+Z)">↶ 撤销</button>
+        <button type="button" id="top-redo" class="mini-button" disabled title="重做 (Ctrl+Y)">↷ 重做</button>
+      </div>
+    </div>
   </header>
 
   <main>
