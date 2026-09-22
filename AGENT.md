@@ -4,7 +4,7 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 396 / UI 598 / 真实文件体检 18 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 396 / UI 602 / 真实文件体检 18 个示例 0 错误。
 
 ### ⚠️ 本文件有两份，必须保持一致
 
@@ -126,7 +126,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **396 core + 598 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **396 core + 602 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -453,6 +453,31 @@ tooltip 由 `itemTooltip(item, shift)` 生成（读 `item.summaries` / `item.hin
   所以调用方不用自己找控件绑事件，直接用它写回即可。
 
 `getValue()`：引用形态返回**字符串**，其余返回对象，空则 `null`（调用方据此避免写回空值）。
+
+#### `FE.uiAlert` / `FE.uiConfirm` / `FE.uiPrompt` —— 唯一的提示/确认/输入框 ⭐
+
+**不要用浏览器 `alert` / `confirm` / `prompt`**（用户明确要求，且它们阻塞主线程、移动端表现不一致、
+测试里只能打桩成"永远点确定"等于没测）。三个入口都在 `key-dialog.js`，基于 `openModal`，**Promise 化**：
+
+```js
+await FE.uiAlert('内容');                                   // → void
+var ok = await FE.uiConfirm('删除？', { danger: true });     // → boolean
+var name = await FE.uiPrompt({ title, message, value, placeholder, required });  // → string | null（取消）
+```
+
+- `opts`：`{ title, message, okLabel, cancelLabel, danger }`；`uiPrompt` 另有
+  `{ value, placeholder, required, validate(v)→错误文字|null }`。
+- `message` 里的 `\n` 会拆成多行显示（老代码的提示常带换行）。
+- `uiPrompt` 的校验失败**就地显示红色错误文字**（`.ui-dialog-error`）且不关对话框，
+  比"再弹一次提示"友好。打开即聚焦输入框，回车提交。
+- ⚠️ 调用方事件处理器要写成 `async function () { ... await ... }`。
+  **`test/test-ui.js` 把 `global.alert/confirm/prompt` 改成了抛错**，
+  任何回退到浏览器弹窗的代码都会被测试立刻抓住。
+- ⚠️ 三个入口的按钮 class 是 `ui-dialog-ok` / `ui-dialog-cancel`，
+  测试的 `uiOk()/uiCancel()/uiReadAlert()` 助手靠它们定位，**改名要同步测试**。
+- 测试里要**像用户一样去点这些弹窗**（见 `test-ui.js` 顶部的驱动助手），不要给 global 打桩。
+  因此 `test-ui.js` 的主体整体包在 `async main()` 里（文件是 CommonJS，**不允许顶层 await**）。
+
 - **jscolor 取色（`FE.installJscolor` 一段，踩过坑，改前必读该段注释）**：面板必须挂进最近的 `<dialog>`
   并对输入框做 `position: fixed`，否则被 `dialog` 与 `::backdrop` 盖住表现为"点了没反应"；
   `new jscolor` 必须在元素进入 DOM 之后，未挂载时惰性安装
@@ -816,7 +841,7 @@ node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
 node test/test-core.js       # 期望：396 通过, 0 失败
-node test/test-ui.js         # 期望：598 通过, 0 失败
+node test/test-ui.js         # 期望：602 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
 node test/check-real-files.js   # 期望：共 18 个文件，0 个存在错误
@@ -839,6 +864,6 @@ node tools/check-agent-sync.js --write
 
 ### 版本信息（改动可能影响这些对外说法）
 
-- 测试基线：core **396** / UI **598** / 示例 **18**（15 布局 + 3 弹出菜单）
+- 测试基线：core **396** / UI **602** / 示例 **18**（15 布局 + 3 弹出菜单）
 - 仓库 `README.md` 里的功能描述与 `index.html` 的图例，与实现同步维护；
   新增用户可见功能时一并更新，避免文档漂移。

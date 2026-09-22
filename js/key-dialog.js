@@ -33,6 +33,115 @@ function openModal(opts) {
 FE.openModal = openModal;
 
 /* ================================================================
+ * 网页内建提示 / 确认 / 输入框（替代 alert / confirm / prompt）
+ *
+ * 为什么不用浏览器原生：
+ *   · 它们**阻塞主线程**，样式无法与编辑器统一；
+ *   · 移动端 / WebView 里表现不一致（有的还会被系统样式接管）；
+ *   · 测试里无法断言内容，只能打桩成「永远点确定」，等于没测。
+ *
+ * 三个入口都返回 Promise：
+ *   FE.uiAlert(message, opts)   → Promise<void>
+ *   FE.uiConfirm(message, opts) → Promise<boolean>
+ *   FE.uiPrompt(opts)           → Promise<string|null>（取消为 null）
+ * opts 通用：{ title, message, okLabel, cancelLabel, danger }
+ * uiPrompt 另有：{ value, placeholder, required, validate(v)→错误文字|null }
+ *
+ * message 里的 \n 会拆成多行显示（老代码的提示常带换行）。
+ * ================================================================ */
+/* 把多行消息铺进容器（split 后逐行 append，避免依赖 any 的数组子节点语义） */
+function fillDialogMessage(host, message) {
+  var lines = String(message == null ? '' : message).split('\n');
+  lines.forEach(function (line) {
+    host.appendChild(h('div', { class: 'ui-dialog-msg' }, line));
+  });
+  return host;
+}
+/* 保证只结算一次：Promise 重复 resolve 无害，但逻辑上要干净 */
+function onceFlag() {
+  var done = false;
+  return function (fn) { return function (v) { if (done) return; done = true; fn(v); }; };
+}
+
+FE.uiAlert = function (message, opts) {
+  opts = opts || {};
+  return new Promise(function (resolve) {
+    var settle = onceFlag()(resolve);
+    var m = openModal({ title: opts.title || '提示', onClose: function () { settle(); } });
+    m.body.appendChild(fillDialogMessage(h('div', { class: 'ui-dialog-body' }), message));
+    m.toolbar.appendChild(h('button', {
+      /* class 里必须带 ui-dialog-ok：测试靠它定位「确定」（见 test-ui.js 的 uiOk/uiReadAlert） */
+      type: 'button', class: 'mini-button primary ui-dialog-ok',
+      onclick: function () { settle(); m.close(); }
+    }, opts.okLabel || '好'));
+  });
+};
+
+FE.uiConfirm = function (message, opts) {
+  opts = opts || {};
+  return new Promise(function (resolve) {
+    var settle = onceFlag()(resolve);
+    var m = openModal({ title: opts.title || '请确认', onClose: function () { settle(false); } });
+    m.body.appendChild(fillDialogMessage(h('div', { class: 'ui-dialog-body' }), message));
+    m.toolbar.appendChild(h('button', {
+      type: 'button', class: 'mini-button ui-dialog-cancel',
+      onclick: function () { settle(false); m.close(); }
+    }, opts.cancelLabel || '取消'));
+    m.toolbar.appendChild(h('button', {
+      type: 'button', class: 'mini-button ui-dialog-ok ' + (opts.danger ? 'danger' : 'primary'),
+      onclick: function () { settle(true); m.close(); }
+    }, opts.okLabel || '确定'));
+  });
+};
+
+FE.uiPrompt = function (opts) {
+  opts = opts || {};
+  return new Promise(function (resolve) {
+    var settle = onceFlag()(resolve);
+    var m = openModal({ title: opts.title || '请输入', onClose: function () { settle(null); } });
+    if (opts.message != null && String(opts.message) !== '') {
+      m.body.appendChild(fillDialogMessage(h('div', { class: 'ui-dialog-body' }), opts.message));
+    }
+    var input = h('input', {
+      type: 'text', class: 'mini-input ui-dialog-input',
+      value: opts.value != null ? String(opts.value) : '',
+      placeholder: opts.placeholder || ''
+    });
+    var errBox = h('div', { class: 'ui-dialog-error' });
+    m.body.appendChild(h('div', { class: 'form-row' }, input));
+    m.body.appendChild(errBox);
+
+    function submit() {
+      var v = input.value;
+      var msg = (typeof opts.validate === 'function') ? opts.validate(v)
+        : ((opts.required && !String(v).trim()) ? '不能为空' : null);
+      if (msg) {
+        /* 校验失败就地报错，不关对话框——比再弹一次提示友好 */
+        clearEl(errBox);
+        errBox.appendChild(document.createTextNode(String(msg)));
+        if (typeof input.focus === 'function') input.focus();
+        return;
+      }
+      settle(v);
+      m.close();
+    }
+    input.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); submit(); }
+    });
+    m.toolbar.appendChild(h('button', {
+      type: 'button', class: 'mini-button ui-dialog-cancel',
+      onclick: function () { settle(null); m.close(); }
+    }, opts.cancelLabel || '取消'));
+    m.toolbar.appendChild(h('button', {
+      type: 'button', class: 'mini-button primary ui-dialog-ok',
+      onclick: submit
+    }, opts.okLabel || '确定'));
+    /* 打开即聚焦输入框：这类对话框的下一步几乎总是打字 */
+    if (typeof input.focus === 'function') input.focus();
+  });
+};
+
+/* ================================================================
  * jscolor 颜色选择器（与 f5a-see-me 相同的交互）
  * - 点击输入框就地弹出 jscolor 面板：HSV 取色区 + 透明度滑杆 + ✓ 关闭，
  *   支持 #RRGGBB / #AARRGGBB（format hexa + alphaChannel）。
@@ -247,7 +356,7 @@ FE.installJscolor = function (input, opts) {
     if (raw === '') { emitInput(null); emitDone(null); return; }
     var n = FE.normalizeColorHex(raw);
     if (n == null) {
-      alert('颜色格式无效，应为 #RRGGBB 或 #AARRGGBB');
+      FE.uiAlert('颜色格式无效，应为 #RRGGBB 或 #AARRGGBB');
       return;
     }
     input.value = n;
@@ -720,7 +829,7 @@ FE.openGestureDialog = function (opts) {
             type: 'button', class: 'mini-button',
             onclick: function () {
               var k = popupKeyInp.value.trim();
-              if (!k) { alert('请先填写弹出菜单键 popupKey'); return; }
+              if (!k) { FE.uiAlert('请先填写弹出菜单键 popupKey'); return; }
               if (FE.jumpToPopupEditor) { modal.close(); FE.jumpToPopupEditor(k); }
             }
           }, '编辑弹出菜单候选 →')));
@@ -754,7 +863,7 @@ FE.openGestureDialog = function (opts) {
         if (popupSel.value === '1') extras.popup = true;
         else if (popupSel.value === '0') extras.popup = false;
         if (m === 'ref') {
-          if (!refName) { alert('请选择引用的按键'); return; }
+          if (!refName) { FE.uiAlert('请选择引用的按键'); return; }
           value = Object.assign({ ref: refName }, extras);
           /* hold 引用可额外覆盖 start/end（文档：A hold reference can additionally
            * override its start/... and end/... fields）。之前这里漏读，导致填了却丢失。 */
@@ -765,10 +874,10 @@ FE.openGestureDialog = function (opts) {
             if (enRef) value.end = enRef;
           }
         } else if (m === 'action-name') {
-          if (!actionName) { alert('请选择动作'); return; }
+          if (!actionName) { FE.uiAlert('请选择动作'); return; }
           value = Object.keys(extras).length ? Object.assign({ action: actionName }, extras) : actionName;
         } else if (m === 'macro') {
-          if (!macroName) { alert('请选择宏'); return; }
+          if (!macroName) { FE.uiAlert('请选择宏'); return; }
           value = Object.assign({ macro: macroName }, extras);
         } else {
           var act = area._editor ? area._editor.getValue() : null;
@@ -778,9 +887,9 @@ FE.openGestureDialog = function (opts) {
             var en = endEditor ? endEditor.getValue() : null;
             if (st) value.start = st;
             if (en) value.end = en;
-            if (!value.start && !value.end && !Object.keys(extras).length) { alert('请至少配置开始或结束动作'); return; }
+            if (!value.start && !value.end && !Object.keys(extras).length) { FE.uiAlert('请至少配置开始或结束动作'); return; }
           } else {
-            if (!act && !Object.keys(extras).length) { alert('请配置动作'); return; }
+            if (!act && !Object.keys(extras).length) { FE.uiAlert('请配置动作'); return; }
             value = act ? Object.assign({}, act, extras) : Object.assign({}, extras);
             if (isLongPress && repeatChk.checked) value.repeat = true;
             if (isLongPress && popupKeyInp.value.trim() !== '') value.popupKey = popupKeyInp.value.trim();
@@ -876,7 +985,7 @@ FE.openVariantDialog = function (opts) {
       if (tapValue !== undefined) out.tap = tapValue;
       var extra = {};
       if (extraTa.value.trim() !== '') {
-        try { extra = JSON.parse(extraTa.value); } catch (e) { alert('其他字段 JSON 无效: ' + e.message); return; }
+        try { extra = JSON.parse(extraTa.value); } catch (e) { FE.uiAlert('其他字段 JSON 无效: ' + e.message); return; }
       }
       Object.keys(extra).forEach(function (k) { if (!(k in out)) out[k] = extra[k]; });
       modal.close();
@@ -1477,9 +1586,9 @@ FE.openKeyDialog = function (opts) {
           onclick: function () {
             var a = ed.check();
             if (a.report && a.report.issues.length) { ed.fix(); a = ed.check(); } /* 先修复再应用 */
-            if (a.empty) { alert('内容不能为空'); return; }
-            if (a.error) { alert('JSON 无效: ' + a.error); return; }
-            if (!FE.isPlainObject(a.value)) { alert('必须是 JSON 对象（按键定义/放置）'); return; }
+            if (a.empty) { FE.uiAlert('内容不能为空'); return; }
+            if (a.error) { FE.uiAlert('JSON 无效: ' + a.error); return; }
+            if (!FE.isPlainObject(a.value)) { FE.uiAlert('必须是 JSON 对象（按键定义/放置）'); return; }
             draft = a.value;
             m2.close();
             buildForm();
@@ -1498,8 +1607,8 @@ FE.openKeyDialog = function (opts) {
         type: 'button', class: 'mini-button',
         onclick: function () {
           var n = saveAs.value.trim();
-          if (!n) { alert('请输入按键定义名称'); return; }
-          if (state.profile.keys[n]) { alert('按键定义已存在: ' + n); return; }
+          if (!n) { FE.uiAlert('请输入按键定义名称'); return; }
+          if (state.profile.keys[n]) { FE.uiAlert('按键定义已存在: ' + n); return; }
           var def = FE.deepClone(draft);
           ['column', 'row', 'columnSpan', 'rowSpan'].forEach(function (f) { delete def[f]; });
           FE.mutate(function () {
@@ -1517,7 +1626,7 @@ FE.openKeyDialog = function (opts) {
         type: 'button', class: 'mini-button',
         onclick: function () {
           var used = FE.countKeyUsage(opts.name);
-          alert('被引用 ' + used.count + ' 处' + (used.places.length ? '：\n' + used.places.join('\n') : ''));
+          FE.uiAlert('被引用 ' + used.count + ' 处' + (used.places.length ? '：\n' + used.places.join('\n') : ''));
         }
       }, '查找使用处'));
     }
@@ -1611,8 +1720,9 @@ FE.openKeyDialog = function (opts) {
   if (isPlacement) {
     modal.toolbar.appendChild(h('button', {
       type: 'button', class: 'danger',
-      onclick: function () {
-        if (!confirm('删除此按键？')) return;
+      onclick: async function () {
+        var ok = await FE.uiConfirm('删除此按键？', { title: '删除按键', danger: true, okLabel: '删除' });
+        if (!ok) return;
         FE.mutate(function () {
           var cont = container();
           if (cont) cont.splice(opts.location.k, 1);
@@ -1632,9 +1742,9 @@ FE.openKeyDialog = function (opts) {
         });
       } else {
         var newName = nameInput ? nameInput.value.trim() : opts.name;
-        if (!newName) { alert('名称不能为空'); return; }
+        if (!newName) { FE.uiAlert('名称不能为空'); return; }
         if (newName !== opts.name) {
-          if (state.profile.keys[newName]) { alert('按键定义已存在: ' + newName); return; }
+          if (state.profile.keys[newName]) { FE.uiAlert('按键定义已存在: ' + newName); return; }
         }
         FE.mutate(function () {
           if (newName !== opts.name) {

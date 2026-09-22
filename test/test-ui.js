@@ -19,10 +19,12 @@ const _winListeners = {};
 global.addEventListener = (t, fn) => { (_winListeners[t] = _winListeners[t] || []).push(fn); };
 global.removeEventListener = () => {};
 global.dispatchEvent = () => true;
-global.confirm = () => true;
-let lastPrompt = null;
-global.prompt = (msg, def) => { lastPrompt = { msg, def }; return lastPrompt.answer; };
-global.alert = (msg) => { throw new Error('alert 被调用: ' + msg); };
+/* 浏览器对话框一律禁止：全部改走 FE.uiAlert / uiConfirm / uiPrompt 后，
+ * 这里刻意让它们**抛错**——任何代码退回 browser dialog 都会被测试立刻抓住，
+ * 是个廉价的回归守卫（这些原生弹窗会阻塞主线程、样式也无法统一）。 */
+global.confirm = () => { throw new Error('不应使用浏览器 confirm（请用 FE.uiConfirm）'); };
+global.prompt = () => { throw new Error('不应使用浏览器 prompt（请用 FE.uiPrompt）'); };
+global.alert = (msg) => { throw new Error('不应使用浏览器 alert（请用 FE.uiAlert）: ' + msg); };
 global.fetch = () => Promise.reject(new Error('no fetch in test'));
 /* 可用的 FileReader 桩：读取 file.__content（多文件场景），回退 global.__fileContent */
 global.__fileContent = '';
@@ -61,6 +63,44 @@ const FE = global.FE;
 const $ = (id) => documentStub.getElementById(id);
 const q = (sel, root) => (root || documentStub._body).querySelectorAll(sel);
 
+/* ---------------- 内建对话框驱动 ----------------
+ * 编辑器已把 alert / confirm / prompt 全部换成 FE.uiAlert / uiConfirm / uiPrompt
+ * ——它们是真实的 <dialog> 且 Promise 化，所以测试要**像用户一样去点这些弹窗**，
+ * 而不是给 global.alert/confirm/prompt 打桩（那样等于没测到新实现）。
+ * 三个助手都会等一个宏任务，让 async 点击处理器里的 await 有机会继续。 */
+function lastDialog() {
+  const open = documentStub._openDialogs.filter(d => d.open);
+  return open.length ? open[open.length - 1] : null;
+}
+function dialogCount() {
+  return documentStub._openDialogs.filter(d => d.open).length;
+}
+async function uiOk(value) {
+  const dlg = lastDialog();
+  if (!dlg) throw new Error('uiOk: 没有打开的对话框');
+  const inp = dlg.querySelectorAll('.ui-dialog-input')[0];
+  if (inp && value !== undefined) inp.value = value;
+  dlg.querySelectorAll('.ui-dialog-ok')[0].click();
+  await sleep(0);
+  return dlg;
+}
+async function uiCancel() {
+  const dlg = lastDialog();
+  if (!dlg) throw new Error('uiCancel: 没有打开的对话框');
+  dlg.querySelectorAll('.ui-dialog-cancel')[0].click();
+  await sleep(0);
+  return dlg;
+}
+/* 断言当前有一个提示框（uiAlert），返回其文字后关掉 */
+async function uiReadAlert() {
+  const dlg = lastDialog();
+  if (!dlg) return null;
+  const text = dlg.textContent;
+  dlg.querySelectorAll('.ui-dialog-ok')[0].click();
+  await sleep(0);
+  return text;
+}
+
 let passed = 0, failed = 0;
 function ok(cond, msg) {
   if (cond) passed++;
@@ -70,6 +110,12 @@ function eq(a, b, msg) {
   const ja = JSON.stringify(a), jb = JSON.stringify(b);
   ok(ja === jb, msg + ' — 期望 ' + jb + ' 实际 ' + ja);
 }
+
+/* 测试主体整体包进 async main()：
+ * 内建对话框（FE.uiConfirm / uiPrompt / uiAlert）是 Promise 化的，
+ * 测试要像用户那样 await 点掉它们；而本文件是 CommonJS，**不允许顶层 await**。
+ * 原先主体分两段（顶层 + setTimeout 回调），已合并为同一个 async 作用域。 */
+(async function main() {
 
 console.log('== boot 与初始渲染 ==');
 /* app.js 在加载时已执行 boot()（存在 #preview-kb） */
@@ -378,9 +424,10 @@ $('layout-select')._fire('change');
 eq(q('.kb-key').length, 2, 'mini 布局 2 键渲染');
 
 console.log('== 布局管理 ==');
-lastPrompt = { answer: 'test_layout' };
-global.prompt = () => 'test_layout';
+/* 新建布局走 FE.uiPrompt：点开弹窗、填名字、确定（像用户那样操作） */
 $('layout-add').click();
+ok(!!lastDialog(), '新建布局弹出内建输入框（非浏览器 prompt）');
+await uiOk('test_layout');
 ok(!!FE.state.profile.layouts.test_layout, '新建布局成功');
 $('layout-select').value = 'test_layout';
 $('layout-select')._fire('change');
@@ -636,13 +683,26 @@ $('macros-add').click();
 ok(!!FE.state.profile.macros['test.freshmacro'], '新建宏已写入 profile');
 ok(FE.state.openMacros['test.freshmacro'] === true, '新建宏默认展开');
 
-/* 摘要行内的删除按钮：可用，且顺手清掉展开状态（不留脏记录） */
+/* 摘要行内的删除按钮：可用（会先弹内建确认框），且顺手清掉展开状态（不留脏记录） */
 FE.renderAll();
 const freshItem2 = $('actions-list').querySelectorAll('.def-item.def-collapsible')
   .find(it => it.querySelectorAll('.def-name')[0].textContent === 'test.fresh');
 freshItem2.querySelectorAll('button').find(b => b.textContent === '删除').click();
+ok(!!lastDialog() && lastDialog().textContent.indexOf('删除') >= 0, '删除前弹出内建确认框');
+await uiOk();
 ok(!FE.state.profile.actions['test.fresh'], '摘要行内的删除按钮可用（未被折叠语义吞掉）');
 ok(!FE.state.openActions['test.fresh'], '删除后同时清掉展开状态');
+
+/* 确认框点「取消」则不应删除 */
+$('actions-new').value = 'test.keepme';
+$('actions-add').click();
+ok(!!FE.state.profile.actions['test.keepme'], '（前置）新建 test.keepme');
+FE.renderAll();
+const keepItem = $('actions-list').querySelectorAll('.def-item.def-collapsible')
+  .find(it => it.querySelectorAll('.def-name')[0].textContent === 'test.keepme');
+keepItem.querySelectorAll('button').find(b => b.textContent === '删除').click();
+await uiCancel();
+ok(!!FE.state.profile.actions['test.keepme'], '确认框点取消不会删除');
 
 console.log('== 加/删动作与宏：不再跳回分栏顶部 ==');
 /* 真实成因：被点掉的按钮同时是焦点元素，它一被移除，浏览器交回焦点并滚回顶部。
@@ -662,6 +722,7 @@ scrollHost.scrollTop = 520;
 delBtnForScroll.focus();
 ok(documentStub.activeElement === delBtnForScroll, '（前置）删除按钮持有焦点，模拟用户刚点过');
 delBtnForScroll.click();
+await uiOk();   /* 删除先走内建确认框 */
 ok(!FE.state.profile.actions['test.del'], '动作已删除');
 ok(scrollHost.scrollTop === 520, '删除动作后滚动位置保持原处（未跳回分栏顶部）');
 
@@ -688,6 +749,7 @@ const macDelBtn = findMacByName('test.scrollmacro')
 scrollHost.scrollTop = 410;
 macDelBtn.focus();
 macDelBtn.click();
+await uiOk();   /* 同样先走内建确认框 */
 ok(!FE.state.profile.macros['test.scrollmacro'], '宏已删除');
 ok(scrollHost.scrollTop === 410, '删除宏后滚动位置保持原处');
 
@@ -849,19 +911,16 @@ FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
   kd.querySelectorAll('.dialog-toolbar .primary')[0].click();
   eq(FE.state.profile.keys['qwerty.q'].colors.background, '#FF0000', '面板选的背景色写入 profile（归一化，不透明省略 alpha）');
   eq(FE.state.profile.keys['qwerty.q'].colors.text, '#FF0000', '手输的文字色归一化写入 profile');
-  /* 非法输入被回退 */
+  /* 非法输入被回退：现在通过 FE.uiAlert 提示（内建弹窗），要像用户那样读它 */
   documentStub._openDialogs.length = 0;
   FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
   const kd2 = documentStub._openDialogs[0];
   const badInput = kd2.querySelectorAll('.color-input')[0];
   const keepVal = badInput.value;
   badInput.value = 'oops';
-  let alerted = null;
-  const realAlert = global.alert;
-  global.alert = (m) => { alerted = m; };
   badInput._fire('change');
-  global.alert = realAlert;
-  ok(alerted && alerted.indexOf('颜色格式无效') >= 0, '非法颜色输入被提示');
+  const colorAlert = await uiReadAlert();
+  ok(!!colorAlert && colorAlert.indexOf('颜色格式无效') >= 0, '非法颜色输入被内建弹窗提示');
   ok(badInput.value === keepVal, '非法颜色输入被回退');
   kd2.querySelectorAll('.dialog-toolbar')[0].querySelectorAll('button')[0].click(); /* 取消 */
   $('op-undo').click();
@@ -1020,8 +1079,10 @@ $('json-editor').value = '{"layouts": {"h": {"sections": []}},}';
 $('json-editor')._fire('input');
 ok(FE.state.jsonDirty === true, 'input 事件置 dirty（保留用户文本）');
 
-/* 等防抖（250ms）后确认面板自动出现提醒，然后继续导入流程测试 */
-setTimeout(async function () {
+/* 等防抖（250ms）后确认面板自动出现提醒，然后继续导入流程测试。
+ * 原来是 setTimeout 包装（把主体切成两段）；现在整体已是 async main()，直接 await。 */
+await sleep(350);
+{
   ok($('json-issues').className.indexOf('warn') >= 0, '防抖后自动显示问题提醒');
   ok($('json-issues').textContent.indexOf('尾逗号') >= 0, '自动提醒含问题类型');
   ok($('json-editor').value === '{"layouts": {"h": {"sections": []}},}', '输入内容未被覆盖');
@@ -1909,6 +1970,13 @@ setTimeout(async function () {
   ok(!!hoverMac.getAttribute('title'), '宏摘要行有悬停提示：' + hoverMac.getAttribute('title'));
   ok(hoverAct.getAttribute('title').indexOf('展开') >= 0, '动作悬停提示说明点下去会展开配置');
 
-  console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
-  process.exit(failed ? 1 : 0);
-}, 350);
+}   /* 结束 await sleep(350) 后的主体块 */
+
+console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
+process.exit(failed ? 1 : 0);
+})().catch(function (e) {
+  /* main 里含 await，异常会变成 unhandled rejection；这里显式报出来，
+   * 否则测试会以一句难以定位的模块/异步错误结束。 */
+  console.error('  ✗ 测试主体抛出异常:', (e && e.stack) || e);
+  process.exit(1);
+});

@@ -346,8 +346,8 @@ function renderPopupKeys() {
     h('button', {
       class: 'mini-button', onclick: function () {
         var k = addInp.value.trim();
-        if (!k) { alert('请输入 popupKey'); return; }
-        if (schema[k]) { alert('该键已存在: ' + k); return; }
+        if (!k) { FE.uiAlert('请输入 popupKey'); return; }
+        if (schema[k]) { FE.uiAlert('该键已存在: ' + k); return; }
         pmutate(function () { schema[k] = { normal: [] }; });
       }
     }, '+ 添加按键')));
@@ -362,8 +362,9 @@ function popupKeyCard(P, schemaName, pk, entry, usedAt) {
   body.appendChild(h('div', { class: 'toolbar' },
     h('button', {
       type: 'button', class: 'mini-button danger',
-      onclick: function () {
-        if (!confirm('删除 popupKey “' + pk + '”？')) return;
+      onclick: async function () {
+        var ok = await FE.uiConfirm('删除 popupKey “' + pk + '”？', { title: '删除按键', danger: true, okLabel: '删除' });
+        if (!ok) return;
         pmutate(function () { delete pp().schemas[schemaName][pk]; });
       }
     }, '删除此键')));
@@ -539,24 +540,24 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
       var k = kindSel.value;
       var value;
       if (k === 'text') {
-        if (draft.text === '') { alert('请输入文本'); return; }
+        if (draft.text === '') { FE.uiAlert('请输入文本'); return; }
         value = draft.text;
       } else if (k === 'action') {
         var act = actionEditor ? actionEditor.getValue() : null;
-        if (!act) { alert('请配置动作'); return; }
+        if (!act) { FE.uiAlert('请配置动作'); return; }
         value = draft.label !== '' ? { label: draft.label, action: act } : { action: act };
       } else if (k === 'actions') {
         if (actionsEditor) actionsEditor.apply();
-        if (!Array.isArray(draft.actionsArr) || !draft.actionsArr.length) { alert('请配置至少一个动作（JSON 数组）'); return; }
+        if (!Array.isArray(draft.actionsArr) || !draft.actionsArr.length) { FE.uiAlert('请配置至少一个动作（JSON 数组）'); return; }
         value = draft.label !== '' ? { label: draft.label, actions: draft.actionsArr } : { actions: draft.actionsArr };
       } else if (k === 'action-name') {
-        if (!draft.actionName) { alert('请选择动作'); return; }
+        if (!draft.actionName) { FE.uiAlert('请选择动作'); return; }
         value = draft.label !== '' ? { label: draft.label, action: draft.actionName } : { action: draft.actionName };
       } else if (k === 'macro') {
-        if (!draft.macro) { alert('请输入宏名称'); return; }
+        if (!draft.macro) { FE.uiAlert('请输入宏名称'); return; }
         value = draft.label !== '' ? { label: draft.label, macro: draft.macro } : { macro: draft.macro };
       } else {
-        if (!draft.ref) { alert('请输入共享键名称'); return; }
+        if (!draft.ref) { FE.uiAlert('请输入共享键名称'); return; }
         value = draft.label !== '' ? { label: draft.label, ref: draft.ref } : { ref: draft.ref };
       }
       pmutate(function () {
@@ -788,7 +789,7 @@ function initPopupTab() {
     }
     $('popup-load-example').addEventListener('click', function () {
       var v = ex.value;
-      if (!v) { alert('请选择示例'); return; }
+      if (!v) { FE.uiAlert('请选择示例'); return; }
       var text = FE.EXAMPLE_FILES ? FE.EXAMPLE_FILES[v] : null;
       if (text == null) { setPopupStatus('示例未找到: ' + v, 'error'); return; }
       if (FE.loadPopupProfileText(text, v)) setPopupStatus('已加载示例 ' + v, 'ok');
@@ -808,19 +809,23 @@ function initPopupTab() {
     state.popupSchema = schemaSel.value || 'default';
     renderPopupTab();
   });
-  $('popup-schema-add').addEventListener('click', function () {
-    var n = prompt('新 schema 名称（如 luna_pinyin，default 为缺省）：');
+  $('popup-schema-add').addEventListener('click', async function () {
+    var n = await FE.uiPrompt({
+      title: '新建 schema', message: '新 schema 名称（如 luna_pinyin，default 为缺省）：',
+      placeholder: 'luna_pinyin', required: true
+    });
+    if (n == null) return;
+    n = String(n).trim();
     if (!n) return;
-    n = n.trim();
-    if (!n) return;
-    if (pp().schemas[n]) { alert('schema 已存在'); return; }
+    if (pp().schemas[n]) { FE.uiAlert('schema 已存在：' + n, { title: '无法新建' }); return; }
     pmutate(function () { pp().schemas[n] = {}; });
     state.popupSchema = n;
   });
-  $('popup-schema-del') && $('popup-schema-del').addEventListener('click', function () {
+  $('popup-schema-del') && $('popup-schema-del').addEventListener('click', async function () {
     var n = state.popupSchema;
-    if (n === 'default') { alert('不能删除 default schema'); return; }
-    if (!confirm('删除 schema “' + n + '”？')) return;
+    if (n === 'default') { FE.uiAlert('不能删除 default schema', { title: '无法删除' }); return; }
+    var ok = await FE.uiConfirm('删除 schema “' + n + '”？', { title: '删除 schema', danger: true, okLabel: '删除' });
+    if (!ok) return;
     pmutate(function () {
       delete pp().schemas[n];
       state.popupSchema = 'default';

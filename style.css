@@ -717,6 +717,21 @@ dialog.editor-dialog::backdrop { background: rgba(5, 6, 8, 0.6); backdrop-filter
   justify-content: flex-end; background: #1d2025; border-radius: 0 0 12px 12px;
 }
 
+/* ---------------- 内建提示 / 确认 / 输入框（FE.uiAlert / uiConfirm / uiPrompt） ----------------
+ * 替代浏览器 alert / confirm / prompt：不阻塞主线程、样式与编辑器统一。
+ * 这几个对话框刻意做得紧凑（宽度跟随 .editor-dialog 的默认宽度），
+ * 因为它们只承载一两行文字或一个输入框，不该占满屏幕。 */
+.ui-dialog-body { font-size: 13.5px; line-height: 1.65; }
+/* 消息里的 \n 被拆成多个 .ui-dialog-msg，逐行留一点间距 */
+.ui-dialog-msg + .ui-dialog-msg { margin-top: 4px; }
+.ui-dialog-input { width: 100%; }
+.ui-dialog-error {
+  min-height: 18px; font-size: 12.5px; color: var(--err); margin-top: 4px;
+}
+/* 确认框的「确定」在右（工具栏已 justify-content: flex-end），
+ * 危险操作由调用方传 danger 加 .danger 类；这里只保证最小宽度一致 */
+.ui-dialog-ok, .ui-dialog-cancel { min-width: 72px; }
+
 .picker-list { max-height: 46vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; margin-top: 8px; }
 .picker-group { padding: 6px 12px 2px; font-size: 12px; color: var(--text-dim); font-weight: 700; background: #1d2025; position: sticky; top: 0; }
 .picker-item {

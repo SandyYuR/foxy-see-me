@@ -2664,8 +2664,9 @@ function renderSectionsEditor() {
     }, '重新生成'));
     banner.appendChild(h('button', {
       class: 'mini-button danger',
-      onclick: function () {
-        if (!confirm('删除分体片段？（可用撤销恢复）')) return;
+      onclick: async function () {
+        var ok = await FE.uiConfirm('删除分体片段？（可用撤销恢复）', { title: '删除分体片段', danger: true });
+        if (!ok) return;
         mutate(function () { delete curLayout().split; });
       }
     }, '删除分体片段'));
@@ -3373,12 +3374,13 @@ function renderKeysTab() {
         }, '使用 ' + used.count),
         h('button', {
           type: 'button', class: 'danger mini-button',
-          onclick: function (e) {
+          onclick: async function (e) {
             stopEv(e);
             var u = usageOf(currentRefIndex(), 'key', n);
             var msg = '删除按键定义 “' + n + '”？';
             if (u.count) msg += '\n它正被 ' + u.count + ' 处引用，删除后这些引用将无法解析。';
-            if (confirm(msg)) mutate(function () { delete state.profile.keys[n]; });
+            var ok = await FE.uiConfirm(msg, { title: '删除按键定义', danger: true, okLabel: '删除' });
+            if (ok) mutate(function () { delete state.profile.keys[n]; });
           }
         }, '删除')
       )
@@ -3596,10 +3598,11 @@ function collapsibleDefItem(name, badge, openSet, opts) {
   }
   tools.appendChild(h('button', {
     type: 'button', class: 'danger mini-button',
-    onclick: function (e) {
+    onclick: async function (e) {
       /* 删除按钮在 <summary> 内：必须阻止默认行为，否则点删除会连带展开/收起 */
       stopEv(e);
-      if (!confirm(opts.confirmDelete)) return;
+      var ok = await FE.uiConfirm(opts.confirmDelete, { title: '删除确认', danger: true, okLabel: '删除' });
+      if (!ok) return;
       /* 实时读取：撤销 / 导入会整块替换 profile，闭包快照不能当事实来源 */
       var live = isPlainObject(state.profile[opts.section]) ? state.profile[opts.section] : {};
       mutate(function () {
@@ -3929,35 +3932,47 @@ function initToolbar() {
     state.sel = null;
     renderAll();
   });
-  $('layout-add').addEventListener('click', function () {
-    var name = prompt('新布局名称（如 luna_pinyin）：');
+  $('layout-add').addEventListener('click', async function () {
+    var name = await FE.uiPrompt({
+      title: '新建布局', message: '新布局名称（如 luna_pinyin）：',
+      placeholder: 'luna_pinyin', required: true
+    });
+    if (name == null) return;
+    name = String(name).trim();
     if (!name) return;
-    name = name.trim();
-    if (!name || state.profile.layouts[name]) { if (name) alert('布局已存在'); return; }
+    if (state.profile.layouts[name]) { FE.uiAlert('布局已存在：' + name, { title: '无法新建' }); return; }
     mutate(function () {
       state.profile.layouts[name] = { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }] };
       state.layoutName = name;
     });
   });
-  $('layout-dup').addEventListener('click', function () {
+  $('layout-dup').addEventListener('click', async function () {
     var src = state.layoutName;
     if (!src) return;
-    var name = prompt('复制 “' + src + '” 为新布局名称：');
+    var name = await FE.uiPrompt({
+      title: '复制布局', message: '复制 “' + src + '” 为新布局名称：',
+      placeholder: src + '_copy', required: true
+    });
+    if (name == null) return;
+    name = String(name).trim();
     if (!name) return;
-    name = name.trim();
-    if (!name || state.profile.layouts[name]) { if (name) alert('布局已存在'); return; }
+    if (state.profile.layouts[name]) { FE.uiAlert('布局已存在：' + name, { title: '无法复制' }); return; }
     mutate(function () {
       state.profile.layouts[name] = deepClone(state.profile.layouts[src]);
       state.layoutName = name;
     });
   });
-  $('layout-rename').addEventListener('click', function () {
+  $('layout-rename').addEventListener('click', async function () {
     var old = state.layoutName;
     if (!old) return;
-    var name = prompt('重命名布局 “' + old + '” 为：', old);
+    var name = await FE.uiPrompt({
+      title: '重命名布局', message: '重命名布局 “' + old + '” 为：',
+      value: old, required: true
+    });
+    if (name == null) return;
+    name = String(name).trim();
     if (!name || name === old) return;
-    name = name.trim();
-    if (state.profile.layouts[name]) { alert('布局已存在'); return; }
+    if (state.profile.layouts[name]) { FE.uiAlert('布局已存在：' + name, { title: '无法重命名' }); return; }
     mutate(function () {
       var layouts = state.profile.layouts;
       var entries = Object.keys(layouts).map(function (k) { return [k === old ? name : k, layouts[k]]; });
@@ -3972,10 +3987,12 @@ function initToolbar() {
       state.layoutName = name;
     });
   });
-  $('layout-del').addEventListener('click', function () {
+  $('layout-del').addEventListener('click', async function () {
     var name = state.layoutName;
     if (!name) return;
-    if (!confirm('删除布局 “' + name + '”？此操作不可逆（可用撤销恢复）。')) return;
+    var ok = await FE.uiConfirm('删除布局 “' + name + '”？此操作不可逆（可用撤销恢复）。',
+      { title: '删除布局', danger: true, okLabel: '删除' });
+    if (!ok) return;
     mutate(function () {
       delete state.profile.layouts[name];
       var names = Object.keys(state.profile.layouts);
@@ -4319,9 +4336,9 @@ function initToolbar() {
     if (!inp || !btn) return;
     function doAdd() {
       var n = inp.value.trim();
-      if (!n) { alert('请输入' + opts.label + '名称'); inp.focus(); return; }
+      if (!n) { FE.uiAlert('请输入' + opts.label + '名称'); inp.focus(); return; }
       var bucket = isPlainObject(state.profile[opts.section]) ? state.profile[opts.section] : {};
-      if (bucket[n]) { alert(opts.label + '已存在：' + n); return; }
+      if (bucket[n]) { FE.uiAlert(opts.label + '已存在：' + n); return; }
       if (opts.openKey) ensureOpenSet(opts.openKey)[n] = true;
       mutate(function () { state.profile[opts.section][n] = opts.initial(); });
       inp.value = '';
