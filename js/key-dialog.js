@@ -429,6 +429,7 @@ FE.buildActionEditor = function (spec) {
       ['symbols', 'emoji', 'kaomoji'].forEach(function (n) { dl.appendChild(h('option', { value: n })); });
       fields.appendChild(dl);
       fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '目标布局'), layoutInp));
+      fields.appendChild(h('div', { class: 'dialog-hint' }, '符号 / Emoji / 颜文字也可用「app」动作的 symbols / emoji / kaomoji 命令打开。'));
     } else if (t === 'app') {
       cmdSel = h('select', { class: 'mini-select wide' });
       FE.APP_COMMANDS.forEach(function (c) {
@@ -675,6 +676,14 @@ FE.openGestureDialog = function (opts) {
         if (m === 'ref') {
           if (!refName) { alert('请选择引用的按键'); return; }
           value = Object.assign({ ref: refName }, extras);
+          /* hold 引用可额外覆盖 start/end（文档：A hold reference can additionally
+           * override its start/... and end/... fields）。之前这里漏读，导致填了却丢失。 */
+          if (isHold) {
+            var stRef = startEditor ? startEditor.getValue() : null;
+            var enRef = endEditor ? endEditor.getValue() : null;
+            if (stRef) value.start = stRef;
+            if (enRef) value.end = enRef;
+          }
         } else if (m === 'action-name') {
           if (!actionName) { alert('请选择动作'); return; }
           value = Object.keys(extras).length ? Object.assign({ action: actionName }, extras) : actionName;

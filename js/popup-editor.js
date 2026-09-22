@@ -60,6 +60,7 @@ FE.popupCandidateSummary = function (c) {
   if (FE.isPlainObject(c)) {
     if (typeof c.action === 'string') return '动作 ' + c.action;
     if (FE.isPlainObject(c.action)) return FE.actionDisplay(c.action);
+    if (Array.isArray(c.actions)) return c.actions.length + ' 个动作';
     if (c.macro != null) return '宏 ' + c.macro + '（definitions.json）';
     if (c.ref != null) return '共享键 ' + c.ref + '（definitions.json）';
   }
@@ -72,6 +73,7 @@ FE.popupCandidateKind = function (c) {
   if (FE.isPlainObject(c)) {
     if (typeof c.action === 'string') return 'action-name';
     if (FE.isPlainObject(c.action)) return 'action';
+    if (Array.isArray(c.actions)) return 'actions';
     if (c.macro != null) return 'macro';
     if (c.ref != null) return 'ref';
   }
@@ -113,7 +115,12 @@ FE.validatePopupProfile = function (pp) {
           if (FE.isPlainObject(c)) {
             if (typeof c.action === 'string' && !actions[c.action]) err(where + ' 引用动作名不存在: ' + c.action);
             if (FE.isPlainObject(c.action) && FE.validateAction) FE.validateAction(c.action, where + '.action', err, null);
-            if (c.action == null && c.macro == null && c.ref == null) err(where + ' 对象候选缺少 action / macro / ref');
+            /* actions 数组形式（文档：Object items may use action, actions, macro, or ref） */
+            if (c.actions != null) {
+              if (!Array.isArray(c.actions)) err(where + ' 的 actions 必须是数组');
+              else if (FE.validateAction) c.actions.forEach(function (a, ai) { FE.validateAction(a, where + '.actions[' + ai + ']', err, null); });
+            }
+            if (c.action == null && c.actions == null && c.macro == null && c.ref == null) err(where + ' 对象候选缺少 action / actions / macro / ref');
             if (c.macro != null) warn(where + ' 宏 “' + c.macro + '” 需在 definitions.json 中定义（编辑器无法校验）');
             if (c.ref != null) warn(where + ' 共享键 “' + c.ref + '” 需在 definitions.json 中定义（编辑器无法校验）');
           }
@@ -423,25 +430,27 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
   var isNew = ci < 0;
   var kind0 = isNew ? 'text' : FE.popupCandidateKind(cand);
   var modal = FE.openModal({ title: (isNew ? '添加' : '编辑') + '候选 · ' + pk + ' / ' + (st === 'normal' ? '常规' : 'Shift'), wide: true });
-  var draft = { kind: kind0, text: '', label: '', actionObj: null, actionName: '', macro: '', ref: '' };
+  var draft = { kind: kind0, text: '', label: '', actionObj: null, actionName: '', macro: '', ref: '', actionsArr: null };
   if (!isNew) {
     if (kind0 === 'text') draft.text = String(cand);
     else {
       draft.label = cand.label != null ? String(cand.label) : '';
       if (kind0 === 'action-name') draft.actionName = String(cand.action);
       if (kind0 === 'action') draft.actionObj = FE.deepClone(cand.action);
+      if (kind0 === 'actions') draft.actionsArr = FE.deepClone(cand.actions);
       if (kind0 === 'macro') draft.macro = String(cand.macro);
       if (kind0 === 'ref') draft.ref = String(cand.ref);
     }
   }
 
   var kindSel = h('select', { class: 'mini-select' });
-  [['text', '文本（上屏该文本）'], ['action', '动作对象'], ['action-name', '动作名（actions 里定义的）'], ['macro', '宏调用（definitions.json）'], ['ref', '共享键引用（definitions.json）']]
+  [['text', '文本（上屏该文本）'], ['action', '动作对象'], ['actions', '动作序列（actions 数组）'], ['action-name', '动作名（actions 里定义的）'], ['macro', '宏调用（definitions.json）'], ['ref', '共享键引用（definitions.json）']]
     .forEach(function (o) { kindSel.appendChild(h('option', { value: o[0] }, o[1])); });
   kindSel.value = draft.kind;
 
   var area = h('div', { class: 'gesture-area' });
   var actionEditor = null;
+  var actionsEditor = null;
   function buildArea() {
     clearEl(area);
     var k = kindSel.value;
@@ -457,6 +466,16 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
       if (k === 'action') {
         actionEditor = FE.buildActionEditor(draft.actionObj);
         area.appendChild(h('div', { class: 'form-row' }, actionEditor.el));
+      } else if (k === 'actions') {
+        /* 动作序列：用 JSON 片段编辑器（体检 + 一键修复），保证 actions 数组可编辑/往返 */
+        actionsEditor = FE.buildJsonSnippetEditor({
+          value: JSON.stringify(draft.actionsArr && draft.actionsArr.length ? draft.actionsArr : [{ type: 'key', key: 'A' }], null, 2),
+          applyOnBlur: true,
+          applyAfterFix: true,
+          onApply: function (v) { draft.actionsArr = Array.isArray(v) ? v : null; }
+        });
+        area.appendChild(h('div', { class: 'form-row' }, actionsEditor.el));
+        area.appendChild(h('div', { class: 'status' }, '按顺序执行的动作对象数组，例如 [{"type":"key","key":"A","meta":["CTRL"]}]。'));
       } else if (k === 'action-name') {
         var sel = h('select', { class: 'mini-select wide' });
         var acts = Object.keys(pp().actions || {});
@@ -505,6 +524,10 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
         var act = actionEditor ? actionEditor.getValue() : null;
         if (!act) { alert('请配置动作'); return; }
         value = draft.label !== '' ? { label: draft.label, action: act } : { action: act };
+      } else if (k === 'actions') {
+        if (actionsEditor) actionsEditor.apply();
+        if (!Array.isArray(draft.actionsArr) || !draft.actionsArr.length) { alert('请配置至少一个动作（JSON 数组）'); return; }
+        value = draft.label !== '' ? { label: draft.label, actions: draft.actionsArr } : { actions: draft.actionsArr };
       } else if (k === 'action-name') {
         if (!draft.actionName) { alert('请选择动作'); return; }
         value = draft.label !== '' ? { label: draft.label, action: draft.actionName } : { action: draft.actionName };

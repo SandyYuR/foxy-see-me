@@ -1096,6 +1096,63 @@ setTimeout(async function () {
   ok(directSaved && directSaved.type === 'key' && directSaved.key === 'A' && directSaved.popup === false, '直接动作手势无损保存');
   documentStub._openDialogs.length = 0;
 
+  /* ==================== 指针拖动排序（触屏 + 鼠标统一） ==================== */
+  console.log('== 指针拖动：行按键重排（performChipDrop） ==');
+  tabs[0]._fire('click');
+  FE.applyProfileText(JSON.stringify({
+    layouts: { default: { sections: [{ type: 'rows', rows: [
+      [{ ref: 'rime.a' }, { ref: 'rime.b' }, { ref: 'rime.c' }],
+      [{ ref: 'rime.d' }, { ref: 'rime.e' }]
+    ] }] } }
+  }), {});
+  ok(typeof FE.performChipDrop === 'function', '导出 performChipDrop 供拖动落点使用');
+  /* getRowKeys 会把数组行转成对象行 {keys:[...]}，两种形态都要能读 */
+  const rowRefs = (ri) => {
+    const r = FE.state.profile.layouts.default.sections[0].rows[ri];
+    const keys = Array.isArray(r) ? r : (r && r.keys) || [];
+    return keys.map(x => x.ref);
+  };
+  /* 同行：把索引 0（a）拖到索引 2（c）之前 → b, a, c */
+  FE.performChipDrop({ s: 0, r: 0, k: 0 }, { kind: 'before', loc: { s: 0, r: 0, k: 2 } });
+  eq(rowRefs(0), ['rime.b', 'rime.a', 'rime.c'], '同行拖动重排：a 移到 c 之前');
+  /* 跨行：把第 0 行索引 2（c）拖到第 1 行末尾 */
+  FE.performChipDrop({ s: 0, r: 0, k: 2 }, { kind: 'end', loc: { s: 0, r: 1 } });
+  eq(rowRefs(0), ['rime.b', 'rime.a'], '跨行拖动：c 离开原行');
+  eq(rowRefs(1), ['rime.d', 'rime.e', 'rime.c'], '跨行拖动：c 落到第 1 行末尾');
+  /* 跨行插入到另一行指定位置 */
+  FE.performChipDrop({ s: 0, r: 1, k: 2 }, { kind: 'before', loc: { s: 0, r: 0, k: 0 } });
+  eq(rowRefs(0), ['rime.c', 'rime.b', 'rime.a'], '跨行拖动：c 插回第 0 行开头');
+  /* 拖动经 mutate 记录历史，可撤销 */
+  $('op-undo').click();
+  eq(rowRefs(0), ['rime.b', 'rime.a'], '撤销恢复上一步拖动');
+
+  console.log('== 指针拖动：网格按键移动/交换（performGridDrop） ==');
+  FE.applyProfileText(JSON.stringify({
+    layouts: { default: { sections: [{ type: 'grid', columns: 3, rows: 2, keys: [
+      { column: 0, row: 0, ref: 'rime.KP_1' },
+      { column: 1, row: 0, ref: 'rime.KP_2' }
+    ] }] } }
+  }), {});
+  ok(typeof FE.performGridDrop === 'function', '导出 performGridDrop');
+  /* 把 KP_1 从 (0,0) 移到空格 (2,1) */
+  FE.performGridDrop(0, 0, { kind: 'move', x: 2, y: 1 });
+  eq([FE.state.profile.layouts.default.sections[0].keys[0].column,
+      FE.state.profile.layouts.default.sections[0].keys[0].row], [2, 1], '网格拖动到空格：坐标更新');
+  /* 交换 KP_1(2,1) 与 KP_2(1,0) 的坐标 */
+  FE.performGridDrop(0, 0, { kind: 'swap', gi: 1 });
+  const g0 = FE.state.profile.layouts.default.sections[0].keys[0];
+  const g1 = FE.state.profile.layouts.default.sections[0].keys[1];
+  eq([g0.column, g0.row], [1, 0], '交换后 KP_1 取得原 KP_2 坐标');
+  eq([g1.column, g1.row], [2, 1], '交换后 KP_2 取得原 KP_1 坐标');
+  $('op-undo').click();
+  const g1b = FE.state.profile.layouts.default.sections[0].keys[1];
+  eq([g1b.column, g1b.row], [1, 0], '撤销恢复网格坐标');
+
+  console.log('== 指针拖动：chip 不再依赖原生 draggable（触屏可用） ==');
+  FE.applyProfileText(FE.DEFAULT_PROFILE_TEXT, {});
+  const anyChip = q('#layout-sections .chip')[0];
+  ok(anyChip && anyChip.getAttribute('draggable') == null, 'chip 不再设 draggable 属性（改用 Pointer Events，触屏可拖）');
+
   console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
   process.exit(failed ? 1 : 0);
 }, 350);

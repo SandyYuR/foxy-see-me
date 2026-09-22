@@ -380,6 +380,7 @@ eq(FE.popupCandidateKind('x'), 'text', '字符串候选类型');
 eq(FE.popupCandidateKind({ action: 'a.b' }), 'action-name', '动作名候选');
 eq(FE.popupCandidateKind({ macro: 'm' }), 'macro', '宏候选');
 eq(FE.popupCandidateKind({ ref: 'k' }), 'ref', '共享键候选');
+eq(FE.popupCandidateKind({ actions: [{ type: 'key', key: 'A' }] }), 'actions', 'actions 数组候选');
 /* 校验器 */
 const ppBad = FE.normalizePopupProfile({
   type: 'foxy.popup-profile',
@@ -388,7 +389,18 @@ const ppBad = FE.normalizePopupProfile({
 const ppr = FE.validatePopupProfile(ppBad);
 const ppm = ppr.errors.join('\n');
 ok(ppm.indexOf('no.such') >= 0, '引用不存在的动作被检出');
-ok(ppm.indexOf('缺少 action / macro / ref') >= 0, '无动作对象候选被检出');
+ok(ppm.indexOf('缺少 action / actions / macro / ref') >= 0, '无动作对象候选被检出');
+/* actions 数组候选：合法则通过、内部非法动作被检出 */
+const ppActions = FE.normalizePopupProfile({
+  type: 'foxy.popup-profile',
+  schemas: { default: { q: { normal: [{ actions: [{ type: 'key', key: 'A' }] }] } } }
+});
+eq(FE.validatePopupProfile(ppActions).errors, [], 'actions 数组候选（合法）通过校验');
+const ppActionsBad = FE.normalizePopupProfile({
+  type: 'foxy.popup-profile',
+  schemas: { default: { q: { normal: [{ actions: [{ type: 'key', key: 'NO_SUCH_KEY' }] }] } } }
+});
+ok(FE.validatePopupProfile(ppActionsBad).errors.some(e => e.indexOf('NO_SUCH_KEY') >= 0), 'actions 数组内非法动作被检出');
 ok(ppm.indexOf('不能为 null') >= 0, 'null 候选被检出');
 ok(ppm.indexOf('必须是数组') >= 0, '候选列表非数组被检出');
 ok(ppm.indexOf('不是对象') >= 0, '非法 entry 被检出');
@@ -425,7 +437,10 @@ ok(v.errors.some(e => e.indexOf('NO_SUCH_KEY') >= 0), '非法 KeyCode 被检出'
 ok(v.errors.some(e => e.indexOf('not_real') >= 0), '非法 app command 被检出');
 ok(v.errors.some(e => e.indexOf('缺少 key') >= 0), 'key 动作缺少 key 被检出');
 const holeGrid = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'grid', columns: 2, rows: 2, keys: [{ column: 0, row: 0, ref: 'rime.a' }] }] } } });
-ok(FE.validateProfile(holeGrid).errors.some(e => e.indexOf('未覆盖单元格') >= 0), '网格空洞被检出');
+/* 文档只禁止重叠/越界，未要求铺满：空格子是合法留白，应为警告而非错误 */
+const holeRes = FE.validateProfile(holeGrid);
+ok(holeRes.errors.every(e => e.indexOf('空单元格') < 0 && e.indexOf('未覆盖') < 0), '网格空格子不再报错');
+ok(holeRes.warnings.some(w => w.indexOf('空单元格') >= 0), '网格空格子给出警告');
 const badVariant = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a', variants: [{ when: { rime: { composing: true } }, ref: 'missing.variant' }] }]] }] } } });
 ok(FE.validateProfile(badVariant).errors.some(e => e.indexOf('missing.variant') >= 0), 'placement 变体坏引用被检出');
 
@@ -452,6 +467,33 @@ const newCmds = FE.normalizeProfile({
   }
 });
 eq(FE.validateProfile(newCmds).errors, [], '新增 app 命令全部通过校验');
+
+/* commit_text 的 argument 可选：不写 argument 不应报错 */
+const commitNoArg = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'rows', rows: [[
+  { label: 'c', tap: { type: 'app', command: 'commit_text' } }
+]] }] } } });
+ok(FE.validateProfile(commitNoArg).errors.every(e => e.indexOf('commit_text') < 0), 'commit_text 无 argument 不报错（可选）');
+/* 但写了非字符串 argument 仍报错 */
+const commitBadArg = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'rows', rows: [[
+  { label: 'c', tap: { type: 'app', command: 'commit_text', argument: 123 } }
+]] }] } } });
+ok(FE.validateProfile(commitBadArg).errors.some(e => e.indexOf('commit_text') >= 0), 'commit_text 非字符串 argument 报错');
+/* select_schema / select_switch_option 缺 argument 应报错 */
+const selNoArg = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'rows', rows: [[
+  { label: 's', tap: { type: 'app', command: 'select_schema' } }
+]] }] } } });
+ok(FE.validateProfile(selNoArg).errors.some(e => e.indexOf('select_schema') >= 0 && e.indexOf('argument') >= 0), 'select_schema 缺 argument 报错');
+
+/* switch_layout：symbols/emoji/kaomoji 实测可作为目标（多个官方示例如此），不报错；
+ * 真正不存在的目标才报错。 */
+const swPanel = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'rows', rows: [[
+  { label: 'x', tap: { type: 'switch_layout', layout: 'symbols' } }
+]] }] } } });
+ok(FE.validateProfile(swPanel).errors.every(e => e.indexOf('switch_layout') < 0), 'switch_layout 切内置面板 symbols 不报错');
+const swMissing = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'rows', rows: [[
+  { label: 'x', tap: { type: 'switch_layout', layout: 'no_such_layout' } }
+]] }] } } });
+ok(FE.validateProfile(swMissing).errors.some(e => e.indexOf('no_such_layout') >= 0), 'switch_layout 目标不存在被检出');
 
 /* text_editor 结构约束：恰好一个 rows 区段、恰好一行 */
 const teTooMany = FE.normalizeProfile({

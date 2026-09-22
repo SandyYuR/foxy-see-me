@@ -461,13 +461,19 @@ function validateAction(action, where, err, profile) {
     if (typeof action.text !== 'string') err(where + ' 的 ' + t + ' 动作缺少字符串 text');
   } else if (t === 'switch_layout') {
     if (typeof action.layout !== 'string' || !action.layout) err(where + ' 的 switch_layout 动作缺少 layout');
+    /* symbols/emoji/kaomoji 既是 app 命令名，实测也可作为 switch_layout 目标
+     * （多个官方示例如此使用），因此豁免"目标不存在"检查。 */
     else if (profile && isPlainObject(profile.layouts) && !profile.layouts[action.layout] && ['symbols', 'emoji', 'kaomoji'].indexOf(action.layout) < 0) {
       err(where + ' 的 switch_layout 目标不存在: ' + action.layout);
     }
   } else if (t === 'app') {
     if (typeof action.command !== 'string' || !action.command) err(where + ' 的 app 动作缺少 command');
     else if (!appCommandExists(action.command)) err(where + ' 使用了不支持的 app command: ' + action.command);
-    else if (action.command === 'commit_text' && typeof action.argument !== 'string') err(where + ' 的 commit_text 命令缺少字符串 argument');
+    /* commit_text 的 argument 是可选的（文档：reads its content from the optional
+     * argument field）；仅当写了 argument 但类型不对时报错。 */
+    else if (action.command === 'commit_text' && action.argument != null && typeof action.argument !== 'string') err(where + ' 的 commit_text 命令的 argument 必须是字符串');
+    /* select_schema / select_switch_option 需要 argument，缺失则 Foxy 端空转 */
+    else if ((action.command === 'select_schema' || action.command === 'select_switch_option') && (typeof action.argument !== 'string' || !action.argument)) err(where + ' 的 ' + action.command + ' 命令缺少字符串 argument');
   } else {
     err(where + ' 使用了不支持的动作 type: ' + t);
   }
@@ -684,7 +690,9 @@ FE.validateProfile = function (profile) {
             for (var gy = 0; gy < R; gy++) for (var gx = 0; gx < C; gx++) {
               if (occ[gx + ',' + gy] == null) holes.push('(' + gx + ',' + gy + ')');
             }
-            if (holes.length) err(pfx + ' 区段 ' + si + ' 网格存在 ' + holes.length + ' 个未覆盖单元格: ' + holes.slice(0, 8).join('、') + (holes.length > 8 ? '…' : ''));
+            /* 文档只要求网格不重叠、不越界，并未要求铺满；空格子会渲染为留白，
+             * 属合法（如异形回车、留白布局）。这里给提示而非错误，避免误报。 */
+            if (holes.length) warn(pfx + ' 区段 ' + si + ' 网格有 ' + holes.length + ' 个空单元格（将渲染为留白）: ' + holes.slice(0, 8).join('、') + (holes.length > 8 ? '…' : ''));
           }
         } else {
           err(pfx + ' 区段 ' + si + ' 的 type 必须是 rows 或 grid');
@@ -2186,6 +2194,7 @@ function rowEditor(section, si, ri) {
   );
 
   var chipBox = h('div', { class: 'chip-box' });
+  chipBox.__boxLoc = { s: si, r: ri };   /* 供指针拖动识别“落到该行末尾” */
   keysArr.forEach(function (k, ki) {
     chipBox.appendChild(keyChip(k, { s: si, r: ri, k: ki }));
   });
@@ -2195,29 +2204,6 @@ function rowEditor(section, si, ri) {
       addKeyToRow(si, ri);
     }
   }, '+ 键'));
-  /* 行末尾放置（拖拽） */
-  chipBox.addEventListener('dragover', function (e) {
-    if (state.__drag) { e.preventDefault(); chipBox.classList.add('drop-target'); }
-  });
-  chipBox.addEventListener('dragleave', function () { chipBox.classList.remove('drop-target'); });
-  chipBox.addEventListener('drop', function (e) {
-    e.preventDefault();
-    chipBox.classList.remove('drop-target');
-    var d = state.__drag;
-    if (!d) return;
-    state.__drag = null;
-    if (d.s !== si) return;
-    mutate(function () {
-      var src = getRowKeys(section, d.r);
-      var item = src.splice(d.k, 1)[0];
-      if (d.r === ri) {
-        var max = Math.min(d.k, src.length);
-        src.splice(max, 0, item);
-      } else {
-        getRowKeys(section, ri).push(item);
-      }
-    });
-  });
 
   return h('div', { class: 'row-block' }, head, chipBox);
 }
@@ -2252,6 +2238,192 @@ function moveRow(si, ri, delta) {
   });
 }
 
+/* ================================================================
+ * 指针拖动（鼠标 + 触屏统一）
+ * ----------------------------------------------------------------
+ * 原生 HTML5 拖放（draggable + dragstart/drop）在移动端触摸时根本不触发，
+ * 导致手机上无法拖动按键排序。这里改用 Pointer Events 统一实现，PC 与手机
+ * 行为一致：按住并移动超过阈值即进入拖动，松手落到目标位置；未超过阈值则
+ * 视为普通点击（打开编辑对话框）。
+ * ================================================================ */
+var lastPointerDragEnd = 0;
+function pointerDragSuppressClick() { return (Date.now() - lastPointerDragEnd) < 250; }
+
+function findAncestor(node, test) {
+  while (node && node.nodeType === 1) {
+    if (test(node)) return node;
+    node = node.parentNode;
+  }
+  return null;
+}
+
+function elemFromPoint(x, y) {
+  return (typeof document.elementFromPoint === 'function') ? document.elementFromPoint(x, y) : null;
+}
+
+function clearAllDropMarks() {
+  ['.chip.drop-before', '.chip-box.drop-target', '.gedit-drop'].forEach(function (sel) {
+    var list = document.querySelectorAll(sel);
+    for (var i = 0; i < list.length; i++) {
+      list[i].classList.remove('drop-before', 'drop-target', 'gedit-drop');
+    }
+  });
+}
+
+function buildDragGhost(el, x, y) {
+  if (typeof el.cloneNode !== 'function') return null;
+  var g = el.cloneNode(true);
+  g.classList.add('drag-ghost');
+  g.classList.remove('dragging', 'chip-sel', 'gedit-drop');
+  g.style.position = 'fixed';
+  g.style.left = x + 'px';
+  g.style.top = y + 'px';
+  g.style.margin = '0';
+  g.style.width = (el.offsetWidth || 56) + 'px';
+  g.style.height = (el.offsetHeight || 44) + 'px';
+  g.style.pointerEvents = 'none';
+  g.style.zIndex = '99999';
+  g.style.opacity = '0.92';
+  g.style.transform = 'translate(-50%, -50%)';
+  if (document.body) document.body.appendChild(g);
+  return g;
+}
+function moveDragGhost(g, x, y) {
+  if (!g) return;
+  g.style.left = x + 'px';
+  g.style.top = y + 'px';
+}
+
+/* 通用指针拖动绑定。opts:
+ *   dropTarget(x,y) → { el, markClass, ... } | null   命中目标（用于高亮与落点）
+ *   onDrop(target)                                     松手时执行实际数据变更
+ *   onStart()                                          进入拖动时（可选） */
+function attachPointerDrag(el, opts) {
+  el.style.touchAction = 'none';
+  el.addEventListener('pointerdown', function (e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    var startX = e.clientX, startY = e.clientY, pid = e.pointerId;
+    var started = false, ghost = null;
+    function onMove(ev) {
+      if (ev.pointerId !== pid) return;
+      if (!started) {
+        if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) < 6) return;
+        started = true;
+        el.classList.add('dragging');
+        ghost = buildDragGhost(el, ev.clientX, ev.clientY);
+        try { el.setPointerCapture(pid); } catch (err) {}
+        if (opts.onStart) opts.onStart();
+      }
+      if (ev.cancelable) ev.preventDefault();
+      moveDragGhost(ghost, ev.clientX, ev.clientY);
+      clearAllDropMarks();
+      var t = opts.dropTarget(ev.clientX, ev.clientY);
+      if (t && t.el && t.markClass) t.el.classList.add(t.markClass);
+    }
+    function onUp(ev) {
+      if (ev.pointerId !== pid) return;
+      var wasDragging = started;
+      var t = started ? opts.dropTarget(ev.clientX, ev.clientY) : null;
+      finish();
+      if (wasDragging) { lastPointerDragEnd = Date.now(); opts.onDrop(t); }
+    }
+    function finish() {
+      document.removeEventListener('pointermove', onMove, true);
+      document.removeEventListener('pointerup', onUp, true);
+      document.removeEventListener('pointercancel', onUp, true);
+      el.classList.remove('dragging');
+      if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+      clearAllDropMarks();
+      try { el.releasePointerCapture(pid); } catch (err) {}
+    }
+    document.addEventListener('pointermove', onMove, true);
+    document.addEventListener('pointerup', onUp, true);
+    document.addEventListener('pointercancel', onUp, true);
+  });
+}
+
+/* 行 chip 落点解析：命中另一个 chip → 插入其前；命中行容器空白 → 追加到该行末尾。
+ * 仅允许同一区段内移动（跨行自由排布，覆盖“删除再添加”的旧流程）。 */
+function chipDropTarget(x, y, si) {
+  var from = elemFromPoint(x, y);
+  if (!from) return null;
+  var chip = findAncestor(from, function (n) { return n.__chipLoc != null; });
+  if (chip && chip.__chipLoc.s === si) {
+    return { kind: 'before', loc: chip.__chipLoc, el: chip, markClass: 'drop-before' };
+  }
+  var box = findAncestor(from, function (n) { return n.__boxLoc != null; });
+  if (box && box.__boxLoc.s === si) {
+    return { kind: 'end', loc: box.__boxLoc, el: box, markClass: 'drop-target' };
+  }
+  return null;
+}
+
+function performChipDrop(from, target) {
+  if (!target) return;
+  if (target.kind === 'before') {
+    var to = target.loc;
+    if (to.s === from.s && to.r === from.r && to.k === from.k) return;
+    mutate(function () {
+      var section = curSections()[from.s];
+      var src = getRowKeys(section, from.r);
+      var item = src.splice(from.k, 1)[0];
+      if (item === undefined) return;
+      var dst = getRowKeys(section, to.r);
+      var idx = (from.r === to.r && from.k < to.k) ? to.k - 1 : to.k;
+      idx = clamp(idx, 0, dst.length);
+      dst.splice(idx, 0, item);
+      state.sel = { s: from.s, r: to.r, k: idx };
+    });
+  } else if (target.kind === 'end') {
+    var to2 = target.loc;
+    mutate(function () {
+      var section = curSections()[from.s];
+      var src = getRowKeys(section, from.r);
+      var item = src.splice(from.k, 1)[0];
+      if (item === undefined) return;
+      var dst = getRowKeys(section, to2.r);
+      dst.push(item);
+      state.sel = { s: from.s, r: to2.r, k: dst.length - 1 };
+    });
+  }
+}
+
+/* 网格按键落点解析：命中空格 → 移动坐标；命中另一按键 → 交换坐标。 */
+function gridDropTarget(x, y, si) {
+  var from = elemFromPoint(x, y);
+  if (!from) return null;
+  var keyCell = findAncestor(from, function (n) { return n.__gridKey != null; });
+  if (keyCell && keyCell.__gridKey.si === si) {
+    return { kind: 'swap', gi: keyCell.__gridKey.gi, el: keyCell, markClass: 'gedit-drop' };
+  }
+  var empty = findAncestor(from, function (n) { return n.__gridEmpty != null; });
+  if (empty && empty.__gridEmpty.si === si) {
+    return { kind: 'move', x: empty.__gridEmpty.x, y: empty.__gridEmpty.y, el: empty, markClass: 'gedit-drop' };
+  }
+  return null;
+}
+
+function performGridDrop(si, gi, target) {
+  if (!target) return;
+  mutate(function () {
+    var section = curSections()[si];
+    if (!isPlainObject(section) || !Array.isArray(section.keys)) return;
+    var k = section.keys[gi];
+    if (!isPlainObject(k)) return;
+    if (target.kind === 'move') {
+      k.column = target.x; k.row = target.y;
+      state.sel = { s: si, r: null, k: gi };
+    } else if (target.kind === 'swap') {
+      var other = section.keys[target.gi];
+      if (!isPlainObject(other) || other === k) return;
+      var tc = other.column, tr = other.row;
+      other.column = k.column; other.row = k.row;
+      k.column = tc; k.row = tr;
+      state.sel = { s: si, r: null, k: gi };
+    }
+  });
+}
+
 /* ---- 按键 chip ---- */
 function keyChip(placement, loc) {
   var ev = FE.evalPlacement(placement, state.status);
@@ -2261,15 +2433,16 @@ function keyChip(placement, loc) {
     class: 'chip' + (eff.keyType === 'FUNCTION' || eff.keyType === 'ACTION' ? ' chip-fn' : '') +
       (isSel(loc.s, loc.r, loc.k) ? ' chip-sel' : '') +
       (ev.unresolved || ev.cycle ? ' chip-broken' : ''),
-    draggable: 'true',
     title: placementTooltip(ev, placement),
     onclick: function () {
+      if (pointerDragSuppressClick()) return;   /* 刚拖动完，不当作点击 */
       state.sel = loc;
       renderPreview();
       renderSectionsEditor();
       if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'placement', placement: placement, location: loc });
     }
   });
+  chip.__chipLoc = { s: loc.s, r: loc.r, k: loc.k };
   chip.appendChild(h('span', { class: 'chip-label' }, String(label).slice(0, 6)));
   chip.appendChild(h('span', { class: 'chip-sub' }, placement && placement.ref ? placement.ref : '内联'));
   var badges = [];
@@ -2277,36 +2450,9 @@ function keyChip(placement, loc) {
   if (isPlainObject(placement) && isPlainObject(placement.override) && Object.keys(placement.override).length) badges.push('OV');
   if (isPlainObject(placement) && placement.height != null) badges.push('h:' + placement.height);
   if (badges.length) chip.appendChild(h('span', { class: 'chip-badges' }, badges.join(' ')));
-  chip.addEventListener('dragstart', function (e) {
-    state.__drag = { s: loc.s, r: loc.r, k: loc.k };
-    try { e.dataTransfer.setData('text/plain', JSON.stringify(loc)); } catch (err) {}
-    chip.classList.add('dragging');
-  });
-  chip.addEventListener('dragend', function () { chip.classList.remove('dragging'); });
-  chip.addEventListener('dragover', function (e) {
-    if (state.__drag && state.__drag.s === loc.s) {
-      e.preventDefault();
-      e.stopPropagation();
-      chip.classList.add('drop-before');
-    }
-  });
-  chip.addEventListener('dragleave', function () { chip.classList.remove('drop-before'); });
-  chip.addEventListener('drop', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    chip.classList.remove('drop-before');
-    var d = state.__drag;
-    state.__drag = null;
-    if (!d || d.s !== loc.s) return;
-    if (d.r === loc.r && d.k === loc.k) return;
-    mutate(function () {
-      var section = curSections()[loc.s];
-      var src = getRowKeys(section, d.r);
-      var item = src.splice(d.k, 1)[0];
-      var dst = getRowKeys(section, loc.r);
-      var idx = d.r === loc.r && d.k < loc.k ? loc.k - 1 : loc.k;
-      dst.splice(idx, 0, item);
-    });
+  attachPointerDrag(chip, {
+    dropTarget: function (x, y) { return chipDropTarget(x, y, loc.s); },
+    onDrop: function (target) { performChipDrop({ s: loc.s, r: loc.r, k: loc.k }, target); }
   });
   return chip;
 }
@@ -2432,15 +2578,23 @@ function gridEditor(section, si) {
           cell.appendChild(h('span', { class: 'gedit-label' }, String(label).slice(0, 4)));
           cell.appendChild(h('span', { class: 'gedit-sub' }, k.ref || '内联'));
           if (cs > 1 || rs > 1) cell.appendChild(h('span', { class: 'gedit-span' }, cs + '×' + rs));
-          cell.addEventListener('click', function () {
-            state.sel = { s: si, r: null, k: info.gi };
-            renderPreview();
-            renderSectionsEditor();
-            if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'placement', placement: k, location: { s: si, r: null, k: info.gi }, grid: true });
-          });
+          cell.__gridKey = { si: si, gi: info.gi };
+          (function (gi) {
+            cell.addEventListener('click', function () {
+              if (pointerDragSuppressClick()) return;   /* 刚拖动完，不当作点击 */
+              state.sel = { s: si, r: null, k: gi };
+              renderPreview();
+              renderSectionsEditor();
+              if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'placement', placement: keysArr[gi], location: { s: si, r: null, k: gi }, grid: true });
+            });
+            attachPointerDrag(cell, {
+              dropTarget: function (px, py) { return gridDropTarget(px, py, si); },
+              onDrop: function (target) { performGridDrop(si, gi, target); }
+            });
+          })(info.gi);
           grid.appendChild(cell);
         } else {
-          grid.appendChild(h('div', {
+          var emptyCell = h('div', {
             class: 'gedit-cell gedit-empty',
             style: place,
             title: '在 (' + x + ',' + y + ') 添加按键',
@@ -2462,7 +2616,9 @@ function gridEditor(section, si) {
                 }
               });
             }
-          }, '+'));
+          }, '+');
+          emptyCell.__gridEmpty = { si: si, x: x, y: y };
+          grid.appendChild(emptyCell);
         }
       })(cx, ry);
     }
@@ -3098,6 +3254,9 @@ function movePlacement(loc, dr, dk) {
   return null;
 }
 FE.movePlacement = movePlacement;
+/* 供测试：指针拖动的落点数据变更（目标解析依赖 elementFromPoint，另在浏览器内验证） */
+FE.performChipDrop = performChipDrop;
+FE.performGridDrop = performGridDrop;
 
 function boot() {
   initTabs();
