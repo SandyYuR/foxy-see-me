@@ -123,10 +123,10 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
   - 弹出菜单（`foxy.popup-profile`）→ 放 `<外部存储>/foxy/frontend/popups/<name>.json`
   - 两者各自导入导出、各自校验；编辑器只把它们放同一个撤销栈与同一份本地草稿。
 - **在线站点**：<https://sandyyur.github.io/foxy-see-me/>（GitHub Pages，`main` 分支根目录）
-- **格式权威**（已随仓库一起分发，见 `docs/`）：
-  - `docs/DEFAULT_LAYOUT_V0.0.1.md` — 完整规范（Foxy Layout File v0.0.1）
-  - `docs/SKILL.md` — 面向 AI 的编辑技能说明（文件位置、结构、验证要点）
-  - `docs/FOXY_JSON_CONFIGS.md` — 三种 Foxy JSON 的 `type` 判别与共享 definitions
+- **格式权威**（已随仓库一起分发，见 `skills/`）：
+  - `skills/DEFAULT_LAYOUT_V0.0.1.md` — 完整规范（Foxy Layout File v0.0.1）
+  - `skills/SKILL.md` — 面向 AI 的编辑技能说明（文件位置、结构、验证要点）
+  - `skills/FOXY_JSON_CONFIGS.md` — 三种 Foxy JSON 的 `type` 判别与共享 definitions
 
   **怀疑格式语义时先查这里，不要凭直觉改校验/解析。**
   > 注意：这三份是**从工作区 skill 目录同步过来的副本**。上游（Foxy 项目自身）
@@ -151,7 +151,7 @@ foxy-editor/
 │   ├── popup-editor.js 弹出菜单编辑（纯逻辑 + 该标签页 UI）
 │   └── jscolor/jscolor.js  vendor 取色器（GPLv3，**不要改**）
 ├── examples/          示例源文件（18 个：15 布局 + 3 弹出菜单）
-├── docs/              格式规范（随仓库分发的 skill 文档副本，**只读参考，别改**）
+├── skills/            格式规范（随仓库分发的 skill 文档副本，**只读参考，别改**）
 │   ├── DEFAULT_LAYOUT_V0.0.1.md  Foxy Layout File v0.0.1 完整规范
 │   ├── SKILL.md                  面向 AI 的编辑技能说明
 │   └── FOXY_JSON_CONFIGS.md      三种 Foxy JSON 的 type 判别与共享 definitions
@@ -460,7 +460,7 @@ node test/check-real-files.js   # 期望：共 18 个文件，0 个存在错误
 
 ### 改动前的自查清单
 
-- [ ] 改的是**格式语义**吗？→ 先查 `docs/DEFAULT_LAYOUT_V0.0.1.md`，别猜。
+- [ ] 改的是**格式语义**吗？→ 先查 `skills/DEFAULT_LAYOUT_V0.0.1.md`，别猜。
 - [ ] 加/删了 DOM 元素？→ 同步 `test/dom-stub.js`。
 - [ ] 加了折叠卡片或改了顺序？→ 同步 `test-ui.js` 的顺序断言。
 - [ ] 数据变更走 `mutate()` 了吗？跨文件调用加了 `FE.xxx` 存在性判断吗？

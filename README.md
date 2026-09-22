@@ -95,7 +95,7 @@ foxy-editor/
 │   ├── key-dialog.js     按键 / 手势 / 动作 / 变体对话框
 │   └── popup-editor.js   弹出菜单编辑
 ├── examples/             示例布局与弹出菜单
-├── docs/                 格式规范（随仓库分发的 skill 文档）
+├── skills/               格式规范（随仓库分发的 skill 文档）
 ├── AGENT.md              改这个编辑器之前先读（决断 / 约定 / 坑 / 工作流）
 ├── tools/build-examples.js 重新生成 examples-bundle.js
 └── test/                 测试（见下）
@@ -118,9 +118,9 @@ node test/check-real-files.js # 用真实示例文件跑一遍体检
 - 主题（整体配色）不在本工具范围内；每个按键的 `colors` 覆盖属于布局数据，已支持。
 - 弹出菜单和布局是两份独立文件，各自导入导出（布局进 `frontend/layouts/`，弹出菜单进 `frontend/popups/`）。
 
-格式依据 Foxy Layout File v0.0.1，完整参考见 [`docs/`](docs/)：
-`docs/DEFAULT_LAYOUT_V0.0.1.md`（完整规范）、`docs/SKILL.md`（面向 AI 的编辑技能说明）、
-`docs/FOXY_JSON_CONFIGS.md`（三种 Foxy JSON 的 `type` 判别与共享 definitions）。
+格式依据 Foxy Layout File v0.0.1，完整参考见 [`skills/`](skills/)：
+`skills/DEFAULT_LAYOUT_V0.0.1.md`（完整规范）、`skills/SKILL.md`（面向 AI 的编辑技能说明）、
+`skills/FOXY_JSON_CONFIGS.md`（三种 Foxy JSON 的 `type` 判别与共享 definitions）。
 
 ## 改这个编辑器之前
 
