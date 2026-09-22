@@ -3161,6 +3161,13 @@ function ensureOpenSet(key) {
  * 正在填的字段会丢。这里只额外用 toggle 事件把展开状态同步回 state，
  * 以便后续任何重渲染（增删、撤销、导入）都能保持用户当前的展开视图。
  *
+ * ⚠️ **懒建（性能关键）**：编辑器由 opts.build(body) 在**首次展开时**才构建，
+ * 收起时销毁。早期版本在渲染时就把每条目的编辑器都建好（折叠只是视觉收起），
+ * 实测 29 动作 + 41 宏会让 DOM 从 ~1.4K 涨到 **~47.5K 节点**
+ * （光 <option> 就 1.8 万个：每个「按键 key」内联编辑器都含 143 项的键码下拉），
+ * 且每次 renderAll 都要重建这一整棵树 —— 打开页面就白烧 CPU。
+ * **不要**改回「折叠也预先建好」。
+ *
  * 新条目默认展开：由调用方在创建后主动写 openSet[name] = true。 */
 function collapsibleDefItem(name, badge, openSet, opts) {
   opts = opts || {};
@@ -3169,9 +3176,29 @@ function collapsibleDefItem(name, badge, openSet, opts) {
     class: 'def-item col def-gui def-collapsible',
     open: isOpen ? 'open' : null
   });
+  var built = false;
+
+  /* 仅在需要时构建正文（编辑器），并按需销毁，避免长期占据大量节点 */
+  function buildBody() {
+    if (built) return;
+    built = true;
+    if (typeof opts.build === 'function') opts.build(det);
+  }
+  function dropBody() {
+    if (!built) return;
+    built = false;
+    /* 只删正文，保留 <summary>（摘要行始终在） */
+    while (det.children.length > 1) det.removeChild(det.lastChild);
+  }
+
   det.addEventListener('toggle', function () {
-    if (det.open) openSet[name] = true;
-    else delete openSet[name];
+    if (det.open) {
+      openSet[name] = true;
+      buildBody();
+    } else {
+      delete openSet[name];
+      dropBody();
+    }
   });
 
   var delBtn = h('button', {
@@ -3195,6 +3222,9 @@ function collapsibleDefItem(name, badge, openSet, opts) {
     h('code', { class: 'def-name' }, name),
     badge,
     h('span', { class: 'def-tools' }, delBtn)));
+
+  /* 渲染时就处于展开态（如刚新建、或上次就是展开的）：立即构建 */
+  if (isOpen) buildBody();
   return det;
 }
 
@@ -3227,27 +3257,29 @@ function renderActionsList() {
     var badge = h('span', { class: 'def-badges' }, FE.actionDisplay(actions[n]));
     var item = collapsibleDefItem(n, badge, openSet, {
       section: 'actions',
-      confirmDelete: '删除动作 “' + n + '”？引用它的地方会变成未解析引用。'
-    });
-
-    var ed = FE.buildActionDefEditor(n, actions[n], {
-      commit: function (spec) {
-        if (!isPlainObject(spec)) return;
-        /* 从 state.profile 取实时值：撤销 / 导入会整块替换 profile，
-         * 闭包里的 actions 只是渲染那一刻的快照，不能当作事实来源。 */
-        var live = isPlainObject(state.profile.actions) ? state.profile.actions : (state.profile.actions = {});
-        if (!commitIfChanged(live[n], spec)) { badge.textContent = FE.actionDisplay(spec); return; }
-        live[n] = spec;
-        badge.textContent = FE.actionDisplay(spec);
-        commitActionEdits();
-      },
-      onReplace: function (spec) {
-        /* 形状可能完全变了（如从 key 变成 modifier）：整列表重建最稳妥。
-         * 此刻用户刚关掉对话框，重建不会打断他正在操作的控件。 */
-        mutate(function () { state.profile.actions[n] = spec; });
+      confirmDelete: '删除动作 “' + n + '”？引用它的地方会变成未解析引用。',
+      /* 懒建：只有真的展开这一条才构建编辑器（详见 collapsibleDefItem 注释） */
+      build: function (body) {
+        var ed = FE.buildActionDefEditor(n, actions[n], {
+          commit: function (spec) {
+            if (!isPlainObject(spec)) return;
+            /* 从 state.profile 取实时值：撤销 / 导入会整块替换 profile，
+             * 闭包里的 actions 只是渲染那一刻的快照，不能当作事实来源。 */
+            var live = isPlainObject(state.profile.actions) ? state.profile.actions : (state.profile.actions = {});
+            if (!commitIfChanged(live[n], spec)) { badge.textContent = FE.actionDisplay(spec); return; }
+            live[n] = spec;
+            badge.textContent = FE.actionDisplay(spec);
+            commitActionEdits();
+          },
+          onReplace: function (spec) {
+            /* 形状可能完全变了（如从 key 变成 modifier）：整列表重建最稳妥。
+             * 此刻用户刚关掉对话框，重建不会打断他正在操作的控件。 */
+            mutate(function () { state.profile.actions[n] = spec; });
+          }
+        });
+        body.appendChild(ed.el);
       }
     });
-    item.appendChild(ed.el);
     host.appendChild(item);
   });
 
@@ -3297,21 +3329,23 @@ function renderMacrosList() {
     var badge = h('span', { class: 'def-badges' }, FE.describeMacroSteps(macros[n]));
     var item = collapsibleDefItem(n, badge, openSet, {
       section: 'macros',
-      confirmDelete: '删除宏 “' + n + '”？引用它的地方会变成未解析引用。'
-    });
-
-    var ed = FE.buildMacroStepEditor(macros[n], {
-      commit: function (steps) {
-        if (!Array.isArray(steps)) return;
-        /* 同上：实时读取，不依赖渲染时的快照 */
-        var live = isPlainObject(state.profile.macros) ? state.profile.macros : (state.profile.macros = {});
-        commitIfChanged(live[n], steps);
-        live[n] = steps;
-        badge.textContent = FE.describeMacroSteps(steps);
-        commitActionEdits();
+      confirmDelete: '删除宏 “' + n + '”？引用它的地方会变成未解析引用。',
+      /* 懒建：宏的每一步都是一个内联动作编辑器，预先全建代价最大（详见 collapsibleDefItem） */
+      build: function (body) {
+        var ed = FE.buildMacroStepEditor(macros[n], {
+          commit: function (steps) {
+            if (!Array.isArray(steps)) return;
+            /* 同上：实时读取，不依赖渲染时的快照 */
+            var live = isPlainObject(state.profile.macros) ? state.profile.macros : (state.profile.macros = {});
+            commitIfChanged(live[n], steps);
+            live[n] = steps;
+            badge.textContent = FE.describeMacroSteps(steps);
+            commitActionEdits();
+          }
+        });
+        body.appendChild(ed.el);
       }
     });
-    item.appendChild(ed.el);
     host.appendChild(item);
   });
 

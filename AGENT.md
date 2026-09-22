@@ -4,7 +4,7 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 373 / UI 514 / 真实文件体检 18 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 373 / UI 522 / 真实文件体检 18 个示例 0 错误。
 
 ### ⚠️ 本文件有两份，必须保持一致
 
@@ -126,7 +126,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **373 core + 514 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **373 core + 522 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -613,7 +613,7 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
   **跨文件调用记得导出**：`FE.renderActionsTab` 就是为这个补渲染而导出的。
 - ⚠️ **DOM 桩不冒泡**，所以动作编辑器内部控件用 `opts.onChange` 回调（不靠事件委托），
   宏步骤行内也把 `change` 逐个绑到编辑器元素上。
-- **默认折叠**（`app.js` 的 `collapsibleDefItem`）：条目一多就翻找不到，所以两个列表都用
+- **默认折叠 + 懒建**（`app.js` 的 `collapsibleDefItem`）：条目一多就翻找不到，所以两个列表都用
   `<details>` 外壳，**默认全部折叠**，点摘要行才展开。
   - 展开状态记在 `state.openActions` / `state.openMacros`（`ensureOpenSet()`），
     用 `<details>` 的 `toggle` 事件同步 —— 展开/收起是**浏览器行为、不重渲染**，
@@ -622,6 +622,18 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
   - ⚠️ 删除按钮放在 `<summary>` 里，**必须 `preventDefault()`**，否则点删除会连带展开/收起。
   - ⚠️ `.def-item` 是 `display:flex`，可折叠外壳要覆盖成 `display:block`，
     否则 `<summary>` 作首子元素的折叠语义会与 flex 布局打架。
+  - ⭐ **懒建（性能关键，别退回"折叠也预先建好"）**：编辑器由 `opts.build(body)` 在
+    **首次展开时**才构建，收起时销毁（只留 `<summary>`）。测得的代价：
+    | 场景 | 节点 | `<option>` | 一次 `renderAll` |
+    |---|---|---|---|
+    | 无动作无宏 | ~1.4K | 24 | — |
+    | 29 动作 + 41 宏（**预建**，旧实现） | **~47.5K** | **18,741** | **53 ms** |
+    | 29 动作 + 41 宏（**懒建**，现实现） | **~2.2K** | 24 | **7 ms** |
+    | 展开 1 条宏 | ~3.1K | 373 | — |
+    旧的「预建」实现让打开页面就白烧 CPU：每个「按键 key」内联编辑器都含 **143 项**的
+    键码下拉，几十条动作/宏就是上万个 `<option>`，而 `renderAll` 每次还要重建整棵树
+    （`boot()` 一次 + `macro-editor.js` 就绪后补一次 = 开局建两遍）。
+    **`test-ui.js` 有断言锁定「折叠状态下不得存在编辑器节点」**，改回去会红。
 - **按键显示名**（`data.js` 的 `FE.KEYCODE_LABELS` / `FE.keycodeDisplayName`）：
   低层 KeyCode 下拉仿 f5a-see-me，英文码后加中文备注，如 `ESCAPE（Esc 退出）`、
   `KP_5（小键盘 5）`。**只影响显示**：`option.value` 与 `getValue()` 始终是 code 本身，
@@ -731,7 +743,7 @@ node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
 node test/test-core.js       # 期望：373 通过, 0 失败
-node test/test-ui.js         # 期望：514 通过, 0 失败
+node test/test-ui.js         # 期望：522 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
 node test/check-real-files.js   # 期望：共 18 个文件，0 个存在错误
@@ -754,6 +766,6 @@ node tools/check-agent-sync.js --write
 
 ### 版本信息（改动可能影响这些对外说法）
 
-- 测试基线：core **373** / UI **514** / 示例 **18**（15 布局 + 3 弹出菜单）
+- 测试基线：core **373** / UI **522** / 示例 **18**（15 布局 + 3 弹出菜单）
 - 仓库 `README.md` 里的功能描述与 `index.html` 的图例，与实现同步维护；
   新增用户可见功能时一并更新，避免文档漂移。

@@ -115,7 +115,7 @@ class DOMNode {
     this._value = undefined;
     this.checked = false;
     this.disabled = false;
-    this.open = false;
+    this._open = false;
     this.title = '';
     this.hidden = false;
     this._html = null;
@@ -138,6 +138,16 @@ class DOMNode {
         else delete o._attrs['selected'];
       }
     }
+  }
+  /* --- details/open --- */
+  /* 真实浏览器里 open 是反射访问器，且变更会派发 toggle（异步；桩同步派发，
+   * 便于测试直接断言）。懒建正文依赖 toggle，所以这里必须照抄。 */
+  get open() { return this._open; }
+  set open(v) {
+    const next = !!v;
+    if (next === this._open) return;
+    this._open = next;
+    if (this.tagName === 'DETAILS') this._fire('toggle');
   }
   /* --- class --- */
   get className() { return Array.from(this._cls._set).join(' '); }
@@ -162,6 +172,7 @@ class DOMNode {
   getAttribute(k) { return k in this._attrs ? this._attrs[k] : null; }
   /* --- tree --- */
   get firstChild() { return this.children[0] || null; }
+  get lastChild() { return this.children[this.children.length - 1] || null; }
   get childNodes() { return this.children.slice(); }
   appendChild(n) {
     if (n.parentNode) n.parentNode.removeChild(n);

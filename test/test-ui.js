@@ -464,15 +464,19 @@ FE.mutate(() => {
 });
 const actHost = $('actions-list');
 ok(actHost.querySelectorAll('.snippet-editor').length === 0, '动作列表不再使用 JSON 片段编辑器');
-const actDefEditors = actHost.querySelectorAll('.action-def-editor');
-ok(actDefEditors.length >= 3, '动作列表为每个动作渲染图形化编辑器');
+/* 懒建是性能保证：折叠状态下**不得**存在任何编辑器节点。
+ * 早期版本折叠也预先建好，实测 29 动作 + 41 宏会让 DOM 涨到 ~47.5K 节点、
+ * 每次 renderAll 重建一遍 —— 打开页面就白烧 CPU。这条断言防止改回去。 */
+ok(actHost.querySelectorAll('.action-def-editor').length === 0, '折叠状态下不构建动作编辑器（懒建）');
 const delItem = actHost.querySelectorAll('.def-item').find(it => {
   const n = it.querySelectorAll('.def-name')[0];
   return n && n.textContent === 'test.del';
 });
 ok(!!delItem, '动作 test.del 出现在列表中');
+/* 展开该条 → 触发 toggle → 才构建编辑器 */
+delItem.open = true;
 const actEd = delItem.querySelectorAll('.action-def-editor')[0];
-ok(!!actEd, '动作项内含图形化编辑器');
+ok(!!actEd, '展开后构建出图形化编辑器');
 ok(actEd.querySelectorAll('.action-editor').length === 1, '动作编辑器含类型下拉与字段区');
 ok(actEd.textContent.indexOf('编辑原始 JSON') >= 0, '动作编辑器保留「编辑原始 JSON…」逃生口');
 const actTypeSel = actEd.querySelectorAll('select')[0];
@@ -482,15 +486,20 @@ actTypeSel.value = 'modifier';
 actTypeSel._fire('change');
 eq(FE.state.profile.actions['test.del'].type, 'modifier', '切换类型下拉即写回 profile');
 eq(FE.state.profile.actions['test.del'].modifier, 'SHIFT', '修饰键默认值写回 profile');
-/* 改回 key，供后续宏测试当作可引用动作 */
-const delEd2 = actHost.querySelectorAll('.def-item').find(it => {
-  const n = it.querySelectorAll('.def-name')[0];
-  return n && n.textContent === 'test.del';
-}).querySelectorAll('.action-def-editor')[0];
+/* 收起 → 回收节点；再次展开 → 重建，且保留改过的值 */
+delItem.open = false;
+ok(delItem.querySelectorAll('.action-def-editor').length === 0, '收起后编辑器被销毁（回收节点）');
+ok(delItem.querySelectorAll('.def-summary').length === 1, '收起后摘要行仍在');
+delItem.open = true;
+const delEd2 = delItem.querySelectorAll('.action-def-editor')[0];
+ok(!!delEd2, '再次展开可重建编辑器');
 const delTypeSel2 = delEd2.querySelectorAll('select')[0];
+eq(delTypeSel2.value, 'modifier', '重建后仍显示上次改的类型');
+/* 改回 key，供后续宏测试当作可引用动作 */
 delTypeSel2.value = 'key';
 delTypeSel2._fire('change');
 eq(FE.state.profile.actions['test.del'].type, 'key', '改回 key 类型同样立即写回');
+delItem.open = false;
 
 console.log('== 宏：步骤图形化编辑（每步一行 + 下拉框 + 增删排序） ==');
 FE.mutate(() => {
@@ -502,13 +511,18 @@ FE.mutate(() => {
 });
 const macHost = $('macros-list');
 ok(macHost.querySelectorAll('.snippet-editor').length === 0, '宏列表不再使用 JSON 片段编辑器');
+/* 懒建：折叠状态下不得有任何步骤编辑器节点（宏的每步都是一个内联动作编辑器，
+ * 预建代价最大，正是 CPU 问题的来源） */
+ok(macHost.querySelectorAll('.macro-steps').length === 0, '折叠状态下不构建宏步骤编辑器（懒建）');
 const macItem = macHost.querySelectorAll('.def-item').find(it => {
   const n = it.querySelectorAll('.def-name')[0];
   return n && n.textContent === 'test.macro';
 });
 ok(!!macItem, '宏 test.macro 出现在列表中');
+/* 展开 → 构建 */
+macItem.open = true;
 const macRoot = macItem.querySelectorAll('.macro-steps')[0];
-ok(!!macRoot, '宏使用图形化步骤编辑器');
+ok(!!macRoot, '展开后构建出图形化步骤编辑器');
 let msteps = macRoot.querySelectorAll('.macro-step');
 eq(msteps.length, 3, '宏的 3 个步骤各占一行');
 /* 核心抽象：每一步就是一个 action，行内是同一个动作编辑器 */
@@ -577,15 +591,21 @@ ok(macItems0.every(it => !it.open), '宏条目默认全部折叠');
 ok(actItems.every(it => it.querySelectorAll('.def-summary').length === 1), '每条都有摘要行（可点击处）');
 ok(actItems.every(it => it.children[0].tagName === 'SUMMARY'), 'summary 是 details 的首个子元素（原生折叠语义）');
 ok(actItems.every(it => it.querySelectorAll('.def-summary-caret').length === 1), '摘要行带展开指示三角');
-/* 折叠时编辑器仍在 DOM 里（<details> 只影响渲染，不影响节点） */
-ok(actItems.every(it => it.querySelectorAll('.action-def-editor').length === 1), '折叠条目的编辑器已就绪，展开即用');
+/* 折叠时不构建编辑器（懒建）——这是性能保证，不是"暂时没建好"。
+ * 早期版本折叠也预先建好，实测 29 动作 + 41 宏会让 DOM 从 ~1.4K 涨到 ~47.5K 节点
+ * （光 <option> 就 1.8 万个：每个「按键 key」内联编辑器都含 143 项键码下拉），
+ * 且每次 renderAll 都要重建整棵树 —— 打开页面就白烧 CPU。**不要改回去。** */
+ok(actItems.every(it => it.querySelectorAll('.action-def-editor').length === 0), '折叠动作条目不构建编辑器（懒建）');
+ok(macItems0.every(it => it.querySelectorAll('.macro-steps').length === 0), '折叠宏条目不构建步骤编辑器（懒建）');
+/* 但摘要行必须始终在，否则用户没法点开 */
+ok(actItems.every(it => it.querySelectorAll('.def-summary').length === 1), '折叠时摘要行仍在，可点击展开');
 
-/* 展开一条：桩不会自动切换 open，故手动置位后触发 toggle（模拟浏览器行为） */
+/* 展开一条：桩的 open 访问器会派发 toggle（与真实浏览器一致） */
 const firstAct = actItems[0];
 const firstName = firstAct.querySelectorAll('.def-name')[0].textContent;
 firstAct.open = true;
-firstAct._fire('toggle');
 ok(FE.state.openActions[firstName] === true, '展开后展开状态被记录');
+ok(firstAct.querySelectorAll('.action-def-editor').length === 1, '展开后才构建编辑器');
 
 /* 任何重渲染（增删 / 撤销 / 导入）后都要保持用户当前的展开视图 */
 FE.renderAll();
