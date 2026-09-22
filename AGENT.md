@@ -4,7 +4,7 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 396 / UI 617 / 真实文件体检 18 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 396 / UI 642 / 真实文件体检 18 个示例 0 错误。
 
 ### ⚠️ 本文件有两份，必须保持一致
 
@@ -126,7 +126,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **396 core + 617 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **396 core + 642 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -753,6 +753,55 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
   > 才不被遮住 —— 用户明确要求去掉这个不一致，**别再加回来**。
   > 同理 `FE.openKeyDialog` 不需要 `onClose` 透传了。
 
+### 4.13 浮动工具（右上撤销/重做、右下回到顶部）
+
+编辑长列表时不该每次滑回顶部点撤销，所以有两个浮动控件（`index.html` 里紧跟 `</main>` 之后）：
+
+| 元素 | id | 位置 |
+|---|---|---|
+| 撤销 + 重做（一组） | `float-undo-group` / `float-undo` / `float-redo` | 右上 `.float-top-right` |
+| 回到顶部 | `float-top` | 右下 `.float-bottom-right` |
+
+- ⭐ **贴着中央操作区的外缘**（用户明确要求），而不是钉在视口边缘 —— 钉视口的话屏幕越宽
+  离内容越远，鼠标得多跑一截。做法是外面套一层 `.float-layer`（`fixed` 铺满视口、
+  `pointer-events: none` 只做定位）> `.float-rail`（`max-width: var(--content-max)` +
+  居中 + `padding: 0 var(--content-pad-x)`，与内容列几何一致），按钮再绝对定位到这层上。
+- **内容列几何的两个单一来源**：`--content-max` / `--content-pad-x`（`:root`），
+  `.topbar-main`、`main`、`.float-rail` 三处都引用它 —— 改内容宽度只改变量，
+  浮动按钮自动跟着对齐。手机断点里覆写 `--content-pad-x` 也是同一原因。
+- ⚠️ **按钮用 `left` 定位，不要改成 `right`**：
+  `right: 0` 会把按钮**右**缘钉在内容列边上，按钮本体向左伸出去**压在卡片上**；
+  而同时给 `left` 与 `right`、宽度 `auto` 会把按钮左右拉伸。
+  正确写法是 `left: calc(100% - var(--content-pad-x) + 8px)`：
+  从 rail 的 padding-box 右缘退回卡片右缘，再留 8px 间隙，
+  于是按钮整体落在内容列外侧、间隙恒定且**不需要写死按钮宽度**。
+- **窄屏兜底**：`@media (max-width: 1520px)` 退回贴视口右缘（`left: auto; right: 12px`）。
+  断点是算出来的：内容列 1180px + 两侧各约 170px（按钮组宽 + 间隙 + 余量）≈ 1520px，
+  低于它页边距放不下按钮，硬贴会被视口右缘裁掉。
+- ⭐ **滚出顶栏后才显示**（`updateFloatTools()`，阈值 `FLOAT_SHOW_AT = 120` ≈ 顶栏高度）。
+  为什么不是常驻：顶栏右侧本来就有同款撤销/重做按钮，常驻会与它们**叠在一起**；
+  滚过顶栏后顶栏已滑出视口、用户够不到它了，这时浮出来才真正解决问题且无重叠。
+  判定用 `>` 而非 `>=`，等于阈值时不显示。
+- **撤销/重做状态是三处同步**（浮动 / 顶栏 / 「布局与文件操作」卡片内），
+  统一由 `updateUndoButtons()` 写入 —— 三处任一处的 `disabled` 不一致都会被用户察觉。
+  该函数顺带调 `updateFloatTools()` 对齐一次显隐（内容变化可能被动改变滚动位置）。
+- `updateFloatTools()` 挂在 `window` 的 `scroll` 上，**必须 `{ passive: true }`**
+  （只读 `scrollTop`、不 `preventDefault`，声明被动可让浏览器不必等回调返回即可滚动）。
+  加载时也调一次（刷新时浏览器可能恢复上次滚动位置）。
+- `scrollPageToTop()`：直接设 `scrollTop = 0`，**不用平滑滚动的锚点跳转**——
+  不依赖 CSS `scroll-behavior`，且测试能立刻断言。它是「有意的滚动」，
+  所以**先 `cancelScrollRestore()`**，否则会被 `afterChange` 排下的那一帧位置恢复拽回原处
+  （与 `locateIssue` / `scrollToDefItem` 同一套路）。回顶后自己收起浮层。
+- ⚠️ 桩要复现三个真实的浏览器语义，否则相关断言测不出东西（见 §5.3）：
+  - `hidden` 是**反射属性**：`setAttribute('hidden')` → `el.hidden === true`；
+  - `title` 是**双向反射**：`el.title = 'x'` 与 `getAttribute('title')` 必须能互相读到
+    （桩早期只做了单向，导致「代码写 `.title`、测试读 `getAttribute`」拿到 `null`）；
+  - `.float-layer > .float-rail` 的嵌套结构要在 `buildSkeleton()` 里还原，
+    否则贴边用的那套 calc 无从对齐（几何量不到，测试锁的是**结构契约**）。
+- ⚠️ 测试里比较 DOM 节点**必须用 `ok(a === b)`，不能用 `eq(a, b)`**：
+  `eq()` 内部 `JSON.stringify` 两边，而 DOM 节点有循环引用
+  （`parentNode` ↔ `children`）会直接抛「Converting circular structure to JSON」。
+
 ---
 
 ## 5. 已知的坑（都踩过，别重蹈）
@@ -855,7 +904,7 @@ node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
 node test/test-core.js       # 期望：396 通过, 0 失败
-node test/test-ui.js         # 期望：617 通过, 0 失败
+node test/test-ui.js         # 期望：642 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
 node test/check-real-files.js   # 期望：共 18 个文件，0 个存在错误
@@ -878,6 +927,6 @@ node tools/check-agent-sync.js --write
 
 ### 版本信息（改动可能影响这些对外说法）
 
-- 测试基线：core **396** / UI **617** / 示例 **18**（15 布局 + 3 弹出菜单）
+- 测试基线：core **396** / UI **642** / 示例 **18**（15 布局 + 3 弹出菜单）
 - 仓库 `README.md` 里的功能描述与 `index.html` 的图例，与实现同步维护；
   新增用户可见功能时一并更新，避免文档漂移。

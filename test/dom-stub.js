@@ -116,10 +116,15 @@ class DOMNode {
     this.checked = false;
     this.disabled = false;
     this._open = false;
-    this.title = '';
     this.hidden = false;
     this._html = null;
   }
+  /* --- title：真实 DOM 里 title 是**双向反射**的 ---
+   * `el.title = 'x'` 与 `setAttribute('title','x')` 等价，`getAttribute('title')` 也读得到。
+   * 桩早期只做了 setAttribute → .title 单向，导致「代码用 .title 写、测试用
+   * getAttribute 读」会拿到 null（真实浏览器不会）。这里统一走 _attrs，两个方向都对。 */
+  get title() { return this._attrs.title != null ? this._attrs.title : ''; }
+  set title(v) { this._attrs.title = String(v); }
   /* --- value：select 派生自选中项，input 回退到 value 属性 --- */
   get value() {
     if (this.tagName === 'SELECT') {
@@ -158,12 +163,14 @@ class DOMNode {
     this._attrs[k] = String(v);
     if (k === 'id') this.id = String(v);
     if (k === 'class') this._cls._replace(v);
-    /* title 在真实 DOM 里是反射属性（setAttribute('title',x) → el.title === x），
-     * 代码与测试都习惯读 el.title，桩必须照抄，否则断言会拿到 undefined。 */
-    if (k === 'title') this.title = String(v);
+    /* title / open / hidden 都已在上面或下面定义为反射访问器，这里不必再赋值 */
     /* open 同理：<details open> 的布尔属性会反射到 el.open。
      * h() 会跳过 null/false，所以这里出现即表示属性存在。 */
     if (k === 'open') this.open = true;
+    /* hidden 也是反射属性：setAttribute('hidden') → el.hidden === true。
+     * 代码（如 updateFloatTools）读 .hidden，两处都按真实语义来才一致。
+     * 传 'false' 在真实 DOM 里**依然算存在**（布尔属性只看有无），照抄。 */
+    if (k === 'hidden') this.hidden = true;
     if (k.slice(0, 5) === 'data-') {
       const key = k.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
       this.dataset[key] = String(v);
@@ -591,6 +598,16 @@ function buildSkeleton() {
       el('button', { id: 'top-redo', class: 'mini-button', disabled: 'disabled' }))));
   body.appendChild(header);
   body.appendChild(main);
+  /* 浮动工具（与 index.html 保持同步）：右上撤销/重做、右下回到顶部。
+   * 结构是 .float-layer > .float-rail > 按钮 —— 这层让按钮贴着**中央操作区外缘**
+   * （与内容列同宽、同内边距、同居中），而不是钉在视口边缘。
+   * 初始 hidden —— 显隐由 app.js 的 updateFloatTools() 按滚动位置控制。 */
+  body.appendChild(el('div', { class: 'float-layer' },
+    el('div', { class: 'float-rail' },
+      el('div', { id: 'float-undo-group', class: 'float-group float-top-right', hidden: 'hidden' },
+        el('button', { id: 'float-undo', class: 'mini-button', disabled: 'disabled' }),
+        el('button', { id: 'float-redo', class: 'mini-button', disabled: 'disabled' })),
+      el('button', { id: 'float-top', class: 'mini-button float-bottom-right', hidden: 'hidden' }, '↑ 顶部'))));
   return body;
 }
 

@@ -246,6 +246,25 @@
 </section>
   </main>
 
+  <!-- 浮动工具：编辑长列表时不必每次滑回顶部
+       · 右上：撤销 / 重做
+       · 右下：回到顶部
+       位置：靠 .float-layer/.float-rail 这层与内容列同宽、同内边距的定位层，
+       紧贴**中央操作区的外缘**（而不是视口边缘 —— 那样屏幕越宽离内容越远）。
+       二者都在**滚出顶栏后**才出现：顶栏右侧已有同款按钮，常驻会与它们重叠；
+       滚下去后顶栏看不见了，浮动版才真正派上用场。
+       状态与顶栏、卡片内按钮三方同步（见 app.js 的 updateUndoButtons）。 -->
+  <div class="float-layer">
+    <div class="float-rail">
+      <div id="float-undo-group" class="float-group float-top-right" hidden>
+        <button type="button" id="float-undo" class="mini-button" disabled title="撤销 (Ctrl+Z)">↶ 撤销</button>
+        <button type="button" id="float-redo" class="mini-button" disabled title="重做 (Ctrl+Y)">↷ 重做</button>
+      </div>
+      <button type="button" id="float-top" class="mini-button float-bottom-right" hidden
+        title="回到页面顶部">↑ 顶部</button>
+    </div>
+  </div>
+
   <footer class="footnote">
     <p>格式依据 Foxy 布局格式规范（<code>foxy.keyboard-layout</code>，见 <code>skills/</code>）。布局文件请放置于
       <code>&lt;外部存储&gt;/foxy/frontend/layouts/&lt;profile&gt;.json</code> 后在 Foxy 设置中选择。</p>

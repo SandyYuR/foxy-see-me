@@ -1686,6 +1686,87 @@ await sleep(350);
   /* 顶栏与卡片内按钮状态同步 */
   eq($('op-undo').disabled, $('top-undo').disabled, '顶栏与卡片内撤销按钮同步');
 
+  console.log('== 浮动工具：右上撤销/重做、右下回到顶部 ==');
+  /* 滚动监听注册在 window 上（桩把监听器收进 _winListeners），照真实路径触发它 */
+  const fireScroll = () => (_winListeners['scroll'] || []).forEach(fn => fn({ type: 'scroll' }));
+  const pageEl = documentStub.documentElement;
+
+  ok($('float-undo') && $('float-redo') && $('float-top'), '浮动撤销/重做/回到顶部三个控件都存在');
+  ok(!!$('float-undo-group'), '浮动撤销/重做在同一组内');
+  ok($('float-undo-group').classList.contains('float-top-right'), '撤销/重做浮动在右上');
+  ok($('float-top').classList.contains('float-bottom-right'), '回到顶部浮动在右下');
+
+  /* 贴「中央操作区外缘」靠的是 .float-layer > .float-rail 这层与内容列同宽、
+   * 同内边距、同居中的定位层 —— 结构没了，CSS 那套 calc 就无从对齐，故锁住它。
+   * （几何本身在无头环境量不到，DOM 桩没有真实布局；这里验的是结构契约。） */
+  const floatRail = $('float-undo-group').parentNode;
+  ok(!!floatRail && floatRail.classList.contains('float-rail'), '浮动按钮挂在 .float-rail 内（与内容列对齐的那层）');
+  ok(!!floatRail.parentNode && floatRail.parentNode.classList.contains('float-layer'),
+    '.float-rail 外层是 .float-layer（fixed 铺满视口，不吃鼠标事件）');
+  /* ⚠️ 这里用 ok(x === y) 而非 eq(x, y)：eq() 内部 JSON.stringify 两边，
+   * 而 DOM 节点有循环引用（parentNode ↔ children）会直接抛
+   * 「Converting circular structure to JSON」。节点比较一律用恒等。 */
+  ok($('float-top').parentNode === floatRail, '回到顶部与撤销/重做共用同一层（两者对齐基准一致）');
+  ok(floatRail.parentNode.parentNode === documentStub._body,
+    '浮动层挂在 body 上，不随 main 的布局滚动');
+
+  /* 未滚动时隐藏：顶栏右侧本来就有同款按钮，固定定位叠上去会打架 */
+  pageEl.scrollTop = 0;
+  fireScroll();
+  ok($('float-undo-group').hidden === true, '未滚动时浮动撤销/重做隐藏（避免与顶栏重叠）');
+  ok($('float-top').hidden === true, '未滚动时回到顶部隐藏');
+
+  /* 滚过顶栏后出现 */
+  pageEl.scrollTop = 400;
+  fireScroll();
+  ok($('float-undo-group').hidden === false, '滚过顶栏后浮动撤销/重做出现');
+  ok($('float-top').hidden === false, '滚过顶栏后回到顶部出现');
+
+  /* 状态三处同步：浮动 / 顶栏 / 卡片内 */
+  eq($('float-undo').disabled, $('top-undo').disabled, '浮动撤销与顶栏撤销状态同步');
+  eq($('float-redo').disabled, $('top-redo').disabled, '浮动重做与顶栏重做状态同步');
+  eq($('float-undo').disabled, $('op-undo').disabled, '浮动撤销与卡片内撤销状态同步');
+  FE.mutate(function () { FE.state.profile.author = '浮动测试'; });
+  ok($('float-undo').disabled === false, '有历史后浮动撤销可用');
+  ok($('float-undo').getAttribute('title').indexOf('Ctrl+Z') >= 0, '浮动撤销 title 带快捷键提示');
+
+  /* 浮动按钮实际生效 */
+  const floatAuthorBefore = FE.state.profile.author;
+  $('float-undo').click();
+  ok(FE.state.profile.author !== floatAuthorBefore, '点浮动撤销确实回退了');
+  ok($('float-redo').disabled === false, '撤销后浮动重做可用');
+  $('float-redo').click();
+  eq(FE.state.profile.author, floatAuthorBefore, '点浮动重做确实恢复了');
+
+  /* 回到顶部：点到即回顶，并自动收起自己 */
+  pageEl.scrollTop = 3000;
+  fireScroll();
+  $('float-top').click();
+  eq(pageEl.scrollTop, 0, '点回到顶部后 scrollTop 归零');
+  ok($('float-top').hidden === true, '回到顶部后浮层自己收起');
+
+  /* 滚回顶部时浮层也要收起（不只是点击后才收） */
+  pageEl.scrollTop = 500;
+  fireScroll();
+  ok($('float-undo-group').hidden === false, '（前置）已滚下，浮层可见');
+  pageEl.scrollTop = 0;
+  fireScroll();
+  ok($('float-undo-group').hidden === true, '滚回顶部后浮层自动收起');
+
+  /* 回到顶部是「有意的滚动」：不能被 afterChange 排下的补帧拽回去 */
+  const savedRaf2 = global.requestAnimationFrame;
+  let pendingFloatFrame = null;
+  global.requestAnimationFrame = (fn) => { pendingFloatFrame = fn; return 1; };
+  FE.renderAll();                      /* 内部 restoreScroll 会排一帧位置恢复 */
+  pageEl.scrollTop = 3000;
+  fireScroll();
+  $('float-top').click();
+  if (pendingFloatFrame) pendingFloatFrame();
+  eq(pageEl.scrollTop, 0, '补帧执行后仍停在顶部（有意滚动已作废待恢复快照）');
+  global.requestAnimationFrame = savedRaf2;
+  pageEl.scrollTop = 0;
+  fireScroll();
+
   console.log('== 顶栏项目链接 ==');
   const titleLink = $('repo-title-link');
   const repoLink = $('repo-link');

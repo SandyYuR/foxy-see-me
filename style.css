@@ -19,6 +19,10 @@
   --sel: #ffb020;
   --radius: 10px;
   --mono: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+  /* 中央操作区（内容列）的几何：顶栏与 main 共用，浮动工具也靠它对齐。
+   * 改宽度/内边距时请只改这两个变量 —— 浮动按钮的"贴边"完全依赖它们。 */
+  --content-max: 1180px;
+  --content-pad-x: 20px;
 }
 
 * { box-sizing: border-box; }
@@ -50,7 +54,7 @@ code { font-family: var(--mono); background: #2b2f36; padding: 1px 5px; border-r
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  max-width: 1180px;
+  max-width: var(--content-max);
   margin: 0 auto;
 }
 .topbar-title { min-width: 0; }
@@ -88,7 +92,7 @@ code { font-family: var(--mono); background: #2b2f36; padding: 1px 5px; border-r
 .brand-link:focus-visible, .repo-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .topbar h2 { margin: 4px 0 0; font-size: 13px; font-weight: normal; color: var(--text-dim); }
 
-main { padding: 14px 20px 40px; max-width: 1180px; margin: 0 auto; }
+main { padding: 14px var(--content-pad-x) 40px; max-width: var(--content-max); margin: 0 auto; }
 
 /* ---------------- 面板与卡片 ---------------- */
 .panel, details.card {
@@ -723,6 +727,62 @@ dialog.editor-dialog::backdrop { background: rgba(5, 6, 8, 0.6); backdrop-filter
   justify-content: flex-end; background: #1d2025; border-radius: 0 0 12px 12px;
 }
 
+/* ---------------- 浮动工具（右上撤销/重做、右下回到顶部） ----------------
+ * 位置：贴着**中央操作区的外缘**，而不是视口边缘 —— 钉在视口上的话屏幕越宽
+ * 离内容越远，鼠标得多跑一截。做法是用一层与内容列同宽（--content-max）、
+ * 同样居中、同样左右内边距（--content-pad-x）的 fixed 定位层，
+ * 按钮挂在这层的右边缘上，于是无论窗口多宽都紧贴内容列外侧。
+ * 显隐由 app.js 的 updateFloatTools 管（滚出顶栏后才出现，避免与顶栏同款按钮重叠）。
+ * 注意 [hidden] { display: none !important } 已在文件顶部，能盖住这里的 display。 */
+.float-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* 只用来定位，不吃鼠标事件；按钮自身在下面重新开启 */
+  pointer-events: none;
+  z-index: 40;
+}
+.float-rail {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 var(--content-pad-x);
+  height: 100%;
+  position: relative;
+}
+/* 右上：撤销 / 重做；右下：回到顶部。
+ * ⚠️ 用 left 定位，**不要改用 right**：
+ *   · right: 0 会把按钮的**右**缘钉在内容列边上，按钮本体向左伸出去 → 压到卡片上；
+ *   · 同时给 left 与 right 且宽度 auto → 按钮会被左右拉伸。
+ * 这里让按钮的**左**缘落在内容列右缘之外：left: 100% 是内容列（rail 的 padding box）
+ * 右缘，减去内边距回到"卡片右缘"，再加 8px 间隙 —— 于是按钮整体位于内容列外侧的
+ * 页边距里，间隙恒为 8px、与按钮实际宽度无关（不需要写死按钮宽度）。 */
+.float-top-right { position: absolute; top: 12px; left: calc(100% - var(--content-pad-x) + 8px); }
+.float-bottom-right { position: absolute; bottom: 20px; left: calc(100% - var(--content-pad-x) + 8px); }
+.float-rail > * { pointer-events: auto; }
+.float-group { display: flex; gap: 6px; }
+/* 浮在内容之上：加投影让按钮从背景里"浮"出来，并保持圆角一致 */
+.float-group .mini-button,
+.float-bottom-right {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  border-radius: 8px;
+}
+.float-group .mini-button:focus-visible,
+.float-bottom-right:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* 窄屏兜底：内容列外侧的页边距放不下按钮，按钮会越过视口右缘被裁切，
+ * 此时退回贴视口右缘（此宽度下页边距本就很小，贴视口≈贴内容）。
+ * 断点 ≈ 内容列 1180px + 两侧各约 170px（按钮组宽 + 间隙 + 余量）。 */
+@media (max-width: 1520px) {
+  .float-top-right { position: fixed; top: 12px; left: auto; right: 12px; }
+  .float-bottom-right { position: fixed; bottom: 20px; left: auto; right: 12px; }
+}
+/* 手机竖屏：main 的内边距收窄，变量同步收窄，浮动层才能继续与内容对齐
+ * （宽屏公式里用到 --content-pad-x）。 */
+@media (max-width: 640px) {
+  :root { --content-pad-x: 10px; }
+}
+
 /* ---------------- 内建提示 / 确认 / 输入框（FE.uiAlert / uiConfirm / uiPrompt） ----------------
  * 替代浏览器 alert / confirm / prompt：不阻塞主线程、样式与编辑器统一。
  * 这几个对话框刻意做得紧凑（宽度跟随 .editor-dialog 的默认宽度），
@@ -764,8 +824,9 @@ dialog.editor-dialog::backdrop { background: rgba(5, 6, 8, 0.6); backdrop-filter
  * 目标：更大的触摸目标、更省空间的排版、拖动时不误触滚动。
  * ================================================================ */
 @media (max-width: 640px) {
-  /* 收窄外边距，把宝贵的横向空间留给内容 */
-  main { padding: 10px 10px 32px; }
+  /* 收窄外边距，把宝贵的横向空间留给内容。
+   * 用变量而非硬编码 —— .float-rail 靠同一个变量对齐，浮动按钮才能继续贴住内容外缘。 */
+  main { padding: 10px var(--content-pad-x) 32px; }
   .topbar { padding: 10px 12px 8px; }
   .topbar h1 { font-size: 18px; }
   .topbar h2 { font-size: 11.5px; }

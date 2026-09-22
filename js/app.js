@@ -3813,7 +3813,8 @@ function renderOps() {
 }
 
 function updateUndoButtons() {
-  /* 两处入口：顶栏右侧常驻按钮 + 「布局与文件操作」卡片内按钮，状态保持同步 */
+  /* 三处入口状态同步：浮动按钮（右上）/ 顶栏右侧 / 「布局与文件操作」卡片内。
+   * 任一处的可用性都必须一致，否则用户会看到"这个能点、那个灰着"。 */
   var u = $('op-undo'), r = $('op-redo');
   if (u) { u.disabled = !state.history.length; u.title = state.history.length ? '撤销' : '没有可撤销的操作'; }
   if (r) { r.disabled = !state.future.length; r.title = state.future.length ? '重做' : '没有可重做的操作'; }
@@ -3826,7 +3827,51 @@ function updateUndoButtons() {
     tr.disabled = !state.future.length;
     tr.title = (state.future.length ? '重做' : '没有可重做的操作') + ' (Ctrl+Y)';
   }
+  var fu = $('float-undo'), fr = $('float-redo');
+  if (fu) {
+    fu.disabled = !state.history.length;
+    fu.title = (state.history.length ? '撤销' : '没有可撤销的操作') + ' (Ctrl+Z)';
+  }
+  if (fr) {
+    fr.disabled = !state.future.length;
+    fr.title = (state.future.length ? '重做' : '没有可重做的操作') + ' (Ctrl+Y)';
+  }
+  /* 顺带刷新浮动工具的显隐：它只跟滚动位置有关，但每次渲染后对一次齐
+   * 能保证「内容变化导致滚动位置被动改变」时状态也不错。成本是两次属性写入。 */
+  updateFloatTools();
 }
+
+/* ---------------- 浮动工具（右上撤销/重做、右下回到顶部） ----------------
+ * 为什么需要：编辑长列表时要改一处就得滑回顶部点撤销，很烦。
+ *
+ * 为什么**滚出顶栏后才显示**：顶栏右侧本来就有同款撤销/重做按钮，
+ * 浮动版 fixed 在右上会与它们叠在一起。滚过顶栏后顶栏已滑出视口、
+ * 用户够不到它了，这时浮出来才真正解决问题，且没有重叠。 */
+var FLOAT_SHOW_AT = 120;   // ≈ 顶栏高度；滚过它顶栏按钮就点不到了
+
+function updateFloatTools() {
+  var el = pageScroller();
+  var top = el ? (el.scrollTop || 0) : 0;
+  var show = top > FLOAT_SHOW_AT;
+  var group = $('float-undo-group'), toTop = $('float-top');
+  if (group) group.hidden = !show;
+  if (toTop) toTop.hidden = !show;
+}
+FE.updateFloatTools = updateFloatTools;
+
+/* 回到顶部：刻意不用平滑滚动的锚点跳转，而是直接设 scrollTop ——
+ * 一是不依赖 CSS scroll-behavior，二是测试里能立刻断言到结果。
+ * 这是「有意的滚动」，所以先 cancelScrollRestore()，避免被上一轮
+ * afterChange 排下的那一帧位置恢复又拽回原处。 */
+function scrollPageToTop() {
+  cancelScrollRestore();
+  var el = pageScroller();
+  if (!el) return;
+  el.scrollTop = 0;
+  el.scrollLeft = 0;
+  updateFloatTools();
+}
+FE.scrollPageToTop = scrollPageToTop;
 
 function downloadJson(text, name) {
   var blob = new Blob([text], { type: 'application/json;charset=utf-8' });
@@ -4242,6 +4287,12 @@ function initToolbar() {
   var topUndo = $('top-undo'), topRedo = $('top-redo');
   if (topUndo) topUndo.addEventListener('click', undo);
   if (topRedo) topRedo.addEventListener('click', redo);
+  /* 浮动版同款按钮：与上面两处共用 undo/redo，状态由 updateUndoButtons 统一同步 */
+  var floatUndo = $('float-undo'), floatRedo = $('float-redo');
+  if (floatUndo) floatUndo.addEventListener('click', undo);
+  if (floatRedo) floatRedo.addEventListener('click', redo);
+  var floatTopBtn = $('float-top');
+  if (floatTopBtn) floatTopBtn.addEventListener('click', scrollPageToTop);
 
   /* author / type */
   var authorInp = $('op-author');
@@ -4442,6 +4493,13 @@ function initToolbar() {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(renderPreview, 150);
   });
+
+  /* 滚动 → 更新浮动工具显隐（右上撤销/重做、右下回到顶部）。
+   * passive: true —— 这里只读 scrollTop、不 preventDefault，
+   * 明确声明被动可让浏览器不必等回调返回即可继续滚动，避免卡顿。 */
+  window.addEventListener('scroll', updateFloatTools, { passive: true });
+  /* 页面加载时就对一次齐（例如刷新时浏览器恢复了上次的滚动位置） */
+  updateFloatTools();
 }
 
 function walkAllActions(cb) {
