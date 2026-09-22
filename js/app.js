@@ -429,6 +429,43 @@ FE.rowWeights = function (row) {
   return ws.map(function (w) { return w === 'auto' ? autoVal : (Number(w) || 0); });
 };
 
+/* 网格编辑器的渲染护栏：**上限作用于真正生成 DOM 的单元格数**（按键起点 +
+ * 未被跨距键覆盖的空格），不是网格面积。
+ *
+ * 历史：这里原本是 `ry * cols + cx >= 400`，按网格序号截断。对大跨距键盘是错的 ——
+ * 48×15 = 720 格里，跨距键覆盖掉 526 格，实际只需 194 个节点，却被砍掉 58 个按键，
+ * 使这些键在编辑器里根本无法点击/编辑。键盘面积大 ≠ 渲染量大，所以护栏必须按
+ * 节点数计。4000 远高于任何正常布局（最密的真实键盘也就数百格），只拦病态输入
+ * （如 columns: 10000）。可在控制台改 FE.MAX_GRID_CELLS 后重渲染。 */
+FE.MAX_GRID_CELLS = 4000;
+
+/* 网格预览的几何：间隙必须随列/行数缩放，**不能固定 5px**。
+ *
+ * 固定间隙在列数多时是致命的：48 列时 .kb 内容宽约 414px，47 个 5px 间隙合计
+ * 235px（吃掉 57% 宽度），单元格被压到 3.73px，而字号仍有 18px（= 键宽的 4.8 倍），
+ * 文字溢出键框、整块预览糊成一团 —— 这就是「大网格把预览撑爆」的原因。
+ *
+ * 这里让间隙总和不超过可用宽/高的 10%，并回传单元格实际尺寸供渲染推导字号。
+ * 小网格（如 5 列的 numpad）算出来仍是 5px，外观完全不变。 */
+FE.gridMetrics = function (columns, rows, unit, totalUnits) {
+  var cols = (Number.isInteger(columns) && columns > 0) ? columns : 1;
+  var rws = (Number.isInteger(rows) && rows > 0) ? rows : 1;
+  var u = (typeof unit === 'number' && unit > 0) ? unit : 38;
+  var units = (typeof totalUnits === 'number' && totalUnits > 0) ? totalUnits : 5;
+  var contentW = Math.max(0, u * 10 - 16);              // .kb 左右 padding 各 8px
+  var contentH = Math.max(24, units * u);
+  /* 上限 5px 保持小网格原样；下限 0.35px 防止格子被间隙吃成负数 */
+  var colGap = Math.min(5, Math.max(0.35, contentW * 0.10 / Math.max(1, cols - 1)));
+  var rowGap = Math.min(5, Math.max(0.35, contentH * 0.10 / Math.max(1, rws - 1)));
+  return {
+    columns: cols, rows: rws,
+    colGap: colGap, rowGap: rowGap,
+    contentW: contentW, contentH: contentH,
+    cellW: (contentW - (cols - 1) * colGap) / cols,
+    cellH: (contentH - (rws - 1) * rowGap) / rws
+  };
+};
+
 FE.gridDims = function (section) {
   return {
     columns: (Number.isInteger(section.columns) && section.columns > 0) ? section.columns : 1,
@@ -2172,6 +2209,17 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
   var eff = item.eff;
   var status = state.status;
   var maxKeyHeight = opts.maxKeyHeight != null ? opts.maxKeyHeight : 1;
+  /* 字号上限：只有**网格预览**会传（见 buildGridSection）。
+   * 格子比标准字号还小时必须缩字，否则 18px 的字落进 3.7×9.7px 的格子会上下压叠成墨块。
+   * 行区段的键不传 → Infinity，行为与从前完全一致。 */
+  var fontCap = (typeof opts.fontCap === 'number' && opts.fontCap > 0) ? opts.fontCap : Infinity;
+  var capFont = function (px) { return Math.min(px, fontCap); };
+  /* 提示/徽标的内缩也要随字号缩放：CSS 里是固定 top:3px / left:4px，格高只有十几
+   * 像素时，上提示与下提示会直接压叠。**只在网格预览（fontCap 有限）时输出行内
+   * 定位**，行区段不写任何定位 → 行布局外观零变化（见 test-ui 的行渲染断言）。 */
+  var tight = isFinite(fontCap)
+    ? { y: clamp(fontCap * 0.3, 0.5, 3), x: clamp(fontCap * 0.35, 0.5, 4) }
+    : null;
   // 全链路只用一个 unit（竖屏口径）：行高、字号、图标、提示全部由此算。
   // 分体的"变宽"只靠容器 kb-split + flex 拉伸，绝不在这里乘系数。
   var el = h('div', {
@@ -2200,7 +2248,9 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
       if (state.status.shift) wrap.classList.add('kb-icon-active');
     }
     wrap.innerHTML = svg;
-    var iw = clamp(unit * 0.52, 14, 40);
+    /* 下限也分情况：行区段保持原来的 14px（窄窗口下外观零变化），
+     * 网格预览才允许降到 6px，否则小格子里的图标会撑破键框。 */
+    var iw = clamp(Math.min(unit * 0.52, fontCap), isFinite(fontCap) ? 6 : 14, 40);
     wrap.style.width = iw + 'px';
     wrap.style.height = iw + 'px';
     el.appendChild(wrap);
@@ -2209,7 +2259,7 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
     if (label !== '' && label != null) {
       el.appendChild(h('span', {
         class: 'kb-label',
-        style: { fontSize: keyFontPx(eff, unit) + 'px' }
+        style: { fontSize: capFont(keyFontPx(eff, unit)) + 'px' }
       }, label));
     }
   }
@@ -2220,10 +2270,15 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
     var hh = item.hints[d];
     if (!hh) return;
     hasHints = true;
-    el.appendChild(h('span', {
-      class: 'kb-hint kb-hint-' + d,
-      style: { fontSize: hintFontPx(eff, d, unit) + 'px' }
-    }, hh.text));
+    var hs = { fontSize: capFont(hintFontPx(eff, d, unit)) + 'px' };
+    if (tight) {
+      /* 覆盖 CSS 的固定 top/bottom/left/right，改成随格子缩小的内缩 */
+      if (d === 'up') hs.top = tight.y + 'px';
+      else if (d === 'down') hs.bottom = tight.y + 'px';
+      else if (d === 'left') hs.left = tight.x + 'px';
+      else if (d === 'right') hs.right = tight.x + 'px';
+    }
+    el.appendChild(h('span', { class: 'kb-hint kb-hint-' + d, style: hs }, hh.text));
   });
   if (hasHints) {
     /* 提示元素刚挂上，此时再上色（applyKeyColors 调用时它们还不存在） */
@@ -2231,11 +2286,15 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
   }
   /* 长按徽标（蓝） */
   if (item.lpLabel) {
-    el.appendChild(h('span', { class: 'kb-badge-lp', style: { fontSize: hintFontPx(eff, 'up', unit) + 'px' } }, item.lpLabel));
+    var lpStyle = { fontSize: capFont(hintFontPx(eff, 'up', unit)) + 'px' };
+    if (tight) { lpStyle.top = tight.y + 'px'; lpStyle.right = tight.x + 'px'; }
+    el.appendChild(h('span', { class: 'kb-badge-lp', style: lpStyle }, item.lpLabel));
   }
   /* 按住徽标（橙） */
   if (item.holdLabel) {
-    el.appendChild(h('span', { class: 'kb-badge-lp kb-badge-hold', style: { fontSize: hintFontPx(eff, 'up', unit) + 'px' } }, item.holdLabel));
+    var hdStyle = { fontSize: capFont(hintFontPx(eff, 'up', unit)) + 'px' };
+    if (tight) { hdStyle.top = tight.y + 'px'; hdStyle.right = tight.x + 'px'; }
+    el.appendChild(h('span', { class: 'kb-badge-lp kb-badge-hold', style: hdStyle }, item.holdLabel));
   }
   /* 长按弹出菜单徽标（键下方中央的 ⌄） */
   if (item.popupKey) {
@@ -2245,7 +2304,8 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
       var cands = FE.popupCandidates(state.popupProfile, popupSchema, item.popupKey, status.shift);
       pkTitle += cands ? '（' + cands.length + ' 个候选）' : '（当前弹出菜单未定义该键）';
     }
-    el.appendChild(h('span', { class: 'kb-badge-popup', title: pkTitle }, '⌄'));
+    var pkStyle = tight ? { bottom: tight.y + 'px' } : null;
+    el.appendChild(h('span', { class: 'kb-badge-popup', title: pkTitle, style: pkStyle }, '⌄'));
   }
 
   el.addEventListener('pointerdown', function () { el.classList.add('pressed'); applyKeyColors(el, eff, true, status); });
@@ -2289,6 +2349,11 @@ function buildRowsSection(compiledSection, unit) {
 
 function buildGridSection(compiledSection, unit) {
   var el = h('div', { class: 'kb-grid' });
+  /* 大网格的关键修复：间距与字号都必须随格子尺寸走。
+   * 固定 5px 间距 + 固定 18px 字号在 48 列/15 行时会让格子仅 3.7×9.7px，
+   * 字比格子还高（18px vs 9.7px）→ 文字上下重叠、整块预览糊成一团。 */
+  var m = FE.gridMetrics(compiledSection.columns, compiledSection.rows, unit, compiledSection.totalUnits);
+  el.style.gap = m.colGap + 'px ' + m.rowGap + 'px';
   el.style.gridTemplateColumns = 'repeat(' + compiledSection.columns + ', 1fr)';
   if (compiledSection.rowHeights && compiledSection.rowHeights.length) {
     el.style.gridTemplateRows = compiledSection.rowHeights.map(function (x) { return (Number(x) || 1) + 'fr'; }).join(' ');
@@ -2296,10 +2361,17 @@ function buildGridSection(compiledSection, unit) {
     el.style.gridTemplateRows = 'repeat(' + compiledSection.rows + ', 1fr)';
   }
   el.style.height = Math.max(24, compiledSection.totalUnits * unit) + 'px';
+  /* 字号上限**按每个键自己的跨距**算：3×3 大键的可用面积是 1×1 小键的 9 倍，
+   * 若统一按 1×1 封顶，大键的字会小得离谱。取该键实际占位的较短边留出边距。 */
   (compiledSection.keys || []).forEach(function (item) {
-    var keyEl = buildKeyEl(item, unit, { grow: '', maxKeyHeight: 1 });
-    keyEl.style.gridColumn = (item.column + 1) + ' / span ' + Math.max(1, item.columnSpan);
-    keyEl.style.gridRow = (item.row + 1) + ' / span ' + Math.max(1, item.rowSpan);
+    var cspan = Math.max(1, item.columnSpan || 1);
+    var rspan = Math.max(1, item.rowSpan || 1);
+    var w = m.cellW * cspan + m.colGap * (cspan - 1);
+    var h = m.cellH * rspan + m.rowGap * (rspan - 1);
+    var fontCap = Math.max(3, Math.min(w, h) * 0.8);
+    var keyEl = buildKeyEl(item, unit, { grow: '', maxKeyHeight: 1, fontCap: fontCap });
+    keyEl.style.gridColumn = (item.column + 1) + ' / span ' + cspan;
+    keyEl.style.gridRow = (item.row + 1) + ' / span ' + rspan;
     keyEl.style.flexGrow = '';
     el.appendChild(keyEl);
   });
@@ -3222,17 +3294,24 @@ function gridEditor(section, si, csec) {
     }
   });
 
+  /* 渲染护栏只统计**真正会生成 DOM 的单元格**（按键起点 + 未被跨距键覆盖的空格），
+   * 不再按网格序号截断。旧写法是 `ry * cols + cx >= 400`:48×15 = 720 格里跨距键
+   * 覆盖了 526 格,实际只需 194 个节点,却被砍掉 58 个按键(大跨距键盘在编辑器里
+   * 根本编辑不到)。现在的阈值远高于任何正常布局,只拦病态输入(如 columns: 10000)。
+   * 运行时可调:FE.MAX_GRID_CELLS */
+  var cap = FE.MAX_GRID_CELLS;
+  var rendered = 0, skipped = 0;
   for (var ry = 0; ry < rws; ry++) {
     for (var cx = 0; cx < cols; cx++) {
-      if (ry * cols + cx >= 400) continue;
-      (function (x, y) {
+      var cellInfo = cellMap[cx + ',' + ry];
+      /* 被跨距按键覆盖的格子:跨距键本身已占满该区域(占位格会与其重叠
+       * 并因 DOM 靠后而绘制在上层,把键的下半/右半遮住),不再单独渲染。
+       * 它不生成节点,也就不该占渲染额度。 */
+      if (cellInfo && !cellInfo.start) continue;
+      if (rendered >= cap) { skipped++; continue; }
+      rendered++;
+      (function (x, y, info) {
         var place = { gridColumn: String(x + 1), gridRow: String(y + 1) };
-        var info = cellMap[x + ',' + y];
-        if (info && !info.start) {
-          /* 被跨距按键覆盖的格子:跨距键本身已占满该区域(占位格会与其重叠
-           * 并因 DOM 靠后而绘制在上层,把键的下半/右半遮住),不再单独渲染。 */
-          return;
-        }
         if (info) {
           var item = csec.keys[info.gi];
           if (!item) return;
@@ -3292,12 +3371,16 @@ function gridEditor(section, si, csec) {
           emptyCell.__gridEmpty = { si: si, x: x, y: y };
           grid.appendChild(emptyCell);
         }
-      })(cx, ry);
+      })(cx, ry, cellInfo);
     }
   }
   wrap.appendChild(grid);
-  if (rws * cols > 400) {
-    wrap.appendChild(h('div', { class: 'status warn' }, '网格较大（' + cols + '×' + rws + '），仅渲染前 400 格'));
+  /* 只在**真的被护栏截掉**时提示，且说清是节点数而不是网格面积。
+   * 普通大网格（如 48×15 全靠跨距键撑开）不再误报。 */
+  if (skipped > 0) {
+    wrap.appendChild(h('div', { class: 'status warn' },
+      '网格过大（' + cols + '×' + rws + '，' + (rendered + skipped) + ' 个可编辑格），' +
+      '已渲染前 ' + rendered + ' 格，其余 ' + skipped + ' 格未渲染'));
   }
   return wrap;
 }

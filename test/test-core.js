@@ -646,6 +646,21 @@ eq(gcmp.sections[0].keys.length, 3, '网格编译保留源数组长度');
 ok(gcmp.sections[0].keys[1] === null, '非法网格项为 null 占位');
 eq([gcmp.sections[0].keys[2].k, gcmp.sections[0].keys[2].column], [2, 1], '占位后索引与坐标未错位');
 
+/* ---- 网格预览几何：间隙必须随列/行数缩放，不能固定 5px ----
+ * 固定间隙在列数多时会把单元格压没：48 列时 47 个 5px 间隙吃掉 57% 宽度，
+ * 单元格仅 3.73px 宽，而字号仍是 18px（格高的 1.9 倍）→ 文字溢出压叠，
+ * 整块预览糊成一团（用户反馈的「大网格把预览撑爆」）。 */
+const gmNumpad = FE.gridMetrics(5, 4, 43, 5);
+eq(gmNumpad.colGap, 5, '小网格（numpad 5 列）间隙保持 5px，外观零变化');
+eq(gmNumpad.rowGap, 5, '小网格行间隙保持 5px');
+const gmBig = FE.gridMetrics(48, 15, 43, 5);
+ok(gmBig.colGap < 1, '48 列时间隙自动缩小（实际 ' + gmBig.colGap.toFixed(2) + 'px）');
+ok(gmBig.cellW > 3.73, '48 列单元格比固定间隙时更宽（' + gmBig.cellW.toFixed(2) + 'px > 3.73px）');
+ok((48 - 1) * gmBig.colGap <= gmBig.contentW * 0.10 + 0.01, '间隙总占用不超过可用宽的 10%');
+ok(gmBig.cellH > 0 && gmBig.cellW > 0, '单元格尺寸为正（间隙不会吃成负数）');
+eq(FE.gridMetrics(0, 0, 43, 5).columns, 1, '非法列数回落 1');
+eq(FE.gridMetrics(48, 15, 0, 5).cellW > 0, true, 'unit 为 0 时不产生负尺寸');
+
 /* 破损引用在编译期即被标记 */
 const brokenCmp = FE.compileSections([{ type: 'rows', rows: [[{ ref: 'no.such.key' }]] }], FE.NEUTRAL_STATUS, cmpScope);
 ok(brokenCmp.sections[0].rows[0].keys[0].isBroken === true, '未解析引用标记 isBroken');

@@ -464,6 +464,87 @@ ok(documentStub._openDialogs.length === 1, '点击空格打开按键选择器');
 documentStub._openDialogs[0].close();
 documentStub._openDialogs.length = 0;
 
+console.log('== 回归：大网格不按「网格序号」截断 ==');
+/* 48×15 = 720 格 > 旧上限 400，但跨距键覆盖掉大部分格子，真正生成 DOM 的只有
+ * 612 个节点。旧实现是 `ry * cols + cx >= 400`（按网格序号），会把后 320 格里的
+ * 按键起点一并砍掉 —— 用户反馈的「仅渲染前 400 格」正是这个场景。护栏现在按
+ * 真正生成 DOM 的格数计，这类靠跨距键撑开的键盘必须完整渲染。 */
+FE.mutate(() => {
+  const bigKeys = [];
+  for (let c = 0; c < 48; c += 4) bigKeys.push({ column: c, row: 0, columnSpan: 3, rowSpan: 3, ref: 'rime.1' });
+  /* 这两枚键的网格序号都 >= 400，旧实现下根本不会渲染 */
+  bigKeys.push({ column: 45, row: 14, ref: 'rime.a' });   // 45 + 14*48 = 717
+  bigKeys.push({ column: 47, row: 14, ref: 'rime.b' });   // 719
+  FE.state.profile.layouts['biggrid'] = {
+    sections: [{ type: 'grid', columns: 48, rows: 15, keys: bigKeys }]
+  };
+});
+$('layout-select').value = 'biggrid';
+$('layout-select')._fire('change');
+eq(q('.gedit-key').length, 14, '48×15 网格 14 个按键全部渲染（序号 ≥400 的也在）');
+eq(q('.gedit-empty').length, 610, '空格数 = 720 格 − 跨距覆盖 96 − 按键 14');
+ok(q('.gedit-wrap .status.warn').length === 0, '大网格不再误报「仅渲染前 400 格」');
+/* 覆盖格不该被当成空格渲染：12 枚 3×3 跨距键各覆盖 9 格，其中 1 格是键自身起点 */
+eq(q('.gedit-empty').length + q('.gedit-key').length, 624, '覆盖格被跳过（不加 96 个占位格）');
+documentStub._openDialogs.length = 0;
+q('.gedit-empty')[0].click();
+documentStub._openDialogs[0].close();
+documentStub._openDialogs.length = 0;
+
+/* 护栏本身仍要能拦住病态输入：临时把上限压到 5。
+ * 前 5 个可编辑格是 K(0,0) E(3,0) K(4,0) E(7,0) K(8,0) → 3 键 2 空格。 */
+const savedCap = FE.MAX_GRID_CELLS;
+FE.MAX_GRID_CELLS = 5;
+FE.renderAll();
+eq(q('.gedit-key').length, 3, '上限生效：前 5 个可编辑格里的 3 个按键');
+eq(q('.gedit-empty').length, 2, '上限生效：前 5 个可编辑格里的 2 个空格');
+ok(q('.gedit-wrap .status.warn').length === 1, '被截断时给出提示');
+ok(q('.gedit-wrap .status.warn')[0].textContent.indexOf('未渲染') >= 0, '提示说明其余格未渲染');
+FE.MAX_GRID_CELLS = savedCap;
+FE.renderAll();
+eq(q('.gedit-key').length, 14, '恢复上限后 14 个按键重新渲染');
+
+console.log('== 回归：大网格预览的间距与字号自适应 ==');
+/* 预览是**另一条渲染路径**（buildGridSection），与上面的网格编辑器无关。
+ * 原实现固定 gap:5px + 固定 18px 字号：48 列时 47 个间隙吃掉 57% 宽度，单元格
+ * 仅 3.73px 宽而字号仍是格高的 1.9 倍 → 文字溢出压叠，整块预览糊成一团。 */
+$('layout-select').value = 'biggrid';
+$('layout-select')._fire('change');
+const bigGridEl = q('.kb-grid')[0];
+ok(!!bigGridEl, '大网格预览渲染出 .kb-grid');
+ok(bigGridEl.style.gap !== '5px 5px', '48 列网格的间距不再是固定的 5px（实际 ' + bigGridEl.style.gap + '）');
+const bigSec = FE.state.profile.layouts['biggrid'].sections[0];
+const bigM = FE.gridMetrics(bigSec.columns, bigSec.rows, FE.state.portraitW / 10, 5);
+ok(bigM.colGap < 1, '间距自动收缩到 1px 以下（实际 ' + bigM.colGap.toFixed(2) + 'px）');
+ok((bigSec.columns - 1) * bigM.colGap <= bigM.contentW * 0.10 + 0.01, '间隙总占用 ≤ 可用宽的 10%');
+/* 关键断言：每个键的字号都不得超过**它自己跨距**算出的键框较短边 */
+let fontOverflow = [];
+bigGridEl.querySelectorAll('.kb-key').forEach(function (keyEl) {
+  const lbl = keyEl.querySelectorAll('.kb-label')[0];
+  if (!lbl) return;
+  const fs = parseFloat(String(lbl.style.fontSize));
+  const gc = String(keyEl.style.gridColumn), gr = String(keyEl.style.gridRow);
+  const cs = gc.indexOf('span') >= 0 ? parseInt(gc.split('span')[1], 10) : 1;
+  const rs = gr.indexOf('span') >= 0 ? parseInt(gr.split('span')[1], 10) : 1;
+  const w = bigM.cellW * cs + bigM.colGap * (cs - 1);
+  const h = bigM.cellH * rs + bigM.rowGap * (rs - 1);
+  if (fs > Math.min(w, h)) fontOverflow.push(cs + 'x' + rs + ':' + fs.toFixed(1) + '>' + Math.min(w, h).toFixed(1));
+});
+eq(fontOverflow, [], '没有键的字号溢出自身键框（修复前 1x1 键 18px 字落进 9.7px 格）');
+/* 大键的字应当明显大于小键，而不是被小键的尺寸一起压小 */
+const labelFonts = bigGridEl.querySelectorAll('.kb-label').map(l => parseFloat(String(l.style.fontSize)));
+const fMin = Math.min.apply(null, labelFonts), fMax = Math.max.apply(null, labelFonts);
+ok(fMax > fMin + 3, '3×3 大键字号明显大于 1×1 小键（' + fMax.toFixed(1) + ' vs ' + fMin.toFixed(1) + 'px）');
+/* 小网格必须完全不受影响 */
+$('layout-select').value = 'numpad';
+$('layout-select')._fire('change');
+const numGridEl = q('.kb-grid')[0];
+eq(numGridEl.style.gap, '5px 5px', 'numpad 5×4 间距仍是 5px（小网格外观零变化）');
+eq(q('.kb-key').length, 19, 'numpad 仍渲染 19 键');
+$('layout-select').value = 'default';
+$('layout-select')._fire('change');
+eq(q('.kb-row').length, 4, '回到 default 行布局仍正常');
+
 console.log('== 示例加载（内置 bundle，file:// 可用） ==');
 ok(FE.EXAMPLE_FILES && FE.EXAMPLE_FILES['cc lite.json'], 'bundle 含 cc lite.json');
 $('op-example').value = 'cc lite.json';
