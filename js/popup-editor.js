@@ -451,7 +451,29 @@ function candidateChip(P, schemaName, pk, st, ci, c, arr) {
 function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
   var isNew = ci < 0;
   var kind0 = isNew ? 'text' : FE.popupCandidateKind(cand);
-  var modal = FE.openModal({ title: (isNew ? '添加' : '编辑') + '候选 · ' + pk + ' / ' + (st === 'normal' ? '常规' : 'Shift'), wide: true });
+  /* 可比较快照（纯读取，不触发校验弹窗）：类型 + 各分支的编辑内容。
+   * ⚠️ 返回**原始值**，不要自己 FE.stableJson —— 守卫内部会序列化，
+   * 重复序列化（双重编码）会让「没改」被判成「改了」，把用户拦在确认框里。
+   * actions 分支要连 JSON 片段编辑器的**原文**一起比：用户改的是文本，
+   * 要等点「保存」才写回 draft.actionsArr，只比 draft 会漏判。 */
+  var guard = FE.snapshotGuard(function () {
+    return {
+      kind: kindSel.value,
+      text: draft.text,
+      label: draft.label,
+      action: actionEditor ? actionEditor.getValue() : null,
+      actions: draft.actionsArr,
+      actionsRaw: actionsEditor ? actionsEditor.getValue() : null,
+      actionName: draft.actionName,
+      macro: draft.macro,
+      ref: draft.ref
+    };
+  });
+  var modal = FE.openModal({
+    title: (isNew ? '添加' : '编辑') + '候选 · ' + pk + ' / ' + (st === 'normal' ? '常规' : 'Shift'),
+    wide: true,
+    onBeforeClose: guard.onBeforeClose
+  });
   var draft = { kind: kind0, text: '', label: '', actionObj: null, actionName: '', macro: '', ref: '', actionsArr: null };
   if (!isNew) {
     if (kind0 === 'text') draft.text = String(cand);
@@ -521,6 +543,9 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
   kindSel.addEventListener('change', buildArea);
   buildArea();
 
+  /* 首轮 UI 建好后记基线 */
+  guard.reset();
+
   modal.body.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '类型'), kindSel));
   modal.body.appendChild(area);
 
@@ -533,7 +558,8 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
       }
     }, '删除候选'));
   }
-  modal.toolbar.appendChild(h('button', { type: 'button', onclick: function () { modal.close(); } }, '取消'));
+  /* 「取消」走守卫：有改动先确认 */
+  modal.toolbar.appendChild(h('button', { type: 'button', onclick: function () { modal.requestClose(); } }, '取消'));
   modal.toolbar.appendChild(h('button', {
     type: 'button', class: 'primary',
     onclick: function () {

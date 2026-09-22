@@ -23,14 +23,126 @@ function openModal(opts) {
   form.appendChild(toolbar);
   dlg.appendChild(form);
   document.body.appendChild(dlg);
-  function close() { if (dlg.open) dlg.close(); }
+
+  /* 两种关闭语义，**别再混用**：
+   *   close()        强制关闭。保存/删除成功后、程序化收尾都走它，不触发守卫。
+   *   requestClose() 用户主动关闭（点遮罩 / Esc / 「取消」按钮）。若 opts.onBeforeClose
+   *                  判定有未保存改动，先确认再关。
+   * 历史 bug：点遮罩直接 close()，用户辛苦改的内容**静默丢弃**。 */
+  var confirming = false;   /* 确认框已弹出，避免叠第二个 */
+  function forceClose() { if (dlg.open) dlg.close(); }
+  /* 问一次「要不要丢弃改动」。返回值有三种，**调用方三种都要处理**：
+   *   true  无改动 → 可立即离开。必须是**同步**的：跳转类操作若被推迟一帧，
+   *         用户看到的是「点了没反应」（曾有测试因此变红）；
+   *   false 守卫明确拒绝（如已有确认框在弹）；
+   *   Promise<boolean> 有改动 → 已弹确认框，等用户选择。
+   * 本函数不关闭对话框：谁来关、关完做什么，由调用方决定。 */
+  function confirmDiscard() {
+    var verdict;
+    try { verdict = opts.onBeforeClose ? opts.onBeforeClose() : true; }
+    catch (e) { verdict = true; }        /* 守卫自身出错不该把用户锁在框里 */
+    if (verdict === false) return false;
+    if (verdict && typeof verdict.then === 'function') {
+      return verdict.then(function (v) { return v !== false; });
+    }
+    return true;
+  }
+  /* 拿到许可后执行 action：无改动同步执行，有改动则等用户确认后再执行 */
+  function leaveThen(action) {
+    var v = confirmDiscard();
+    if (v === true) { action(); return; }
+    if (v === false) return;
+    v.then(function (ok) { if (ok) action(); }, function () { /* 确认框异常：保持打开 */ });
+  }
+  function requestClose() {
+    if (confirming) return;
+    var v = confirmDiscard();
+    if (v === true) { forceClose(); return; }
+    if (v === false) return;
+    confirming = true;
+    v.then(function (ok) { confirming = false; if (ok) forceClose(); },
+           function () { confirming = false; });
+  }
   dlg.addEventListener('close', function () { dlg.remove(); if (opts.onClose) opts.onClose(); });
-  dlg.addEventListener('click', function (e) { if (e.target === dlg) close(); });
+  dlg.addEventListener('click', function (e) { if (e.target === dlg) requestClose(); });
+  /* Esc 默认会让 <dialog> 直接关闭：必须拦下来走同一条守卫路径 */
+  dlg.addEventListener('cancel', function (e) { e.preventDefault(); requestClose(); });
   form.addEventListener('submit', function (e) { e.preventDefault(); });
   dlg.showModal();
-  return { el: dlg, body: body, toolbar: toolbar, close: close };
+  return {
+    el: dlg, body: body, toolbar: toolbar,
+    close: forceClose, requestClose: requestClose,
+    /* 跳转类按钮用这个：无改动**同步**执行 action（避免「点了没反应」），
+     * 有改动才等确认。直接用 confirmDiscard() 会踩到「无改动返回 true
+     * 而非 Promise」的坑。 */
+    leaveThen: leaveThen
+  };
 }
 FE.openModal = openModal;
+
+/* ================================================================
+ * 未保存改动的守卫
+ * 用户点遮罩 / 按 Esc / 点「取消」时，若有改动就先确认，别静默丢弃。
+ * ================================================================ */
+/* 与键序无关的稳定序列化：编辑前后对象键序可能不同（重建表单会重排），
+ * 直接 JSON.stringify 会把「没改」误判成「改了」。
+ * undefined 要单独编码 —— JSON.stringify(undefined) 是 undefined 而非字符串，
+ * 而「继承（undefined）」与「显式清除（null）」是两种不同语义，必须能区分。 */
+function stableJson(v) {
+  if (v === undefined) return '\u0000u';
+  if (v === null) return 'null';
+  if (Array.isArray(v)) return '[' + v.map(stableJson).join(',') + ']';
+  if (FE.isPlainObject(v)) {
+    return '{' + Object.keys(v).sort().map(function (k) {
+      return JSON.stringify(k) + ':' + stableJson(v[k]);
+    }).join(',') + '}';
+  }
+  return JSON.stringify(v);
+}
+FE.stableJson = stableJson;
+
+/* 生成一个 onBeforeClose：baseline 是打开时的快照，current 是当下的值。
+ * ⚠️ `current()` 必须返回**原始值**（对象/数组/字符串），不要自己先 stableJson ——
+ * 本函数内部会做稳定序列化；外面再序列化一次就成了双重编码，两边永远不相等，
+ * 于是「没改」也被判成「改了」，守卫会把用户拦在确认框里。
+ * 返回 true（可直接关）/ false（不该关）/ Promise<boolean>（问过用户了）。 */
+FE.makeDiscardGuard = function (baseline, current, opts) {
+  opts = opts || {};
+  return function () {
+    var now;
+    try { now = stableJson(current()); } catch (e) { return true; }  /* 取不到就当没改，别卡住用户 */
+    if (now === baseline) return true;
+    return FE.uiConfirm(opts.message || '此对话框有未保存的改动，关闭将丢弃它们。', {
+      title: opts.title || '放弃改动？',
+      okLabel: opts.okLabel || '放弃改动',
+      cancelLabel: opts.cancelLabel || '继续编辑',
+      danger: true
+    });
+  };
+};
+
+/* 一步到位：把一个「返回原始值的快照函数」变成 onBeforeClose。
+ * 同时管好 baseline，避免调用方各自 stableJson 时再踩双重编码的坑。
+ * 返回 { onBeforeClose, note }：note() 用于表单重建后重新记基线（可选）。 */
+FE.snapshotGuard = function (snapFn, opts) {
+  var baseline = null;
+  return {
+    onBeforeClose: function () {
+      if (baseline == null) return true;      /* 还没建好，无可丢内容 */
+      return FE.makeDiscardGuard(baseline, snapFn, opts)();
+    },
+    /* 首轮建好后调用，记为基线。
+     * 快照函数抛错时**不往外抛**：reset() 是在对话框刚建好、工具栏还没接上时调用的，
+     * 抛出去会把整个打开流程打断（用户看到半截对话框）。取不到基线就视同
+     * 「无可丢内容」，与 onBeforeClose 取不到当前值时的做法一致：宁可少拦，不锁住用户。 */
+    reset: function () {
+      try { baseline = stableJson(snapFn()); }
+      catch (e) { baseline = null; }
+    },
+    hasBaseline: function () { return baseline != null; }
+  };
+};
+
 
 /* ================================================================
  * 网页内建提示 / 确认 / 输入框（替代 alert / confirm / prompt）
@@ -692,7 +804,27 @@ FE.openGestureDialog = function (opts) {
     'swipe.left': '左滑（swipe.left）', 'swipe.right': '右滑（swipe.right）',
     longPress: '长按（longPress）', hold: '按住（hold）'
   };
-  var modal = openModal({ title: '编辑手势 · ' + (names[slot] || slot) });
+  var guard = FE.snapshotGuard(function () {
+    return {
+      mode: modeSel.value,
+      ref: refName,
+      actionName: actionName,
+      macro: macroName,
+      label: labelInp.value,
+      hint: hintInp.value,
+      popup: popupSel.value,
+      repeat: repeatChk.checked,
+      popupKey: popupKeyInp.value,
+      direct: area._editor ? area._editor.getValue() : null,
+      start: startEditor ? startEditor.getValue() : null,
+      end: endEditor ? endEditor.getValue() : null
+    };
+  });
+  var modal = openModal({
+    title: '编辑手势 · ' + (names[slot] || slot),
+    /* 有改动时点遮罩 / Esc / 「取消」要先确认 */
+    onBeforeClose: guard.onBeforeClose
+  });
 
   var mode;
   if (g == null) mode = 'inherit';
@@ -830,7 +962,13 @@ FE.openGestureDialog = function (opts) {
             onclick: function () {
               var k = popupKeyInp.value.trim();
               if (!k) { FE.uiAlert('请先填写弹出菜单键 popupKey'); return; }
-              if (FE.jumpToPopupEditor) { modal.close(); FE.jumpToPopupEditor(k); }
+              /* 跳走同样会丢掉当前改动，走一样的守卫。
+               * 用 leaveThen 而非 confirmDiscard().then()：后者在「无改动」时
+               * 返回的是 true 而不是 Promise，.then() 会直接报错。 */
+              modal.leaveThen(function () {
+                modal.close();
+                if (FE.jumpToPopupEditor) FE.jumpToPopupEditor(k);
+              });
             }
           }, '编辑弹出菜单候选 →')));
       }
@@ -845,11 +983,15 @@ FE.openGestureDialog = function (opts) {
   modeSel.addEventListener('change', buildArea);
   buildArea();
 
+  /* 首轮 UI 建好后记基线：此后任何改动都能被 onBeforeClose 看出来 */
+  guard.reset();
+
   modal.toolbar.appendChild(h('button', {
     type: 'button', class: 'danger',
     onclick: function () { modal.close(); opts.onChange(null); }
   }, '清除（置 null 屏蔽继承）'));
-  modal.toolbar.appendChild(h('button', { type: 'button', onclick: function () { modal.close(); } }, '取消'));
+  /* 「取消」走守卫：有改动先确认 */
+  modal.toolbar.appendChild(h('button', { type: 'button', onclick: function () { modal.requestClose(); } }, '取消'));
   modal.toolbar.appendChild(h('button', {
     type: 'button', class: 'primary',
     onclick: function () {
@@ -908,7 +1050,24 @@ FE.openGestureDialog = function (opts) {
  * ================================================================ */
 FE.openVariantDialog = function (opts) {
   var v = FE.isPlainObject(opts.variant) ? FE.deepClone(opts.variant) : {};
-  var modal = openModal({ title: '编辑状态变体' });
+  var guard = FE.snapshotGuard(function () {
+    var conds = {};
+    ['composing', 'ascii_mode', 'disabled'].forEach(function (c) { conds[c] = condSels[c].value; });
+    return {
+      conds: conds,
+      ref: refName,
+      label: labelInp.value,
+      shiftedLabel: shiftedInp.value,
+      /* tapValue 的 undefined（未设置）与 null（显式清除）是两种语义，
+       * stableJson 会分别编码，不会被当成同一个值 */
+      tap: tapValue,
+      extra: extraTa.value
+    };
+  });
+  var modal = openModal({
+    title: '编辑状态变体',
+    onBeforeClose: guard.onBeforeClose
+  });
 
   var condSels = {};
   var condBox = h('div', { class: 'form-row form-inline' });
@@ -969,7 +1128,9 @@ FE.openVariantDialog = function (opts) {
   modal.body.appendChild(h('div', { class: 'form-row' },
     h('label', { class: 'mini-label' }, '其他字段 JSON（如 weight、icon、modifier 等，可选）'), extraTa));
 
-  modal.toolbar.appendChild(h('button', { type: 'button', onclick: function () { modal.close(); } }, '取消'));
+  /* 「取消」走守卫：有改动先确认 */
+  guard.reset();
+  modal.toolbar.appendChild(h('button', { type: 'button', onclick: function () { modal.requestClose(); } }, '取消'));
   modal.toolbar.appendChild(h('button', {
     type: 'button', class: 'primary',
     onclick: function () {
@@ -1020,16 +1181,26 @@ FE.openKeyDialog = function (opts) {
     draft = FE.deepClone((state.profile.keys || {})[opts.name] || {});
   }
 
+  /* 未保存改动的守卫。快照函数返回**原始值**（由 snapshotGuard 内部序列化）——
+   * 自己先 stableJson 会双重编码，导致「没改」被误判成「改了」。 */
+  var guard = FE.snapshotGuard(function () {
+    if (!isPlacement && nameInput) {
+      return { def: draft, name: String(nameInput.value) };  // 定义模式改名也算改动
+    }
+    return draft;
+  });
   var modal = openModal({
     title: isPlacement
       ? '编辑按键' + (opts.grid ? '（网格）' : '')
       : '编辑按键定义',
-    wide: true
+    wide: true,
+    /* 点遮罩 / Esc / 「取消」前先问一句：有未保存改动就别静默丢弃 */
+    onBeforeClose: guard.onBeforeClose
   });
   var formHost = h('div');
   modal.body.appendChild(formHost);
 
-  var nameInput = null; // definition 模式下可改名
+  var nameInput = null;  // definition 模式下可改名
 
   function effObj() {
     return FE.evalPlacement(draft, FE.NEUTRAL_STATUS).eff;
@@ -1570,17 +1741,28 @@ FE.openKeyDialog = function (opts) {
     ab.appendChild(h('button', {
       type: 'button', class: 'mini-button',
       onclick: function () {
-        var m2 = openModal({ title: '编辑原始 JSON', wide: true });
-        var ed = FE.buildJsonSnippetEditor({
+        var ed = null;
+        /* baseline 必须是「原始值→序列化」的唯一入口（由守卫内部做）。
+         * 早期写成 `jsonBaseline = ed.getValue()`（原始字符串）再交给守卫，
+         * 守卫会把它当对象再序列化一次 → 两边永远不等 → 没改也被判成改了。 */
+        var guard = FE.snapshotGuard(function () { return ed ? ed.getValue() : null; },
+          { message: '原始 JSON 有未应用的改动，关闭将丢弃它们。' });
+        var m2 = openModal({
+          title: '编辑原始 JSON', wide: true,
+          /* 改了 JSON 又直接点遮罩/Esc 关掉 = 白写，先问一句 */
+          onBeforeClose: guard.onBeforeClose
+        });
+        ed = FE.buildJsonSnippetEditor({
           value: JSON.stringify(draft, null, 2),
           rows: 14,
           applyOnBlur: false,   /* 由对话框的「应用」按钮决定何时生效 */
           applyAfterFix: false
         });
+        guard.reset();
         m2.body.appendChild(ed.el);
         m2.body.appendChild(h('div', { class: 'status' },
           '支持一键修复：多余尾逗号、注释、单引号字符串、未加引号的键名、全角标点等。'));
-        m2.toolbar.appendChild(h('button', { type: 'button', onclick: function () { m2.close(); } }, '取消'));
+        m2.toolbar.appendChild(h('button', { type: 'button', onclick: function () { m2.requestClose(); } }, '取消'));
         m2.toolbar.appendChild(h('button', {
           type: 'button', class: 'primary',
           onclick: function () {
@@ -1704,7 +1886,11 @@ FE.openKeyDialog = function (opts) {
         h('button', {
           type: 'button', class: 'mini-button',
           onclick: function () {
-            if (FE.jumpToPopupEditor) { modal.close(); FE.jumpToPopupEditor(pk); }
+            /* 跳走同样会丢掉当前改动，走一样的守卫（leaveThen：无改动时同步放行） */
+            modal.leaveThen(function () {
+              modal.close();
+              if (FE.jumpToPopupEditor) FE.jumpToPopupEditor(pk);
+            });
           }
         }, '到弹出菜单页编辑 →')));
     }
@@ -1715,6 +1901,9 @@ FE.openKeyDialog = function (opts) {
     FE.installPendingColorPickers(formHost);
   }
   buildForm();
+  /* 首轮表单建好后记下基线：此后任何改动都能被 onBeforeClose 看出来。
+   * 放在 buildForm() 之后是因为定义模式下 nameInput 要到那时才存在。 */
+  guard.reset();
 
   /* ---------- 工具栏 ---------- */
   if (isPlacement) {
@@ -1731,7 +1920,8 @@ FE.openKeyDialog = function (opts) {
       }
     }, '删除按键'));
   }
-  modal.toolbar.appendChild(h('button', { type: 'button', onclick: function () { modal.close(); } }, '取消'));
+  /* 「取消」= 用户主动关闭：走守卫，有改动先确认 */
+  modal.toolbar.appendChild(h('button', { type: 'button', onclick: function () { modal.requestClose(); } }, '取消'));
   modal.toolbar.appendChild(h('button', {
     type: 'button', class: 'primary',
     onclick: function () {

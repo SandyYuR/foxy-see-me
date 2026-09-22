@@ -263,11 +263,22 @@ FE.buildMacroStepEditor = function (steps, opts) {
       var s = FE.macroValueToStep(v, d.form);
       return s === null ? d.raw : s;
     })();
-    var modal = FE.openModal({ title: '步骤 ' + (i + 1) + ' 原始 JSON', wide: true });
-    var snip = FE.buildJsonSnippetEditor({
+    var snip = null;
+    /* baseline 由守卫内部序列化，**别自己先转字符串**：早期写成
+     * `jsonBaseline = snip.getValue()` 再交给守卫，守卫会把它当对象再序列化一次
+     * → 两边永远不等 → 没改也被判成改了，用户被白弹确认框。 */
+    var guard = FE.snapshotGuard(function () { return snip ? snip.getValue() : null; },
+      { message: '步骤 JSON 有未保存的改动，关闭将丢弃它们。' });
+    var modal = FE.openModal({
+      title: '步骤 ' + (i + 1) + ' 原始 JSON', wide: true,
+      /* 改了 JSON 又点遮罩/Esc 关掉 = 白写，先问一句 */
+      onBeforeClose: guard.onBeforeClose
+    });
+    snip = FE.buildJsonSnippetEditor({
       value: JSON.stringify(cur, null, 2),
       rows: 8, applyOnBlur: false, applyAfterFix: false, onApply: function () {}
     });
+    guard.reset();
     modal.body.appendChild(h('div', { class: 'dialog-hint' },
       '支持尾逗号 / 注释等自动修复。保存后该步骤按新内容重建控件。'));
     modal.body.appendChild(snip.el);
@@ -383,11 +394,20 @@ FE.buildActionDefEditor = function (name, spec, opts) {
   }
 
   function openActionJson() {
-    var modal = FE.openModal({ title: '动作 “' + name + '” 原始 JSON', wide: true });
-    var snip = FE.buildJsonSnippetEditor({
+    var snip = null;
+    /* 同 openStepJson：baseline 交给守卫序列化，别自己先转字符串（会双重编码） */
+    var guard = FE.snapshotGuard(function () { return snip ? snip.getValue() : null; },
+      { message: '动作 JSON 有未保存的改动，关闭将丢弃它们。' });
+    var modal = FE.openModal({
+      title: '动作 “' + name + '” 原始 JSON', wide: true,
+      /* 改了 JSON 又点遮罩/Esc 关掉 = 白写，先问一句 */
+      onBeforeClose: guard.onBeforeClose
+    });
+    snip = FE.buildJsonSnippetEditor({
       value: JSON.stringify(ed.getValue(), null, 2),
       rows: 8, applyOnBlur: false, applyAfterFix: false, onApply: function () {}
     });
+    guard.reset();
     modal.body.appendChild(h('div', { class: 'dialog-hint' },
       '支持尾逗号 / 注释等自动修复。保存后整块替换该动作（可换成与当前控件不同的形状）。'));
     modal.body.appendChild(snip.el);

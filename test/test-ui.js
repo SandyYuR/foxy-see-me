@@ -336,6 +336,27 @@ ok(gdlg.textContent.indexOf('上滑') >= 0, '标题正确');
 gdlg.close();
 documentStub._openDialogs.length = 0;
 
+/* 所有编辑类弹框都必须接上守卫：漏接一个，那个弹框就又会静默丢弃改动。
+ * 这里只做「接线存在性」的冒烟检查，逐项行为在主对话框那组断言里覆盖。 */
+console.log('== 守卫已接入各编辑弹框（冒烟） ==');
+{
+  const cases = [
+    ['手势', function () { FE.openGestureDialog({ slot: 'tap', gesture: null, onChange: function () {} }); }],
+    ['状态变体', function () { FE.openVariantDialog({ variant: null, onChange: function () {} }); }]
+  ];
+  cases.forEach(function (c) {
+    documentStub._openDialogs.length = 0;
+    c[1]();
+    const d = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+    ok(!!d, c[0] + '对话框可打开');
+    /* 未改动时应能直接关闭（守卫放行），若守卫写坏了会卡住不放 */
+    d._fire('click', { target: d });
+    ok(!d.open, c[0] + '对话框未改动时点遮罩可直接关闭');
+    eq(dialogCount(), 0, c[0] + '未改动不弹确认框');
+  });
+  documentStub._openDialogs.length = 0;
+}
+
 console.log('== 自动保存草稿 ==');
 const draft = JSON.parse(localStorageStub.getItem('foxy-layout-editor-draft-v1'));
 ok(draft && draft.profile && draft.profile.layouts, '草稿已保存');
@@ -938,6 +959,124 @@ kdRaw.querySelectorAll('.dialog-toolbar .primary')[0].click(); /* 保存按键�
 eq(FE.state.profile.keys['qwerty.q'].label, '修复测试', '修复后的 JSON 写入 profile');
 $('op-undo').click();
 eq(FE.state.profile.keys['qwerty.q'].label, undefined, '撤销恢复按键定义');
+documentStub._openDialogs.length = 0;
+
+console.log('== 未保存改动的守卫：点遮罩 / Esc / 取消 ==');
+/* 历史 bug：改了内容后点到弹框外面（或按 Esc），对话框直接关闭，改动静默丢弃。
+ * openModal 现在把「用户主动关闭」统一走 requestClose → onBeforeClose；
+ * 「保存 / 删除」等程序化收尾仍走 close()，不触发守卫。 */
+/* 找定义模式对话框里的「标签」输入框（placeholder 以「本地覆盖」开头） */
+function findLabelInput(dlg) {
+  return dlg.querySelectorAll('input').find(function (i) {
+    return (i.getAttribute('placeholder') || '').indexOf('本地覆盖') === 0;
+  });
+}
+/* 输入并提交：真实浏览器里点遮罩会先让输入框失焦 → 触发 change，
+ * draft 才被更新；DOM 桩不会自动做这件事，所以测试要显式 fire change。
+ * （只改 .value 不 fire，等于用户还没提交输入，守卫看不到改动是正确行为。） */
+function typeInto(input, val) {
+  input.value = val;
+  input._fire('change');
+}
+
+/* ① 未改动：点遮罩应**直接关闭**，不该弹确认框 */
+documentStub._openDialogs.length = 0;
+FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+{
+  const d = documentStub._openDialogs[0];
+  ok(!!findLabelInput(d), '定位到标签输入框');
+  d._fire('click', { target: d });
+  ok(!d.open, '未改动时点遮罩直接关闭');
+  eq(dialogCount(), 0, '未改动不弹确认框');
+}
+
+/* ② 有改动：点遮罩 → 弹确认框，弹框保持打开 */
+documentStub._openDialogs.length = 0;
+FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+{
+  const d2 = documentStub._openDialogs[0];
+  const lbl = findLabelInput(d2);
+  typeInto(lbl, '改过了');
+  d2._fire('click', { target: d2 });
+  ok(d2.open, '有改动时点遮罩不会直接关闭');
+  const cd = lastDialog();
+  ok(!!cd && cd !== d2, '弹出确认框');
+  ok(cd.textContent.indexOf('未保存') >= 0, '确认框说明有未保存改动');
+  ok(cd.textContent.indexOf('放弃改动') >= 0, '确认框提供「放弃改动」');
+  ok(cd.textContent.indexOf('继续编辑') >= 0, '确认框提供「继续编辑」');
+
+  /* 选「继续编辑」→ 弹框保持打开，改动仍在 */
+  await uiCancel();
+  ok(d2.open, '选「继续编辑」后弹框保持打开');
+  eq(lbl.value, '改过了', '改动仍在（没有被丢弃）');
+
+  /* 再试一次并选「放弃改动」→ 关闭 */
+  documentStub._openDialogs.length = 0;
+  d2._fire('click', { target: d2 });
+  ok(!!lastDialog(), '再次弹确认框');
+  await uiOk();
+  ok(!d2.open, '选「放弃改动」后关闭');
+  eq(FE.state.profile.keys['qwerty.q'].label, undefined, '放弃后改动未写入 profile');
+}
+
+/* ③ Esc 也要拦下来（<dialog> 默认会自己关掉，必须 preventDefault 后接管） */
+documentStub._openDialogs.length = 0;
+FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+{
+  const d3 = documentStub._openDialogs[0];
+  typeInto(findLabelInput(d3), 'esc改');
+  const notPrevented = d3._fire('cancel');
+  eq(notPrevented, false, 'Esc 被 preventDefault（由我们接管关闭）');
+  ok(d3.open, 'Esc 有改动时也不直接关闭');
+  ok(!!lastDialog() && lastDialog() !== d3, 'Esc 同样弹确认框');
+  await uiCancel();
+  ok(d3.open, 'Esc 后选「继续编辑」保持打开');
+  d3.close();                    /* 程序化收尾，不触发守卫 */
+}
+
+/* ④「取消」按钮同样走守卫 */
+documentStub._openDialogs.length = 0;
+FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+{
+  const d4 = documentStub._openDialogs[0];
+  typeInto(findLabelInput(d4), '取消改');
+  d4.querySelectorAll('.dialog-toolbar button').find(b => b.textContent === '取消').click();
+  ok(d4.open, '「取消」按钮走守卫，不直接关闭');
+  await uiOk();
+  ok(!d4.open, '确认放弃后关闭');
+}
+
+/* ⑤ 改名也算改动（nameInput 不在 draft 里，容易漏） */
+documentStub._openDialogs.length = 0;
+FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+{
+  const d5 = documentStub._openDialogs[0];
+  const nameInp = d5.querySelectorAll('input').find(function (i) {
+    return i.getAttribute('placeholder') === '按键定义名称';
+  });
+  ok(!!nameInp, '定位到名称输入框');
+  nameInp.value = 'renamed.q';   /* nameInput 直接读 DOM 值，无需 change */
+  d5._fire('click', { target: d5 });
+  ok(d5.open, '只改名字也会被守卫拦住');
+  ok(!!lastDialog() && lastDialog() !== d5, '改名同样弹确认框');
+  await uiOk();
+  ok(!d5.open, '放弃改名后关闭');
+}
+
+/* ⑥ 保存不受守卫影响：点「保存」直接关闭，且不弹确认框 */
+documentStub._openDialogs.length = 0;
+FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+{
+  const d6 = documentStub._openDialogs[0];
+  const lbl6 = findLabelInput(d6);
+  typeInto(lbl6, '保存不拦');
+  d6.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  ok(!d6.open, '点「保存」直接关闭（不触发守卫）');
+  eq(dialogCount(), 0, '保存后没有多余的确认框');
+  eq(FE.state.profile.keys['qwerty.q'].label, '保存不拦', '保存正常写入');
+  $('op-undo').click();
+  eq(FE.state.profile.keys['qwerty.q'].label, undefined, '撤销恢复');
+}
 documentStub._openDialogs.length = 0;
 
 console.log('== 按键颜色 jscolor 取色（f5a-see-me 同款） ==');

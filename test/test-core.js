@@ -1126,5 +1126,65 @@ ok(FE.usageOf(cyc, 'action', 'y').items.some(i => i.loc), '环中的动作仍能
 eq(FE.buildRefIndex(null, null), { key: {}, action: {}, macro: {} }, '空输入返回空索引');
 eq(FE.buildRefIndex({}, undefined).key, {}, '缺 popupProfile 不报错');
 
+/* ================================================================
+ * 未保存改动的守卫（弹框关闭前确认）
+ * 历史 bug：点遮罩/Esc 直接关闭，用户辛苦改的内容静默丢弃。
+ * ================================================================ */
+console.log('== 未保存改动的守卫 ==');
+/* stableJson：与键序无关。重建表单会重排键序，若直接用 JSON.stringify，
+ * 「没改」也会被判成「改了」→ 用户被白弹确认框。 */
+eq(FE.stableJson({ a: 1, b: 2 }), FE.stableJson({ b: 2, a: 1 }), '键序不同视为相等');
+ok(FE.stableJson({ a: 1 }) !== FE.stableJson({ a: 2 }), '值不同视为不等');
+ok(FE.stableJson({ x: undefined }) !== FE.stableJson({ x: null }),
+  'undefined（继承）与 null（显式清除）必须可区分');
+eq(FE.stableJson({ x: undefined }), FE.stableJson({ x: undefined }), 'undefined 可稳定比较');
+eq(FE.stableJson({ a: [{ y: 1, x: 2 }] }), FE.stableJson({ a: [{ x: 2, y: 1 }] }), '嵌套对象同样键序无关');
+eq(FE.stableJson([1, 2]), '[1,2]', '数组序列化');
+eq(FE.stableJson(undefined), FE.stableJson(undefined), '裸 undefined 可比较');
+
+/* snapshotGuard：未改动时必须**同步**返回 true（而非 Promise）。
+ * 若未改动也返回 Promise，「跳转」类操作会被推迟一帧 → 用户看到「点了没反应」
+ * （这个坑曾被 test-ui 的「跳转到弹出菜单页」断言抓住）。 */
+{
+  const origConfirm = FE.uiConfirm;
+  let asked = 0;
+  FE.uiConfirm = function () { asked++; return Promise.resolve(true); };
+
+  let v = { label: 'a' };
+  const g = FE.snapshotGuard(function () { return v; });
+  eq(g.hasBaseline(), false, 'guard 初始无基线');
+  eq(g.onBeforeClose(), true, '还没 reset（表单未建好）时直接放行');
+
+  g.reset();
+  eq(g.hasBaseline(), true, 'reset 后有基线');
+  eq(g.onBeforeClose(), true, '未改动时同步放行，返回 true 而非 Promise');
+  eq(asked, 0, '未改动不弹确认框');
+
+  v = { label: 'b' };
+  const r = g.onBeforeClose();
+  eq(typeof r.then, 'function', '有改动时返回 Promise（等用户确认）');
+  eq(asked, 1, '有改动弹一次确认框');
+
+  /* 再次调用（用户还在犹豫）应再问一次，而不是静默放行 */
+  g.onBeforeClose();
+  eq(asked, 2, '再次请求关闭会再问一次');
+
+  /* 用户选择「继续编辑」→ Promise 解析为 false（不放行）。
+   * ⚠️ 这里只断言 Promise 本身，**不要**在 .then 里写断言：test-core.js 是纯同步的，
+   * 末尾 process.exit 会在微任务执行前退出，那样的断言永远不会运行（假绿灯）。
+   * 「点取消/确认后的真实放行行为」由 test-ui.js 的 async 用例覆盖。 */
+  FE.uiConfirm = function () { return Promise.resolve(false); };
+  const rCancel = g.onBeforeClose();
+  eq(typeof rCancel.then, 'function', '取消路径也返回 Promise');
+
+  FE.uiConfirm = origConfirm;
+}
+/* 守卫自身抛错不应把用户锁死在对话框里（宁可放行） */
+{
+  const g = FE.snapshotGuard(function () { throw new Error('boom'); });
+  g.reset();
+  eq(g.onBeforeClose(), true, '快照函数抛错时放行，不卡住用户');
+}
+
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
 process.exit(failed ? 1 : 0);

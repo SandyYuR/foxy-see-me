@@ -4,7 +4,7 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 404 / UI 660 / 真实文件体检 18 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 421 / UI 693 / 真实文件体检 18 个示例 0 错误。
 
 ### ⚠️ 本文件有两份，必须保持一致
 
@@ -126,7 +126,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **404 core + 660 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **421 core + 693 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -468,6 +468,43 @@ tooltip 由 `itemTooltip(item, shift)` 生成（读 `item.summaries` / `item.hin
 **别退回固定 gap / 固定字号。**
 
 ### 4.5 对话框（key-dialog.js）
+
+#### ⭐ 关闭语义：`close()` vs `requestClose()`（别混用）
+
+`openModal` 返回 `{el, body, toolbar, close, requestClose, leaveThen}`，**两种关闭语义刻意分开**：
+
+| 方法 | 用途 | 是否问「有未保存改动」 |
+|---|---|---|
+| `close()` | **程序化收尾**：保存成功、删除成功、跳转前已确认 | ❌ 不问，直接关 |
+| `requestClose()` | **用户主动关闭**：点遮罩 / Esc / 「取消」按钮 | ✅ 有改动先弹确认框 |
+| `leaveThen(fn)` | 跳转类按钮：拿到许可再 `fn()`（内部先关框再跳） | ✅ 同上，但**无改动时同步执行** |
+
+历史 bug（别再改回去）：点遮罩的处理器直接 `close()`，用户辛苦改的内容**静默丢弃**。
+现在点遮罩与 Esc 都走 `requestClose`；Esc 必须 `preventDefault()`（`<dialog>` 默认会自己关掉）。
+
+**改动检测**（`key-dialog.js` 顶部）：
+
+- `FE.stableJson(v)` —— **与键序无关**的稳定序列化。重建表单会重排键序，直接用
+  `JSON.stringify` 会把「没改」误判成「改了」，用户被白弹确认框。
+  单独编码 `undefined`：它与 `null` 是两种语义（继承 vs 显式清除），必须能区分。
+- `FE.snapshotGuard(snapFn, opts)` → `{onBeforeClose, reset, hasBaseline}`。
+  `snapFn()` 返回**原始值**，`reset()` 在建好表单后记基线。
+
+⚠️ **三个坑**（都踩过，测试能抓住）：
+
+1. **别双重编码**：`snapFn` 里不要再 `stableJson` —— 守卫内部会做，重复序列化后
+   两边永不相等，「没改」被判成「改了」（test-ui 的「跳转到弹出菜单页」断言曾因此变红）。
+2. **无改动必须同步放行**：`onBeforeClose` 返回 `true`（同步）而非 `Promise`，
+   否则跳转类操作被推迟一帧，用户看到「点了没反应」。
+3. **`reset()` 必须容错**：它在对话框刚建好、工具栏还没接上时调用，快照函数抛错
+   会把打开流程整个打断（用户看到半截对话框）。宁可少拦，不锁住用户。
+
+已接入守卫的弹框：主按键对话框（含改名）、手势、状态变体、原始 JSON（按键/步骤/动作）、
+弹出菜单候选。**新增编辑类弹框时务必接上**，否则它又会静默丢弃改动。
+
+> 测试注意：DOM 桩**不会**像真实浏览器那样在点遮罩时让输入框失焦 → 触发 `change`，
+> 所以测试要显式 `input.value = x; input._fire('change')`（见 `test-ui.js` 的 `typeInto`）。
+> 只改 `.value` 不 fire，`draft` 并未更新，守卫看不到改动是**正确**行为。
 
 - `openModal({title, wide})` → `{el, body, toolbar, close}`；`FE.openModal` 已导出。
 - `FE.openKeyDialog({mode:'placement'|'definition', placement?, name?, location?, grid?})`
@@ -953,8 +990,8 @@ cd foxy-editor
 node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
-node test/test-core.js       # 期望：404 通过, 0 失败
-node test/test-ui.js         # 期望：660 通过, 0 失败
+node test/test-core.js       # 期望：421 通过, 0 失败
+node test/test-ui.js         # 期望：693 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
 node test/check-real-files.js   # 期望：共 18 个文件，0 个存在错误
@@ -977,6 +1014,6 @@ node tools/check-agent-sync.js --write
 
 ### 版本信息（改动可能影响这些对外说法）
 
-- 测试基线：core **404** / UI **660** / 示例 **18**（15 布局 + 3 弹出菜单）
+- 测试基线：core **421** / UI **693** / 示例 **18**（15 布局 + 3 弹出菜单）
 - 仓库 `README.md` 里的功能描述与 `index.html` 的图例，与实现同步维护；
   新增用户可见功能时一并更新，避免文档漂移。
