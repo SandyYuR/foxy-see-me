@@ -340,6 +340,20 @@ data.js → default-profile.js → examples-bundle.js → app.js
 - **`text_editor` 布局**：必须恰好 1 个 rows 区段、恰好 1 行，否则报错（Foxy 会回退内置编辑行）
 - 动作类型/字段/引用（`validateAction`）、宏步骤引用、`checkGestureRefs`
 
+#### 有意保留的偏差：`action` 允许写成数组
+
+新版 `skills/SKILL.md` 说「单数 `action` 字段只含一个动作表达式，**不得**含数组；
+空动作序列请用 `actions: []`」。但本仓库 **9 个示例布局正在用 `action: []`**
+（`cangjie.json` / `cc lite.json` / `layout-variant.json` 等，都是可用的真实文件）。
+
+因此 `checkGestureRefs` **继续接受**数组形式的 `action`（空数组与非空数组都校验内部元素）：
+
+- 若判为 `err`：这些既有示例会立刻报错；而它们在实际 Foxy 上能用，属误报。
+- 若判为 `warn`：`test-core.js` 的 `eq(ccv.warnings, [], 'cc lite.json 校验无警告')` 会红，
+  且给可用文件加噪音提示，违背 D7「宁可少报，不要乱报」。
+
+**结论：不改行为。** 想改这一条时必须同时处理那 9 个示例与上述断言，别只改校验器。
+
 加校验时：**错误用 `err(...)`，可疑但合法用 `warn(...)`**。消息里带上布局名/区段/行号，
 现有消息格式是 `布局 “xxx” 区段 1 行 2 按键 3 ...`，保持一致。
 
