@@ -132,7 +132,7 @@ foxy-editor/
 │   ├── key-dialog.js     按键 / 手势 / 动作 / 变体对话框
 │   └── popup-editor.js   弹出菜单编辑
 ├── examples/             示例布局与弹出菜单
-├── skills/               格式规范（随仓库分发的 skill 文档）
+├── skills/               格式规范（随仓库分发的 skill 文档 + 3 个 JSON Schema）
 ├── AGENT.md              改这个编辑器之前先读（决断 / 约定 / 坑 / 工作流）
 ├── tools/
 │   ├── build-examples.js     重新生成 examples-bundle.js
@@ -163,9 +163,10 @@ node test/check-real-files.js # 用真实示例文件跑一遍体检
   如果它们和一个 `definitions.json` 放在同一个文件夹里，用「导入 JSON」选中 `definitions.json`
 （或一次多选几个文件）即可一次读全，会自动合并与关联。
 
-格式依据 Foxy Layout File v0.0.1，完整参考见 [`skills/`](skills/)：
-`skills/DEFAULT_LAYOUT_V0.0.1.md`（完整规范）、`skills/SKILL.md`（面向 AI 的编辑技能说明）、
-`skills/FOXY_JSON_CONFIGS.md`（三种 Foxy JSON 的 `type` 判别与共享 definitions）。
+格式完整参考见 [`skills/`](skills/)：
+`skills/SKILL.md`（面向 AI 的完整格式规范与编辑要点，含 Quick Start / 校验清单 / 常见错误对照表），
+以及三个 JSON Schema —— `skills/foxy-keyboard-layout.schema.json`、
+`skills/foxy-popup-profile.schema.json`、`skills/foxy-definitions.schema.json`。
 
 ## 改这个编辑器之前
 

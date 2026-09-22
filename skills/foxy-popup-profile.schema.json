@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foxy.local/schema/foxy-popup-profile.schema.json",
+  "title": "Foxy Popup Profile",
+  "description": "Long-press popup candidates grouped by Rime schema and keyboard state.",
+  "type": "object",
+  "required": ["type", "schemas"],
+  "properties": {
+    "type": { "const": "foxy.popup-profile" },
+    "author": { "type": "string" },
+    "actions": { "type": "object" },
+    "macros": { "type": "object" },
+    "schemas": {
+      "type": "object",
+      "required": ["default"],
+      "additionalProperties": { "$ref": "#/$defs/schemaGroup" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "schemaGroup": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/keyCandidates" }
+    },
+    "keyCandidates": {
+      "oneOf": [
+        { "$ref": "#/$defs/candidateArray" },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "properties": {
+            "normal": { "oneOf": [{ "$ref": "#/$defs/candidateArray" }, { "type": "null" }] },
+            "shifted": { "oneOf": [{ "$ref": "#/$defs/candidateArray" }, { "type": "null" }] }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "candidateArray": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/candidate" }
+    },
+    "candidate": {
+      "oneOf": [
+        { "type": "string", "minLength": 1, "description": "ASCII text becomes a physical key action; other text is committed." },
+        {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string", "minLength": 1 },
+            "ref": { "type": "string", "minLength": 1 },
+            "action": { "$ref": "#/$defs/actionExpression" },
+            "actions": { "type": "array", "items": { "$ref": "#/$defs/actionExpression" } },
+            "macro": { "type": "string", "minLength": 1 },
+            "icon": { "type": "string", "minLength": 1 }
+          },
+          "anyOf": [
+            { "required": ["ref"] },
+            { "required": ["action"] },
+            { "required": ["actions"] },
+            { "required": ["macro"] }
+          ],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "actionExpression": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "$ref": "#/$defs/actionObject" }
+      ]
+    },
+    "actionObject": {
+      "type": "object",
+      "properties": {
+        "action": { "$ref": "#/$defs/actionExpression" },
+        "macro": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["key", "modifier", "text", "commit", "switch_layout", "app"] },
+        "key": { "type": "string", "minLength": 1 },
+        "meta": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+        "modifier": { "type": "string", "pattern": "^(?:[sS][hH][iI][fF][tT]|[cC][tT][rR][lL])$" },
+        "state": { "enum": ["OFF", "ONESHOT", "LOCKED", "TOGGLE_LOCKED"] },
+        "text": { "type": "string" },
+        "layout": { "type": "string", "minLength": 1 },
+        "command": { "type": "string", "minLength": 1 },
+        "argument": { "type": "string" }
+      },
+      "additionalProperties": true,
+      "allOf": [
+        { "if": { "required": ["type"], "properties": { "type": { "const": "key" } } }, "then": { "required": ["key"] } },
+        { "if": { "required": ["type"], "properties": { "type": { "const": "modifier" } } }, "then": { "required": ["modifier"] } },
+        { "if": { "required": ["type"], "properties": { "type": { "enum": ["text", "commit"] } } }, "then": { "required": ["text"] } },
+        { "if": { "required": ["type"], "properties": { "type": { "const": "switch_layout" } } }, "then": { "required": ["layout"] } },
+        { "if": { "required": ["type"], "properties": { "type": { "const": "app" } } }, "then": { "required": ["command"] } }
+      ]
+    }
+  }
+}

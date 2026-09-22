@@ -4,7 +4,7 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 304 / UI 437 / 真实文件体检 18 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 337 / UI 437 / 真实文件体检 18 个示例 0 错误。
 
 ### ⚠️ 本文件有两份，必须保持一致
 
@@ -126,7 +126,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **304 core + 437 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **337 core + 437 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -143,13 +143,19 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
   - 两者各自导入导出、各自校验；编辑器只把它们放同一个撤销栈与同一份本地草稿。
 - **在线站点**：<https://sandyyur.github.io/foxy-see-me/>（GitHub Pages，`main` 分支根目录）
 - **格式权威**（已随仓库一起分发，见 `skills/`）：
-  - `skills/DEFAULT_LAYOUT_V0.0.1.md` — 完整规范（Foxy Layout File v0.0.1）
-  - `skills/SKILL.md` — 面向 AI 的编辑技能说明（文件位置、结构、验证要点）
-  - `skills/FOXY_JSON_CONFIGS.md` — 三种 Foxy JSON 的 `type` 判别与共享 definitions
+  - `skills/SKILL.md` — 面向 AI 的**完整格式规范**（Quick Start / 文件位置 / 命名布局 /
+    按键与手势 / 内建键名 / 放置覆盖 / 状态变体 / app 命令 / 校验清单 / 常见错误对照表）
+  - `skills/foxy-keyboard-layout.schema.json` — 布局 profile 的 JSON Schema
+  - `skills/foxy-popup-profile.schema.json` — 弹出菜单的 JSON Schema
+  - `skills/foxy-definitions.schema.json` — 共享 definitions 的 JSON Schema
 
   **怀疑格式语义时先查这里，不要凭直觉改校验/解析。**
-  > 注意：这三份是**从工作区 skill 目录同步过来的副本**。上游（Foxy 项目自身）
+  > 注意：这四份是**从工作区 skill 目录（`.dsh/skills/`）同步过来的副本**。上游
   > 更新后需重新同步，不要在副本上直接改规范内容。
+  >
+  > ⚠️ 上游曾把 `DEFAULT_LAYOUT_V0.0.1.md` + `FOXY_JSON_CONFIGS.md` 两份文档**合并重排**
+  > 成一份 `SKILL.md` 并改以 `schemas/*.schema.json` 为准（2026-09）。所以：
+  > **不要再引用那两个旧文件名**，规范内容以 `SKILL.md` + schema 为准。
 
 ---
 
@@ -172,9 +178,10 @@ foxy-editor/
 │   └── jscolor/jscolor.js  vendor 取色器（GPLv3，**不要改**）
 ├── examples/          示例源文件（18 个：15 布局 + 3 弹出菜单）
 ├── skills/            格式规范（随仓库分发的 skill 文档副本，**只读参考，别改**）
-│   ├── DEFAULT_LAYOUT_V0.0.1.md  Foxy Layout File v0.0.1 完整规范
-│   ├── SKILL.md                  面向 AI 的编辑技能说明
-│   └── FOXY_JSON_CONFIGS.md      三种 Foxy JSON 的 type 判别与共享 definitions
+│   ├── SKILL.md                       完整格式规范（面向 AI；含 Quick Start 与常见错误表）
+│   ├── foxy-keyboard-layout.schema.json  布局 profile 的 JSON Schema
+│   ├── foxy-popup-profile.schema.json    弹出菜单的 JSON Schema
+│   └── foxy-definitions.schema.json      共享 definitions 的 JSON Schema
 ├── AGENT.md           本文件（改前必读；工作区根还有一份副本，见开头「本文件有两份」）
 ├── tools/
 │   ├── build-examples.js      重新生成 examples-bundle.js
@@ -308,7 +315,7 @@ data.js → default-profile.js → examples-bundle.js → app.js
 ```
 
 ⚠️ 早期文档写的是「直接字段 < override」，**已反转**。改这一块前先看 `FE.evalPlacement`
-上方的注释与 `DEFAULT_LAYOUT_V0.0.1.md` 对应章节。
+上方的注释与 `skills/SKILL.md` 的 `## Placement Overrides` 一节。
 
 **label 优先级**：`tap` 对象自带 label > 外层 key/variant label > 被引用 tap 的 label。
 外层 label 显式为 `null` → 清空为空字符串，**不再回退**到被引用按键的标签。
@@ -618,7 +625,7 @@ cd foxy-editor
 node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
-node test/test-core.js       # 期望：304 通过, 0 失败
+node test/test-core.js       # 期望：337 通过, 0 失败
 node test/test-ui.js         # 期望：437 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
@@ -632,7 +639,7 @@ node tools/check-agent-sync.js --write
 
 ### 改动前的自查清单
 
-- [ ] 改的是**格式语义**吗？→ 先查 `skills/DEFAULT_LAYOUT_V0.0.1.md`，别猜。
+- [ ] 改的是**格式语义**吗？→ 先查 `skills/SKILL.md` 与 `skills/*.schema.json`，别猜。
 - [ ] 加/删了 DOM 元素？→ 同步 `test/dom-stub.js`。
 - [ ] 加了折叠卡片或改了顺序？→ 同步 `test-ui.js` 的顺序断言。
 - [ ] 数据变更走 `mutate()` 了吗？跨文件调用加了 `FE.xxx` 存在性判断吗？
@@ -642,6 +649,6 @@ node tools/check-agent-sync.js --write
 
 ### 版本信息（改动可能影响这些对外说法）
 
-- 测试基线：core **304** / UI **437** / 示例 **18**（15 布局 + 3 弹出菜单）
+- 测试基线：core **337** / UI **437** / 示例 **18**（15 布局 + 3 弹出菜单）
 - 仓库 `README.md` 里的功能描述与 `index.html` 的图例，与实现同步维护；
   新增用户可见功能时一并更新，避免文档漂移。

@@ -1,7 +1,7 @@
 /* 小狐狸 see me — Foxy 键盘布局可视化编辑器
  * folder-import.js — 文件夹批量导入：识别 definitions.json 与被引用的其他文件
  *
- * 背景（见 SKILL.md / FOXY_JSON_CONFIGS.md）：
+ * 背景（见 skills/SKILL.md 的 Related Foxy JSON Files / Shared Definitions）：
  *   Foxy 运行时的布局包是**跨文件**的，一个包里可能同时有
  *     <外部存储>/foxy/frontend/definitions.json          共享 keys/actions/macros
  *     <外部存储>/foxy/frontend/layouts/<profile>.json     布局文件（可只定义少量键）

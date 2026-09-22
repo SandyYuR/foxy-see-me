@@ -765,6 +765,88 @@ eq(FE.resolveActionSpec({ macro: 'my_macro' }, actScope).unresolved, undefined, 
 eq(FE.resolveActionSpec({ macro: 'my_macro' }).unresolved, 'my_macro', '无 scope 时宏走全局并解析失败');
 
 /* ================================================================
+ * 对齐新版 skill 文档（schemas/ + SKILL.md 重排）
+ * 这一组防的是「把合法布局误判为错误」：文档新增的能力若编辑器不认识，
+ * 用户手里的正确文件会在编辑器里报错。
+ * ================================================================ */
+console.log('== 对齐新版 skill 文档 ==');
+const vNew = (p) => FE.validateProfile(FE.normalizeProfile(p));
+function lay(inner) {
+  return { type: 'foxy.keyboard-layout', layouts: { default: { sections: [{ type: 'rows', rows: [[inner]] }] } } };
+}
+
+/* ---- 1. sync / sync_rime app 命令 ---- */
+ok(FE.APP_COMMANDS.some(c => c[0] === 'sync'), 'sync 命令已加入 APP_COMMANDS');
+ok(FE.APP_COMMANDS.some(c => c[0] === 'sync_rime'), 'sync_rime 别名已加入 APP_COMMANDS');
+eq(vNew(lay({ ref: 'rime.a', longPress: { action: { type: 'app', command: 'sync' } } })).errors, [],
+  'sync 命令不再被误报为不支持');
+eq(vNew(lay({ ref: 'rime.a', longPress: { action: { type: 'app', command: 'sync_rime' } } })).errors, [],
+  'sync_rime 命令不再被误报为不支持');
+
+/* ---- 2. 低层 KeyCode 补 F1..F12 ---- */
+eq([1, 2, 6, 12].every(n => FE.ALL_KEYCODES['F' + n] === true), true, '低层 F1..F12 已加入 KeyCode 表');
+eq(vNew(lay({ label: 'F1', tap: { type: 'key', key: 'F1' } })).errors, [], '低层 key F1 不再被误报');
+eq(vNew(lay({ label: 'F12', tap: { type: 'key', key: 'F12' } })).errors, [], '低层 key F12 不再被误报');
+ok(FE.BUILTIN_KEYS['rime.F1'] !== undefined, 'rime.F1 内置引用仍可用');
+ok(FE.ALL_KEYCODES['KP_F1'] === true, 'KP_F1 仍是独立键码（未被 F1 覆盖）');
+ok(FE.ALL_KEYCODES['F1'] === true && FE.ALL_KEYCODES['KP_F1'] === true, 'F1 与 KP_F1 并存不冲突');
+
+/* ---- 3. 网格 col / colSpan 别名 ---- */
+eq(vNew({ type: 'foxy.keyboard-layout', layouts: { default: { sections: [{ type: 'grid', columns: 2, rows: 1, keys: [{ col: 0, row: 0, ref: 'rime.a' }] }] } } }).errors, [],
+  '网格 col 别名不再被误报为缺少 column');
+eq(vNew({ type: 'foxy.keyboard-layout', layouts: { default: { sections: [{ type: 'grid', columns: 2, rows: 1, keys: [{ col: 0, row: 0, colSpan: 2, ref: 'rime.a' }] }] } } }).errors, [],
+  '网格 colSpan 别名不被误报且跨距生效');
+/* colSpan 真的参与占位：跨 2 列占两格，故 2 列 1 行无空洞警告 */
+eq(vNew({ type: 'foxy.keyboard-layout', layouts: { default: { sections: [{ type: 'grid', columns: 2, rows: 1, keys: [{ col: 0, row: 0, colSpan: 2, ref: 'rime.a' }] }] } } }).warnings, [],
+  'colSpan 别名参与占用计算（无空洞警告）');
+/* col 别名参与重叠检测 */
+ok(vNew({ type: 'foxy.keyboard-layout', layouts: { default: { sections: [{ type: 'grid', columns: 2, rows: 1, keys: [{ col: 0, row: 0, ref: 'rime.a' }, { column: 0, row: 0, ref: 'rime.b' }] }] } } }).errors.some(e => e.indexOf('重叠') >= 0),
+  'col 与 column 混用时重叠仍被检出');
+eq(vNew({ type: 'foxy.keyboard-layout', layouts: { default: { sections: [{ type: 'grid', columns: 2, rows: 1, keys: [{ col: 5, row: 0, ref: 'rime.a' }] }] } } }).errors.some(e => e.indexOf('超出网格范围') >= 0), true,
+  'col 别名参与越界检测');
+/* 编译层也要认别名（渲染与区段编辑器消费编译产物） */
+const gCompiled = FE.compileLayout(FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'grid', columns: 3, rows: 1, keys: [{ col: 1, row: 0, colSpan: 2, ref: 'rime.a' }] }] } } }), 'default', {});
+eq(gCompiled.sections[0].keys[0].column, 1, '编译层认 col 别名');
+eq(gCompiled.sections[0].keys[0].columnSpan, 2, '编译层认 colSpan 别名');
+
+/* ---- 4. hold 的 endAction / endActions ---- */
+const holdEndA = lay({ ref: 'rime.a', hold: { action: { type: 'app', command: 'voice_start' }, endAction: { type: 'app', command: 'voice_stop' } } });
+eq(vNew(holdEndA).errors, [], 'hold.endAction（单数）通过校验');
+const holdEndAs = lay({ ref: 'rime.a', hold: { action: { type: 'app', command: 'voice_start' }, endActions: [{ type: 'app', command: 'voice_stop' }] } });
+eq(vNew(holdEndAs).errors, [], 'hold.endActions（复数数组）通过校验');
+const giEndAs = FE.gestureInfo(holdEndAs.layouts.default.sections[0].rows[0][0].hold, FE.NEUTRAL_STATUS, 0, FE.scopeFrom(FE.normalizeProfile(holdEndAs)));
+eq(giEndAs.start, { type: 'app', command: 'voice_start' }, 'hold action 作为起始侧');
+eq(giEndAs.end, [{ type: 'app', command: 'voice_stop' }], 'hold endActions 作为结束侧（数组保留）');
+ok(FE.validateProfile(FE.normalizeProfile(lay({ ref: 'rime.a', hold: { endActions: 'oops' } }))).errors.some(e => e.indexOf('endActions') >= 0),
+  'endActions 非数组被检出');
+ok(FE.validateProfile(FE.normalizeProfile(lay({ ref: 'rime.a', hold: { endActions: [{ type: 'app', command: 'no_such_cmd' }] } }))).errors.some(e => e.indexOf('endActions[0]') >= 0),
+  'endActions 内非法动作被检出并带下标定位');
+
+/* ---- 5. 弹出菜单：schemas.default 必需 ---- */
+const popNoDefault = FE.normalizePopupProfile({ type: 'foxy.popup-profile', schemas: { luna_pinyin: { q: { normal: ['a'] } } } });
+ok(FE.validatePopupProfile(popNoDefault).errors.some(e => e.indexOf('default') >= 0),
+  '缺少 schemas.default 被检出（新版 schema 要求必填）');
+const popWithDefault = FE.normalizePopupProfile({ type: 'foxy.popup-profile', schemas: { default: { q: { normal: ['a'] } }, luna_pinyin: { q: { normal: ['b'] } } } });
+eq(FE.validatePopupProfile(popWithDefault).errors, [], '含 default 的多 schema 通过校验');
+
+/* ---- 6. 弹出菜单：裸数组简写 = normal ---- */
+const popBare = FE.normalizePopupProfile({ type: 'foxy.popup-profile', schemas: { default: { q: ['a', 'b'] } } });
+eq(FE.validatePopupProfile(popBare).errors, [], '裸数组简写通过校验');
+eq(FE.popupCandidates(popBare, 'default', 'q', false), ['a', 'b'], '裸数组简写作为 normal 候选');
+eq(FE.popupCandidates(popBare, 'default', 'q', true), ['a', 'b'], '裸数组简写时 shifted 回退到 normal');
+
+/* ---- 7. 弹出菜单：只支持 normal / shifted ---- */
+const popBadState = FE.normalizePopupProfile({ type: 'foxy.popup-profile', schemas: { default: { q: { weird: ['a'] } } } });
+ok(FE.validatePopupProfile(popBadState).errors.some(e => e.indexOf('weird') >= 0),
+  '非 normal/shifted 状态名被检出');
+eq(FE.popupCandidates(popBadState, 'default', 'q', false), null, '非法状态名不产生候选');
+
+/* ---- 8. keyType 未识别值按未设置处理（文档：treated as unset） ---- */
+eq(vNew(lay({ ref: 'rime.a', keyType: 'BOGUS' })).errors, [], '未知 keyType 不报错（按未设置处理）');
+eq(FE.KEY_TYPES.join(','), 'LETTER,FUNCTION,ACTION', 'keyType 取值集合与文档一致');
+eq(FE.ICONS.join(','), 'backspace,shift,enter,return', '图标名集合与文档一致');
+
+/* ================================================================
  * 文件夹导入：多文件包（definitions.json + layouts/ + popups/）
  * ================================================================ */
 console.log('== 文件夹导入：多文件包识别 ==');

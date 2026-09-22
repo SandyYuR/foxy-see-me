@@ -372,10 +372,16 @@ FE.gestureInfo = function (g, status, depth, scope) {
   }
   if (g.repeat != null) out.repeat = g.repeat;
   if (g.popupKey != null) out.popupKey = g.popupKey;
+  /* hold 的两侧可写成 start/end，也可写成 action/actions + endAction/endActions：
+   * 后者是「起始侧用 action(s)、结束侧用 endAction(s)」，省略的一侧沿用被引用的 hold。 */
+  var holdShaped = has(g, 'start') || has(g, 'end') || has(g, 'endAction') || has(g, 'endActions');
   if (has(g, 'start')) out.start = (g.start == null) ? null : g.start;
-  else if (out.inheritedHold && out.inheritedHold.start != null) out.start = out.inheritedHold.start;
+  else if ((has(g, 'action') || has(g, 'actions')) && holdShaped) {
+    out.start = has(g, 'action') ? g.action : g.actions;
+  } else if (out.inheritedHold && out.inheritedHold.start != null) out.start = out.inheritedHold.start;
   if (has(g, 'end')) out.end = (g.end == null) ? null : g.end;
   else if (has(g, 'endAction')) out.end = (g.endAction == null) ? null : g.endAction;
+  else if (has(g, 'endActions')) out.end = (g.endActions == null) ? null : g.endActions;
   else if (out.inheritedHold && out.inheritedHold.end != null) out.end = out.inheritedHold.end;
   return out;
 };
@@ -537,6 +543,12 @@ function checkGestureRefs(container, where, err, profile, scope) {
     if (g.type != null) validateAction(g, gw, err, profile);
     if (g.start != null) validateAction(g.start, gw + '.start', err, profile);
     if (g.end != null) validateAction(g.end, gw + '.end', err, profile);
+    if (g.endAction != null) validateAction(g.endAction, gw + '.endAction', err, profile);
+    /* endActions 是数组形式（hold 结束侧的动作序列） */
+    if (g.endActions != null) {
+      if (!Array.isArray(g.endActions)) err(gw + '.endActions 必须是数组');
+      else g.endActions.forEach(function (a, i) { validateAction(a, gw + '.endActions[' + i + ']', err, profile); });
+    }
   }
   ['tap', 'doubleTap', 'longPress', 'hold'].forEach(function (f) { checkOne(container[f], where + ' 的 ' + f); });
   if (isPlainObject(container.swipe)) FE.SWIPE_DIRS.forEach(function (d) { checkOne(container.swipe[d], where + ' 的 swipe.' + d); });
@@ -726,7 +738,12 @@ FE.validateProfile = function (profile) {
           (Array.isArray(s.keys) ? s.keys : []).forEach(function (k, ki) {
             var gkey = { path: pfx + ' 区段 ' + si + ' 网格按键 ' + ki, layout: ln, isSplit: !!isSplit, section: si, key: ki, group: 'grid' };
             if (!isPlainObject(k)) { err(pfx + ' 区段 ' + si + ' 网格按键 ' + ki + ' 不是对象', Object.assign({}, gkey, { code: 'key-not-object' })); return; }
-            var c = k.column, r = k.row, cs = k.columnSpan != null ? k.columnSpan : 1, rs = k.rowSpan != null ? k.rowSpan : 1;
+            /* 网格坐标：column/row 为正名，col 是文档认可的别名；跨距同理 colSpan/col 别名。
+             * 别名缺失会让合法布局被误判为「缺少整数 column/row」。 */
+            var c = Number.isInteger(k.column) ? k.column : k.col;
+            var r = k.row;
+            var csRaw = k.columnSpan != null ? k.columnSpan : k.colSpan;
+            var cs = csRaw != null ? csRaw : 1, rs = k.rowSpan != null ? k.rowSpan : 1;
             var label = refNameOf(k);
             if (!Number.isInteger(c) || !Number.isInteger(r)) { err(pfx + ' 网格按键 ' + label + ' 缺少整数 column/row', Object.assign({}, gkey, { code: 'grid-missing-cell' })); }
             else {
@@ -1196,9 +1213,10 @@ FE.compileSections = function (sections, status, scope) {
       var gItems = (Array.isArray(s.keys) ? s.keys : []).map(function (kk, gi) {
         if (!isPlainObject(kk)) return null;
         var it = compileKeyItem(kk, { s: si, r: null, k: gi, group: 'grid' }, status, scope);
-        it.column = Number.isInteger(kk.column) ? kk.column : 0;
+        it.column = Number.isInteger(kk.column) ? kk.column : (Number.isInteger(kk.col) ? kk.col : 0);
         it.row = Number.isInteger(kk.row) ? kk.row : 0;
-        it.columnSpan = kk.columnSpan != null ? kk.columnSpan : 1;
+        var csP = kk.columnSpan != null ? kk.columnSpan : kk.colSpan;
+        it.columnSpan = csP != null ? csP : 1;
         it.rowSpan = kk.rowSpan != null ? kk.rowSpan : 1;
         return it;
       });

@@ -91,40 +91,56 @@ FE.validatePopupProfile = function (pp) {
   }
   var schemas = FE.isPlainObject(pp.schemas) ? pp.schemas : {};
   var schemaNames = Object.keys(schemas);
+  /* 文档/schema：schemas 必须含 default 分组（状态回退链的最终来源） */
   if (!schemaNames.length) err('schemas 不能为空');
+  else if (!FE.isPlainObject(schemas['default'])) {
+    err('schemas 必须包含 default 分组（它是状态回退链的最终来源）');
+  }
   var actions = FE.isPlainObject(pp.actions) ? pp.actions : {};
   Object.keys(actions).forEach(function (an) {
     if (FE.validateAction) FE.validateAction(actions[an], '弹出菜单动作 “' + an + '”', err, null);
   });
+
+  /* 校验一个候选数组；baseWhere 为该数组的定位前缀 */
+  function checkCandList(list, baseWhere) {
+    if (!Array.isArray(list)) { err(baseWhere + ' 必须是数组'); return; }
+    list.forEach(function (c, ci) {
+      var where = baseWhere + '[' + ci + ']';
+      if (c == null) { err(where + ' 候选不能为 null'); return; }
+      if (typeof c !== 'string' && !FE.isPlainObject(c)) { err(where + ' 候选必须是字符串或对象'); return; }
+      if (FE.isPlainObject(c)) {
+        if (typeof c.action === 'string' && !actions[c.action]) err(where + ' 引用动作名不存在: ' + c.action);
+        if (FE.isPlainObject(c.action) && FE.validateAction) FE.validateAction(c.action, where + '.action', err, null);
+        /* actions 数组形式（文档：Object items may use action, actions, macro, or ref） */
+        if (c.actions != null) {
+          if (!Array.isArray(c.actions)) err(where + ' 的 actions 必须是数组');
+          else if (FE.validateAction) c.actions.forEach(function (a, ai) { FE.validateAction(a, where + '.actions[' + ai + ']', err, null); });
+        }
+        if (c.action == null && c.actions == null && c.macro == null && c.ref == null) err(where + ' 对象候选缺少 action / actions / macro / ref');
+        if (c.macro != null) warn(where + ' 宏 “' + c.macro + '” 需在 definitions.json 中定义（编辑器无法校验）');
+        if (c.ref != null) warn(where + ' 共享键 “' + c.ref + '” 需在 definitions.json 中定义（编辑器无法校验）');
+      }
+    });
+  }
+
   schemaNames.forEach(function (sn) {
     var s = schemas[sn];
     if (!FE.isPlainObject(s)) { err('schema “' + sn + '” 不是对象'); return; }
     Object.keys(s).forEach(function (pk) {
       var entry = s[pk];
-      if (!FE.isPlainObject(entry)) { err('schema “' + sn + '” 的按键 “' + pk + '” 不是对象'); return; }
+      var base = 'schema “' + sn + '” 按键 “' + pk + '”';
+      /* 裸数组简写：整个候选列表即 normal 状态（schema 里 candidateArray 是 keyCandidates 的一种） */
+      if (Array.isArray(entry)) { checkCandList(entry, base); return; }
+      if (!FE.isPlainObject(entry)) { err(base + ' 不是对象（必须是候选数组或 { normal, shifted } 对象）'); return; }
+      /* schema 里该对象 additionalProperties:false —— 只认 normal / shifted */
+      Object.keys(entry).forEach(function (st) {
+        if (st !== 'normal' && st !== 'shifted') {
+          err(base + ' 含不支持的状态 “' + st + '”（仅支持 normal / shifted）');
+        }
+      });
       ['normal', 'shifted'].forEach(function (st) {
         if (entry[st] === undefined || entry[st] === null) return; /* null = 显式清除 */
-        if (!Array.isArray(entry[st])) {
-          err('schema “' + sn + '” 按键 “' + pk + '” 的 ' + st + ' 必须是数组');
-          return;
-        }
-        entry[st].forEach(function (c, ci) {
-          var where = 'schema “' + sn + '” 按键 “' + pk + '” ' + st + '[' + ci + ']';
-          if (c == null) { err(where + ' 候选不能为 null'); return; }
-          if (typeof c !== 'string' && !FE.isPlainObject(c)) { err(where + ' 候选必须是字符串或对象'); return; }
-          if (FE.isPlainObject(c)) {
-            if (typeof c.action === 'string' && !actions[c.action]) err(where + ' 引用动作名不存在: ' + c.action);
-            if (FE.isPlainObject(c.action) && FE.validateAction) FE.validateAction(c.action, where + '.action', err, null);
-            /* actions 数组形式（文档：Object items may use action, actions, macro, or ref） */
-            if (c.actions != null) {
-              if (!Array.isArray(c.actions)) err(where + ' 的 actions 必须是数组');
-              else if (FE.validateAction) c.actions.forEach(function (a, ai) { FE.validateAction(a, where + '.actions[' + ai + ']', err, null); });
-            }
-            if (c.action == null && c.actions == null && c.macro == null && c.ref == null) err(where + ' 对象候选缺少 action / actions / macro / ref');
-            if (c.macro != null) warn(where + ' 宏 “' + c.macro + '” 需在 definitions.json 中定义（编辑器无法校验）');
-            if (c.ref != null) warn(where + ' 共享键 “' + c.ref + '” 需在 definitions.json 中定义（编辑器无法校验）');
-          }
-        });
+        checkCandList(entry[st], base + ' 的 ' + st);
       });
     });
   });
@@ -136,9 +152,14 @@ FE.popupCandidates = function (pp, schemaName, popupKey, shifted) {
   var schemas = (pp && FE.isPlainObject(pp.schemas)) ? pp.schemas : {};
   var s = schemas[schemaName];
   var d = schemas['default'];
+  /* 整键写成裸数组时（`"q": ["a","b"]`）等价于 { normal: [...] }，
+   * 此时 shifted 无显式值，走 normal 回退。 */
   function stateOf(holder, st) {
-    if (!holder || !FE.isPlainObject(holder[popupKey])) return undefined;
-    return holder[popupKey][st];
+    if (!holder) return undefined;
+    var e = holder[popupKey];
+    if (Array.isArray(e)) return st === 'normal' ? e : undefined;
+    if (!FE.isPlainObject(e)) return undefined;
+    return e[st];
   }
   var st = shifted ? 'shifted' : 'normal';
   var v = stateOf(s, st);

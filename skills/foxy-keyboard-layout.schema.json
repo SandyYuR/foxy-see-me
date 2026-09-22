@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foxy.local/schema/foxy-keyboard-layout.schema.json",
+  "title": "Foxy Keyboard Layout Profile",
+  "description": "Named Foxy keyboard layouts, reusable key definitions, gestures, actions, and macros.",
+  "type": "object",
+  "required": ["type", "layouts"],
+  "properties": {
+    "type": { "const": "foxy.keyboard-layout" },
+    "author": { "type": "string" },
+    "keys": { "type": "object", "additionalProperties": { "$ref": "#/$defs/key" } },
+    "actions": { "type": "object", "additionalProperties": { "$ref": "#/$defs/actionExpression" } },
+    "macros": { "type": "object", "additionalProperties": { "type": "array", "items": { "$ref": "#/$defs/actionExpression" } } },
+    "layouts": { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/layout" } }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "layout": {
+      "type": "object",
+      "required": ["sections"],
+      "properties": {
+        "sections": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/section" } },
+        "variants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["when", "layout"],
+            "properties": {
+              "when": { "$ref": "#/$defs/statusWhen" },
+              "layout": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": true
+          }
+        },
+        "split": { "$ref": "#/$defs/layoutFragment" },
+        "override": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+    "section": {
+      "oneOf": [
+        { "type": "object", "required": ["type", "rows"], "properties": { "type": { "const": "rows" }, "rows": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/row" } } }, "additionalProperties": true },
+        { "type": "object", "required": ["type", "columns", "rows", "keys"], "properties": { "type": { "const": "grid" }, "columns": { "type": "integer", "minimum": 1 }, "rows": { "type": "integer", "minimum": 1 }, "rowHeights": { "type": "array", "items": { "type": "number", "exclusiveMinimum": 0 } }, "keys": { "type": "array", "items": { "$ref": "#/$defs/gridCell" } } }, "additionalProperties": true }
+      ]
+    },
+    "layoutFragment": {
+      "type": "object",
+      "required": ["sections"],
+      "properties": { "sections": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/section" } } },
+      "additionalProperties": true
+    },
+    "row": {
+      "oneOf": [
+        { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/key" } },
+        {
+          "type": "object",
+          "required": ["keys"],
+          "properties": {
+            "width": { "type": "number", "minimum": 0, "maximum": 1 },
+            "height": { "type": "number", "exclusiveMinimum": 0 },
+            "totalWeight": { "type": "number", "exclusiveMinimum": 0 },
+            "keys": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/key" } }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "gridCell": {
+      "type": "object",
+      "anyOf": [{ "required": ["column", "row"] }, { "required": ["col", "row"] }],
+      "properties": {
+        "column": { "type": "integer", "minimum": 0 },
+        "row": { "type": "integer", "minimum": 0 },
+        "col": { "type": "integer", "minimum": 0 },
+        "columnSpan": { "type": "integer", "minimum": 1 },
+        "colSpan": { "type": "integer", "minimum": 1 },
+        "rowSpan": { "type": "integer", "minimum": 1 },
+        "ref": { "type": "string", "minLength": 1 },
+        "override": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+    "statusWhen": {
+      "type": "object",
+      "properties": {
+        "rime": {
+          "type": "object",
+          "properties": { "composing": { "type": "boolean" }, "ascii_mode": { "type": "boolean" }, "disabled": { "type": "boolean" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "key": {
+      "type": "object",
+      "properties": {
+        "ref": { "type": "string" },
+        "label": { "type": ["string", "null"], "description": "An explicit null clears the label to an empty string." },
+        "shiftedLabel": { "type": ["string", "null"] },
+        "id": { "type": ["string", "null"] },
+        "statusLabel": { "oneOf": [{ "type": "string" }, { "$ref": "#/$defs/statusLabel" }, { "type": "null" }] },
+        "keyType": { "type": ["string", "null"] },
+        "icon": { "type": ["string", "null"] },
+        "modifier": { "type": ["string", "null"], "description": "SHIFT or CTRL, case-insensitive at runtime." },
+        "textSize": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+        "hintTextSize": { "oneOf": [{ "type": "number", "exclusiveMinimum": 0 }, { "$ref": "#/$defs/hintTextSizes" }, { "type": "null" }] },
+        "weight": { "oneOf": [{ "type": "number", "exclusiveMinimum": 0 }, { "const": "auto" }, { "type": "null" }] },
+        "height": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+        "tap": { "$ref": "#/$defs/gesture" },
+        "doubleTap": { "$ref": "#/$defs/gesture" },
+        "longPress": { "$ref": "#/$defs/longPress" },
+        "hold": { "$ref": "#/$defs/hold" },
+        "swipe": { "$ref": "#/$defs/swipe" },
+        "variants": { "type": "array" },
+        "colors": { "type": ["object", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "hold": {
+      "type": ["object", "null"],
+      "properties": {
+        "ref": { "type": "string", "description": "Reuses the referenced key's hold gesture." },
+        "label": { "type": ["string", "null"] },
+        "hint": { "type": ["string", "null"] },
+        "start": { "$ref": "#/$defs/actionExpression" },
+        "end": { "$ref": "#/$defs/actionExpression" },
+        "action": { "$ref": "#/$defs/actionExpression" },
+        "actions": { "type": "array", "items": { "$ref": "#/$defs/actionExpression" } },
+        "popup": { "type": ["boolean", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "swipe": {
+      "type": ["object", "null"],
+      "propertyNames": { "enum": ["up", "down", "left", "right"] },
+      "additionalProperties": { "$ref": "#/$defs/gesture" }
+    },
+    "gesture": {
+      "oneOf": [
+        { "type": "string" },
+        { "$ref": "#/$defs/gestureObject" },
+        { "type": "null", "description": "Only meaningful for tap, where it keeps the inherited click gesture." }
+      ]
+    },
+    "gestureObject": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/actionObject" }],
+      "properties": {
+        "ref": { "type": "string", "minLength": 1 },
+        "label": { "type": ["string", "null"] },
+        "hint": { "type": ["string", "null"] },
+        "action": { "$ref": "#/$defs/actionExpression" },
+        "actions": { "type": "array", "items": { "$ref": "#/$defs/actionExpression" } },
+        "macro": { "type": "string", "minLength": 1 },
+        "repeat": { "type": "boolean" },
+        "popup": { "type": ["boolean", "null"] },
+        "popupKey": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "longPress": {
+      "type": ["object", "null"],
+      "properties": {
+        "ref": { "type": "string", "minLength": 1 },
+        "label": { "type": ["string", "null"] },
+        "hint": { "type": ["string", "null"] },
+        "action": { "$ref": "#/$defs/actionExpression" },
+        "actions": { "type": "array", "items": { "$ref": "#/$defs/actionExpression" } },
+        "repeat": { "type": "boolean" },
+        "popup": { "type": ["boolean", "null"] },
+        "popupKey": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "statusLabel": {
+      "type": "object",
+      "required": ["source"],
+      "properties": { "source": { "type": "string", "minLength": 1 } },
+      "additionalProperties": false
+    },
+    "hintTextSizes": {
+      "type": "object",
+      "propertyNames": { "enum": ["up", "down", "left", "right"] },
+      "additionalProperties": { "type": "number", "exclusiveMinimum": 0 }
+    },
+    "actionExpression": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "$ref": "#/$defs/actionObject" }
+      ]
+    },
+    "actionObject": {
+      "type": "object",
+      "properties": {
+        "action": { "$ref": "#/$defs/actionExpression" },
+        "macro": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["key", "modifier", "text", "commit", "switch_layout", "app"] },
+        "key": { "type": "string", "minLength": 1 },
+        "meta": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+        "modifier": { "type": "string", "pattern": "^(?:[sS][hH][iI][fF][tT]|[cC][tT][rR][lL])$" },
+        "state": { "enum": ["OFF", "ONESHOT", "LOCKED", "TOGGLE_LOCKED"] },
+        "text": { "type": "string" },
+        "layout": { "type": "string", "minLength": 1 },
+        "command": { "type": "string", "minLength": 1 },
+        "argument": { "type": "string" }
+      },
+      "additionalProperties": true,
+      "allOf": [
+        { "if": { "required": ["type"], "properties": { "type": { "const": "key" } } }, "then": { "required": ["key"] } },
+        { "if": { "required": ["type"], "properties": { "type": { "const": "modifier" } } }, "then": { "required": ["modifier"] } },
+        { "if": { "required": ["type"], "properties": { "type": { "enum": ["text", "commit"] } } }, "then": { "required": ["text"] } },
+        { "if": { "required": ["type"], "properties": { "type": { "const": "switch_layout" } } }, "then": { "required": ["layout"] } },
+        { "if": { "required": ["type"], "properties": { "type": { "const": "app" } } }, "then": { "required": ["command"] } }
+      ]
+    }
+  }
+}

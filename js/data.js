@@ -1,6 +1,6 @@
 /* 小狐狸 see me — Foxy 键盘布局可视化编辑器
  * data.js — 内置按键注册表（rime.* / foxy.*）、KeyCode 名称表、App 命令表
- * 依据 DEFAULT_LAYOUT_V0.0.1.md（Foxy Layout File v0.0.1）整理。
+ * 依据 skills/SKILL.md（Foxy 布局格式规范）整理。
  */
 (function () {
 'use strict';
@@ -156,6 +156,10 @@ var KEYCODE_GROUPS = [];
       'UNDO', 'REDO', 'MENU', 'FIND', 'CANCEL', 'HELP', 'BREAK', 'PAUSE', 'SCROLL_LOCK', 'SYS_REQ', 'NUM_LOCK']
   });
   KEYCODE_GROUPS.push({
+    label: '功能键',
+    names: (function () { var a = []; for (var fi = 1; fi <= 12; fi++) a.push('F' + fi); return a; })()
+  });
+  KEYCODE_GROUPS.push({
     label: '修饰键',
     names: ['SHIFT_LEFT', 'SHIFT_RIGHT', 'CONTROL_LEFT', 'CONTROL_RIGHT', 'ALT_LEFT', 'ALT_RIGHT',
       'META_LEFT', 'META_RIGHT', 'CAPS_LOCK', 'EISU_TOGGLE', 'KANA_LOCK', 'HIRAGANA_KATAKANA', 'ZENKAKU_HANKAKU']
@@ -181,6 +185,7 @@ FE.APP_COMMANDS = [
   ['settings', '设置'], ['schema_list', '方案列表'],
   ['data_directory_list', '数据目录选择'], ['data_dir_list', '数据目录选择（别名）'],
   ['deploy', '重新部署'], ['deploy_rime', '重新部署（别名）'],
+  ['sync', '同步 Rime 用户数据'], ['sync_rime', '同步 Rime 用户数据（别名）'],
   ['clipboard', '剪贴板'], ['theme', '主题'], ['theme_list', '主题列表'],
   ['voice', '语音'], ['voice_toggle', '语音切换'], ['voice_engine', '语音引擎'], ['voice_engine_list', '语音引擎列表'],
   ['ime_picker', '系统输入法选择'],

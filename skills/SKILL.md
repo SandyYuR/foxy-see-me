@@ -1,15 +1,105 @@
 ---
 name: foxy-layout-design
 description: Use when designing, editing, validating, or explaining Foxy keyboard layout JSON files, profiles, named layouts, key overrides, gestures, or layout metadata.
-disable-model-invocation: false
 ---
 
 # Foxy Layout Design
 
 Use this skill when working on Foxy keyboard layout JSON. The format is named-
 layout JSON with reusable key definitions and optional layout profiles. For all
-Foxy-owned JSON formats, consult `FOXY_JSON_CONFIGS.md` and the schemas under
-`schemas/`.
+Foxy-owned JSON formats, consult the schemas under `schemas/`.
+
+## Quick Start
+
+Read this section first; everything after `## File Location` is the exhaustive
+reference. When you only need to perform a typical request, the workflow,
+starting template, and key-vs-text rule below are enough to begin.
+
+### Workflow
+
+When generating or editing a layout from a natural-language request:
+
+1. Decide whether the user wants a new profile file or a change to an existing
+   profile. Preserve unrelated layouts, keys, actions, macros, and metadata.
+2. Identify the named layouts the keyboard will request. Normally this means
+   `default` for the alphabetic keyboard and `numpad` for numeric fields. Add
+   other names only when the app has an action that switches to them.
+3. Define reusable behavior under `keys`, `actions`, and `macros` before
+   assembling the visual rows or grid.
+4. Prefer a built-in `rime.*` or `foxy.*` reference. Use an inline action only
+   for behavior that has no suitable built-in definition.
+5. Give every placed key a click action, either directly or through its
+   resolved reference. Add swipe, double-tap, long-press, or hold behavior
+   only when requested.
+6. Use placement `override` for a local change. Do not duplicate a reusable
+   definition just to change one label, width, icon, or gesture.
+7. Check row weights, row heights, grid coordinates, and total height units.
+8. Validate the complete profile, not just the layout the user mentioned.
+   One invalid named layout excludes the profile from the selector.
+9. Keep the requested filename as a direct `.json` file in `frontend/layouts`
+   and add a top-level `author` only when the user supplies one.
+
+### Complete starting template
+
+Use this as a safe starting point for a new profile. Replace the example keys
+and rows rather than removing required structure accidentally:
+
+```json
+{
+  "type": "foxy.keyboard-layout",
+  "author": "Example author",
+  "keys": {
+    "main.a": {
+      "ref": "rime.a",
+      "keyType": "LETTER"
+    },
+    "main.backspace": {
+      "ref": "rime.BackSpace",
+      "keyType": "FUNCTION",
+      "icon": "backspace",
+      "longPress": {
+        "repeat": true,
+        "action": { "type": "key", "key": "BACKSPACE" }
+      }
+    }
+  },
+  "actions": {},
+  "macros": {},
+  "layouts": {
+    "default": {
+      "sections": [{
+        "type": "rows",
+        "rows": [
+          [
+            { "ref": "main.a" },
+            { "ref": "main.backspace" }
+          ]
+        ]
+      }]
+    }
+  }
+}
+```
+
+The template is syntactically complete, but its one-row keyboard is only a
+minimal example. A production phone keyboard should normally use four rows
+whose total height is five units. See `## Named Layouts`.
+
+### Key event vs. literal text
+
+This is the most common authoring mistake. The two forms do different things:
+
+- `{ "ref": "rime.q" }`, `{ "tap": { "ref": "rime.Q" } }`, and
+  `{ "type": "key", "key": "A" }` send a **Rime key event**. Use a `rime.*`
+  or `key` action for every normal keyboard key so the active schema can
+  compose, transform, or intercept it.
+- `{ "type": "text", "text": "Q" }` and its alias
+  `{ "type": "commit", "text": "Q" }` **commit literal characters** to the host
+  editor and bypass Rime.
+
+Prefer `rime.*` references. Use `text`/`commit` only when literal output is
+intended, such as a fixed footer string. The `popup` boolean only suppresses
+the press-preview popup; it never changes which action fires.
 
 ## File Location
 
@@ -30,15 +120,14 @@ Do not use nested paths or path separators in profile names.
 
 ## Profile Structure
 
-New layout profiles require:
+New layout profiles declare the type discriminator:
 
 ```json
 "type": "foxy.keyboard-layout"
 ```
 
-For backward compatibility, files without `type` are accepted when their
-structure is valid and are normalized with the expected type. A present,
-incorrect type is invalid.
+The cross-type requirement and backward-compatibility rule are in
+`## Related Foxy JSON Files`.
 
 A profile must contain a non-empty top-level `layouts` object. It may also
 contain an optional string `author`, shown below the filename in the profile
@@ -69,19 +158,39 @@ arrangements. `actions` and `macros` are optional.
 
 ## Related Foxy JSON Files
 
-The repository-level reference is `FOXY_JSON_CONFIGS.md`. JSON Schemas are
-available at:
+Every Foxy-owned JSON file carries a top-level `type` discriminator. The
+current types, their schemas, and runtime locations are:
 
-```text
-schemas/foxy-keyboard-layout.schema.json
-schemas/foxy-popup-profile.schema.json
-schemas/foxy-definitions.schema.json
-```
+| type | Schema | Runtime location |
+| --- | --- | --- |
+| `foxy.keyboard-layout` | `schemas/foxy-keyboard-layout.schema.json` | `frontend/layouts/*.json` |
+| `foxy.popup-profile` | `schemas/foxy-popup-profile.schema.json` | `frontend/popups/*.json` |
+| `foxy.definitions` | `schemas/foxy-definitions.schema.json` | `frontend/definitions.json` |
+
+The type field is required for new files. For backward compatibility, a file
+without a type is accepted when its structure is valid and is normalized with
+the expected type. A present but incorrect type is rejected.
 
 Shared `keys`, `actions`, and `macros` belong in the Foxy definitions file:
 
 ```text
 <external-files>/foxy/frontend/definitions.json
+```
+
+```json
+{
+  "type": "foxy.definitions",
+  "keys": {},
+  "actions": {
+    "editor.copy": { "type": "key", "key": "C", "meta": ["CTRL"] }
+  },
+  "macros": {
+    "editor.copy_twice": [
+      { "action": "editor.copy" },
+      { "action": "editor.copy" }
+    ]
+  }
+}
 ```
 
 Popup profiles are separate files:
@@ -99,9 +208,43 @@ actions, macros, and shared key references. Their state fallback is:
 schema[state] -> schemas.default[state] -> schema.normal -> default.normal
 ```
 
-An explicit `null` clears a state. Popup profiles do not resolve layout-local
-definitions; use the shared definitions file for behavior that both formats
-must reference.
+An explicit `null` clears a state. Only the `normal` and `shifted` states are
+supported, and a `schemas.default` entry is required. Popup profiles do not
+resolve layout-local definitions; use the shared definitions file for behavior
+that both formats must reference.
+
+A minimal popup profile and the layout key that enables it:
+
+```json
+{
+  "type": "foxy.popup-profile",
+  "schemas": {
+    "default": {
+      "q": {
+        "normal": ["q", "ɋ"],
+        "shifted": ["Q", "Ɋ"]
+      }
+    }
+  }
+}
+```
+
+```json
+{
+  "keys": {
+    "qwerty.q": {
+      "ref": "rime.q",
+      "longPress": { "popupKey": "q" }
+    }
+  }
+}
+```
+
+The profile resolves `q` in `schemas[activeSchema]`, then in `schemas.default`.
+String items are sent as physical key actions when they are printable ASCII and
+committed as text otherwise. Shared `keys`, `actions`, and `macros` from
+`definitions.json` are merged before the profile's own definitions, so a
+profile-local name overrides a shared name with the same id.
 
 Before a profile is shown in the selector, Foxy validates its JSON and attempts
 to parse every named layout. A malformed layout, unresolved key reference,
@@ -273,6 +416,55 @@ Place a reusable key in a layout with `ref`:
 Every resolved key must have a click gesture. Prefer `rime.*` and `foxy.*`
 references over inline Android `KeyCode` actions.
 
+### Key Types
+
+`keyType` selects only the visual/color category; the behavior still comes from
+`ref`/`tap`. The accepted values are:
+
+```text
+LETTER    character keys (a-z, 0-9, symbols)
+FUNCTION  non-character keys (Backspace, Shift, 123, emoji, ...)
+ACTION    accent action keys (Enter) that may use a highlight color
+```
+
+An unrecognized value is treated as unset.
+
+### Status Labels
+
+`statusLabel` makes a key's label follow live engine state instead of a fixed
+string. It accepts a bare source string or `{ "source": "..." }`. Supported
+sources are:
+
+```text
+schema_name      the active schema's display name ("... (A)" in ASCII mode)
+switch:<name>    the current state label of the named schema switch
+```
+
+Unknown sources fall back to the key's static label.
+
+### Key Appearance
+
+`textSize` and `hintTextSize` are in scaled pixels (`sp`) and control the main
+label and the swipe hints. `hintTextSize` accepts a single number for all
+directions or a per-direction object; unspecified directions keep the base
+value:
+
+```json
+"hintTextSize": { "up": 11, "down": 10, "left": 9, "right": 9 }
+```
+
+The supported icon names are:
+
+```text
+backspace
+shift
+enter
+return
+```
+
+An unknown icon name renders without an icon. `id` is an optional stable
+identity string; it does not affect behavior.
+
 ## Definition Examples
 
 Use the smallest definition level that fits the need.
@@ -351,7 +543,7 @@ layouts, such as `default` and `numpad`:
       "sections": [{
         "type": "rows",
         "rows": [[{ "ref": "key.a" }]]
-      ]]
+      }]
     },
     "numpad": {
       "sections": [{
@@ -482,22 +674,29 @@ use only the names listed in this skill or validate the layout before sharing it
 
 These definitions include Foxy behavior:
 
-| Name | Default behavior |
-| --- | --- |
-| `foxy.Shift` | Controls keyboard Shift state; label `⇧`; includes built-in `modifier: "SHIFT"` behavior. |
-| `foxy.LayoutNumpad` | Function key labeled `123`; switches directly to `numpad`. |
-| `foxy.LayoutDefault` | Function key labeled `ABC`; switches to `default`. |
-| `foxy.SelectAll` | Sends `Ctrl+A` to the host editor. |
-| `foxy.Undo` | Calls the host editor's native undo action. |
-| `foxy.Redo` | Calls the host editor's native redo action. |
-| `foxy.Cut` | Sends `Ctrl+X` to the host editor. |
-| `foxy.Copy` | Sends `Ctrl+C` to the host editor. |
-| `foxy.Paste` | Sends `Ctrl+V` to the host editor. |
-| `foxy.KP_Enter` | Sends keypad Enter and uses the Enter icon. |
-| `foxy.Spacer` | Invisible layout placeholder that occupies space without handling input. |
+| Name | Default label | Type | Default behavior |
+| --- | --- | --- | --- |
+| `foxy.Shift` | `⇧` | modifier key | Controls keyboard Shift state and carries the built-in `modifier: "SHIFT"` behavior. |
+| `foxy.LayoutNumpad` | `123` | function key | Switches directly to `numpad`. |
+| `foxy.LayoutDefault` | `ABC` | function key | Switches to `default`. |
+| `foxy.SelectAll` | `Sel` | function key | Sends `Ctrl+A` to the host editor. |
+| `foxy.Undo` | `Undo` | function key | Calls the host editor's native undo action. |
+| `foxy.Redo` | `Redo` | function key | Calls the host editor's native redo action. |
+| `foxy.Cut` | `Cut` | regular key | Sends `Ctrl+X` to the host editor. |
+| `foxy.Copy` | `Copy` | regular key | Sends `Ctrl+C` to the host editor. |
+| `foxy.Paste` | `Paste` | regular key | Sends `Ctrl+V` to the host editor. |
+| `foxy.KP_Enter` | `Enter` | action key | Sends keypad Enter (`KP_ENTER`) and displays the Enter icon. |
+| `foxy.Spacer` | empty | placeholder | Occupies layout space without drawing or handling input. |
 
 Built-in behavior can be changed at the placement site with supported
-overrides.
+overrides. `foxy.LayoutNumpad` and `foxy.LayoutDefault` include their
+`switch_layout` action directly, so no tap override is needed.
+
+`foxy.Spacer` takes its reserved space from `weight` and optional `height`:
+
+```json
+{ "ref": "foxy.Spacer", "weight": 1.0 }
+```
 
 `foxy.Shift` is a semantic modifier key, not only a visual Shift key. Its
 built-in `modifier` field makes the action router toggle or lock Shift instead
@@ -617,6 +816,7 @@ LEFT_BRACKET RIGHT_BRACKET BACKSLASH NUMBERSIGN ASTERISK PLUS AT
 ENTER BACKSPACE TAB ESCAPE LINEFEED CLEAR PAUSE SCROLL_LOCK SYS_REQ
 INSERT DELETE HOME END PAGE_UP PAGE_DOWN UP DOWN LEFT RIGHT BEGIN
 SELECT PRINT EXECUTE UNDO REDO MENU FIND CANCEL HELP BREAK NUM_LOCK
+F1 ... F12
 SHIFT_LEFT SHIFT_RIGHT CONTROL_LEFT CONTROL_RIGHT ALT_LEFT ALT_RIGHT
 META_LEFT META_RIGHT CAPS_LOCK EISU_TOGGLE KANA_LOCK
 HIRAGANA_KATAKANA ZENKAKU_HANKAKU
@@ -671,7 +871,21 @@ base definition < placement.override fields < direct placement fields
 ```
 
 This applies to built-in and user-defined references. `weight: "auto"` is
-supported for rows with a valid `totalWeight`.
+supported for rows with a valid `totalWeight`. A key with `weight: "auto"`
+takes the remaining width after fixed-weight keys are laid out:
+
+```json
+{
+  "type": "rows",
+  "rows": [{
+    "totalWeight": 8,
+    "keys": [
+      { "ref": "rime.a", "weight": "auto" },
+      { "ref": "rime.space", "weight": 4 }
+    ]
+  }]
+}
+```
 
 ### Per-Key Colors
 
@@ -785,6 +999,30 @@ action:
 }
 ```
 
+### Double Tap
+
+`doubleTap` fires when a key is tapped twice within the platform double-tap
+interval. A key that defines `doubleTap` delays confirmation of a single tap so
+one double tap does not also fire the normal `tap`. Keys without `doubleTap`
+keep immediate single-tap behavior.
+
+```json
+"doubleTap": { "ref": "rime.b" }
+```
+
+### Hold End Fields
+
+A hold's two sides may be written as `start`/`end`, or as
+`action`/`actions` plus `endAction`/`endActions`. When a referenced hold is
+patched, omitted sides are inherited:
+
+```json
+"hold": {
+  "action": { "type": "app", "command": "voice_start" },
+  "endActions": [{ "type": "app", "command": "voice_stop" }]
+}
+```
+
 ## Status Variants
 
 Use `variants` in a key definition, placement, or placement `override` to
@@ -878,6 +1116,7 @@ settings
 schema_list
 data_directory_list / data_dir_list
 deploy / deploy_rime
+sync / sync_rime
 clipboard
 theme / theme_list
 voice / voice_toggle
@@ -910,11 +1149,15 @@ commit_text
 `data_directory_list` opens the Rime data-directory picker. The alias
 `data_dir_list` is also accepted. Selecting an entry switches the active Rime
 user directory, redeploys Rime, and refreshes the current input session.
+`sync`/`sync_rime` syncs the Rime user data without changing directories.
 
 Argument-bearing commands use the action's `argument` string:
 
 ```json
 { "type": "app", "command": "select_schema", "argument": "cangjie5" }
+```
+
+```json
 { "type": "app", "command": "select_switch_option", "argument": "ascii_mode=on" }
 ```
 
@@ -1004,76 +1247,35 @@ not persist the preview.
 - Normal and split arrangements use compatible total height units.
 - Run `./gradlew testDebugUnitTest` after changing parser behavior.
 
-The full public format reference is in `DEFAULT_LAYOUT_V0.0.1.md`.
+### How to validate a layout
 
-## Agent Generation Workflow
+There is no standalone validator binary; a profile is validated when it is
+loaded. Two practical checks, in order:
 
-When generating a layout from a natural-language request, follow this order:
+1. Confirm the file is syntactically valid JSON (`python -m json.tool file.json`
+   or any JSON linter). This catches trailing commas and unescaped quotes, the
+   most common syntax failures.
+2. Confirm every `ref` resolves to a built-in (see the lists in this skill) or
+   to a name defined under top-level `keys`, `actions`, or `macros`. A single
+   unresolved reference invalidates the whole profile, so grep each `"ref"`,
+   `"macro"`, and string action value and match it against a definition.
 
-1. Decide whether the user wants a new profile file or a change to an existing
-   profile. Preserve unrelated layouts, keys, actions, macros, and metadata.
-2. Identify the named layouts the keyboard will request. Normally this means
-   `default` for the alphabetic keyboard and `numpad` for numeric fields. Add
-   other names only when the app has an action that switches to them.
-3. Define reusable behavior under `keys`, `actions`, and `macros` before
-   assembling the visual rows or grid.
-4. Prefer a built-in `rime.*` or `foxy.*` reference. Use an inline action only
-   for behavior that has no suitable built-in definition.
-5. Give every placed key a click action, either directly or through its
-   resolved reference. Add swipe, double-tap, long-press, or hold behavior
-   only when requested.
-6. Use placement `override` for a local change. Do not duplicate a reusable
-   definition just to change one label, width, icon, or gesture.
-7. Check row weights, row heights, grid coordinates, and total height units.
-8. Validate the complete profile, not just the layout the user mentioned.
-   One invalid named layout excludes the profile from the selector.
-9. Keep the requested filename as a direct `.json` file in `frontend/layouts`
-   and add a top-level `author` only when the user supplies one.
+The runtime re-validates on load and silently omits invalid profiles from the
+selector, so a profile that "does not appear" is almost always failing one of
+the checklist items above, not a UI bug.
 
-### Complete Starting Template
+## Common Errors
 
-Use this as a safe starting point for a new profile. Replace the example keys
-and rows rather than removing required structure accidentally:
-
-```json
-{
-  "author": "Example author",
-  "keys": {
-    "main.a": {
-      "ref": "rime.a",
-      "keyType": "LETTER"
-    },
-    "main.backspace": {
-      "ref": "rime.BackSpace",
-      "keyType": "FUNCTION",
-      "icon": "backspace",
-      "longPress": {
-        "repeat": true,
-        "action": { "type": "key", "key": "BACKSPACE" }
-      }
-    }
-  },
-  "actions": {},
-  "macros": {},
-  "layouts": {
-    "default": {
-      "sections": [{
-        "type": "rows",
-        "rows": [
-          [
-            { "ref": "main.a" },
-            { "ref": "main.backspace" }
-          ]
-        ]
-      }]
-    }
-  }
-}
-```
-
-The template is syntactically complete, but its one-row keyboard is only a
-minimal example. A production phone keyboard should normally use four rows
-whose total height is five units.
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| Profile absent from the selector | Any named layout fails to parse (bad `ref`, missing click, overlapping grid) | Fix the first failing layout; per-profile validation is all-or-nothing |
+| Tapping a key writes literal text | Used `{ "type": "text" }` or `commit` for a normal key | Use `{ "ref": "rime.*" }` (see `## Quick Start`) |
+| Key emits nothing | Misnamed or empty `key`/`ref` action | Use a listed `rime.*` name; check for typos |
+| Comma/period selects a digit | A `composing` variant is active | Expected while composing; see `## Status Variants` |
+| `hold` or `longPress` never fires | Both are defined on one key | Keep only one; the parser rejects the key |
+| A macro step is skipped | A nested macro was used as a step | Inline the steps or use `{ "action": "name" }` |
+| Row width is wrong | `weight: "auto"` without `totalWeight` | Add a positive `totalWeight` to the row |
+| `switch_layout` target does nothing | Layout name is not defined in the profile | Define the named layout or use an app command |
 
 ## Action Schema
 
@@ -1102,6 +1304,27 @@ Use one of these exact direct action shapes:
 ```json
 { "type": "app", "command": "settings" }
 ```
+
+`text` and `commit` both directly commit their `text` value through the host
+editor. They are currently equivalent action types. To commit literal text
+from gestures instead of sending a `rime.*` key event:
+
+```json
+{
+  "ref": "rime.q",
+  "longPress": {
+    "action": { "type": "text", "text": "Q" }
+  },
+  "swipe": {
+    "down": {
+      "action": { "type": "text", "text": "q" }
+    }
+  }
+}
+```
+
+Use `actions: []` for an intentionally empty action sequence. The singular
+`action` field contains one action expression and must not contain an array.
 
 For a key action, `key` must be one of the listed low-level `KeyCode` names.
 The `meta` value may be a string or an array containing `SHIFT`, `CTRL`,
@@ -1199,6 +1422,33 @@ form is clearer and should be preferred:
 Do not rely on a modifier action remaining active across later macro steps.
 Use the `meta` field on each modified key action. Do not nest a macro inside a
 macro: nested macro actions are discarded when converting macro steps.
+
+A step may be written three ways: a bare action-name string, an explicit
+`{ "action": "name" }`, or an inline action object. Strings are looked up in
+`actions`, not in `macros`. Macro steps may also be `app` actions, including
+candidate paging:
+
+```json
+{
+  "actions": {
+    "word.left": { "type": "key", "key": "LEFT", "meta": ["CTRL"] },
+    "word.select_right": { "type": "key", "key": "RIGHT", "meta": ["CTRL", "SHIFT"] }
+  },
+  "macros": {
+    "delete_previous_word": [
+      "word.left",
+      { "action": "word.select_right" },
+      { "type": "key", "key": "BACKSPACE" }
+    ],
+    "next_page_and_hide": [
+      { "type": "app", "command": "candidate_next" },
+      { "type": "app", "command": "hide_keyboard" }
+    ]
+  }
+}
+```
+
+The first macro mixes all three step forms; the second shows `app` steps.
 
 ## Selection and Fallback Behavior
 

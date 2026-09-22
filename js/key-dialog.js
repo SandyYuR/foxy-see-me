@@ -1016,15 +1016,32 @@ FE.openKeyDialog = function (opts) {
     var slSel = h('select', { class: 'mini-select' });
     var slCur = draft.statusLabel;
     var slObjSource = FE.isPlainObject(slCur) && typeof slCur.source === 'string' ? slCur.source : null;
+    var slIsSwitch = !!(slObjSource && slObjSource.indexOf('switch:') === 0);
     slSel.appendChild(h('option', { value: '', selected: slCur == null }, '继承（' + (effRaw('statusLabel') != null ? (typeof effRaw('statusLabel') === 'string' ? effRaw('statusLabel') : '对象') : '无') + '）'));
     slSel.appendChild(h('option', { value: '__null__', selected: slCur === null }, '清除（null）'));
     slSel.appendChild(h('option', { value: 'schema_name', selected: slCur === 'schema_name' }, 'schema_name（方案名，字符串）'));
     slSel.appendChild(h('option', { value: '__obj__schema_name', selected: slObjSource === 'schema_name' }, '{ "source": "schema_name" }（对象形式）'));
+    slSel.appendChild(h('option', { value: '__switch__', selected: slIsSwitch }, 'switch:<开关名>（该开关的当前状态标签）'));
+    /* switch:<name> 源需要填开关名（文档：switch:<name> 取该开关的当前状态标签） */
+    var slSwitchInp = h('input', {
+      type: 'text', class: 'mini-input',
+      value: slIsSwitch ? slObjSource.slice(7) : '',
+      placeholder: '开关名，如 ascii_mode',
+      style: { display: slIsSwitch ? '' : 'none' }
+    });
+    slSwitchInp.addEventListener('change', function () {
+      var swName = slSwitchInp.value.trim();
+      if (!swName) { delete draft.statusLabel; }
+      else draft.statusLabel = { source: 'switch:' + swName };
+      buildForm();
+    });
     slSel.addEventListener('change', function () {
       if (slSel.value === '') delete draft.statusLabel;
       else if (slSel.value === '__null__') draft.statusLabel = null;
+      else if (slSel.value === '__switch__') draft.statusLabel = { source: 'switch:' + slSwitchInp.value.trim() };
       else if (slSel.value.indexOf('__obj__') === 0) draft.statusLabel = { source: slSel.value.slice(7) };
       else draft.statusLabel = slSel.value;
+      buildForm();
     });
     var modSel = h('select', { class: 'mini-select' });
     modSel.appendChild(h('option', { value: '', selected: draft.modifier == null }, '继承（' + (effRaw('modifier') || '无') + '）'));
@@ -1038,6 +1055,11 @@ FE.openKeyDialog = function (opts) {
     b.appendChild(h('div', { class: 'form-grid-2' },
       h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '状态标签'), slSel),
       h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '修饰键'), modSel)));
+    /* 选中 switch:<name> 源时才显示开关名输入框 */
+    if (slIsSwitch) {
+      b.appendChild(h('div', { class: 'form-row form-inline' },
+        h('label', { class: 'mini-label' }, '开关名'), slSwitchInp));
+    }
 
     basic.appendChild(b);
     formHost.appendChild(basic);
