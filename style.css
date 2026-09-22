@@ -527,6 +527,46 @@ label.check { cursor: pointer; white-space: nowrap; }
 .def-badges { font-size: 12px; color: var(--text-dim); }
 .def-tools { display: flex; gap: 6px; }
 
+/* ---------------- 动作与宏：图形化编辑 ---------------- */
+.def-item.def-gui { gap: 8px; }
+.action-def-editor { display: flex; flex-direction: column; gap: 4px; }
+.action-def-editor .action-editor { background: #1b1e23; }
+
+/* 宏步骤：每步一行；窄屏自动把工具栏折到下一行 */
+.macro-steps { display: flex; flex-direction: column; gap: 6px; }
+.macro-step {
+  display: flex; align-items: flex-start; gap: 8px;
+  background: #1b1e23; border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px; flex-wrap: wrap;
+}
+.macro-step.dragging { opacity: 0.55; border-color: var(--accent); }
+.macro-step.drop-gap { border-color: var(--sel); box-shadow: 0 0 0 2px rgba(255, 176, 32, 0.35); }
+.macro-step-handle {
+  cursor: grab; color: var(--text-dim); font-size: 15px; line-height: 1.5;
+  padding: 0 2px; user-select: none; flex: 0 0 auto;
+}
+.macro-step-handle:active { cursor: grabbing; }
+.macro-step-index {
+  flex: 0 0 auto; min-width: 20px; text-align: center;
+  font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+  background: #262a31; border-radius: 4px; padding: 2px 4px; line-height: 1.4;
+}
+.macro-step-main { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.macro-step-tools { display: flex; gap: 2px; flex: 0 0 auto; align-items: center; }
+.macro-step-raw {
+  display: block; font-size: 11.5px; color: var(--text-dim);
+  word-break: break-all; white-space: pre-wrap; margin-top: 2px;
+}
+/* 步骤里的下拉框不必像主表单那样宽 */
+.macro-step .mini-select { max-width: 100%; }
+.macro-step .action-editor { padding: 6px; }
+.macro-steps .status { margin: 2px 0; }
+
+@media (max-width: 640px) {
+  .macro-step-main { flex: 1 1 100%; }
+  .macro-step-tools { flex: 1 1 100%; justify-content: flex-end; }
+}
+
 /* ---------------- JSON 编辑器 ---------------- */
 .json-editor {
   width: 100%;

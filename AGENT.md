@@ -4,7 +4,7 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 337 / UI 437 / 真实文件体检 18 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 373 / UI 466 / 真实文件体检 18 个示例 0 错误。
 
 ### ⚠️ 本文件有两份，必须保持一致
 
@@ -126,7 +126,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **337 core + 437 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **373 core + 466 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -174,6 +174,7 @@ foxy-editor/
 │   ├── app.js         主体（3600+ 行）：状态 / 解析引擎 / 校验器 / 编译层 / 预览 / 布局编辑 UI
 │   ├── folder-import.js 文件夹批量导入：识别 definitions.json 与被引用文件（纯逻辑，无 DOM）
 │   ├── key-dialog.js  对话框：按键 / 手势 / 动作 / 变体 / 按键选择器 / jscolor 取色
+│   ├── macro-editor.js 「动作与宏」页的图形化编辑（纯逻辑 + UI；**依赖 key-dialog.js，须排其后**）
 │   ├── popup-editor.js 弹出菜单编辑（纯逻辑 + 该标签页 UI）
 │   └── jscolor/jscolor.js  vendor 取色器（GPLv3，**不要改**）
 ├── examples/          示例源文件（18 个：15 布局 + 3 弹出菜单）
@@ -427,6 +428,31 @@ tooltip 由 `itemTooltip(item, shift)` 生成（读 `item.summaries` / `item.hin
     `hint` 四边，以及 `pressed` / `modifierLocked` / `modifierActive` 三个 `states` 子卡。
   - 最后一个「弹出菜单」是内嵌的 `FE.buildPopupKeyEditor`（见 §4.6）。
 - `FE.openGestureDialog` / `FE.openVariantDialog` / `FE.openKeyPicker` / `FE.buildActionEditor`。
+
+#### `FE.buildActionEditor(spec, opts)` —— 唯一的动作编辑器（三处共用）
+
+**所有「需要一个动作」的地方都复用这一个组件**：按键手势、动作定义列表、宏的每一个步骤。
+原作者的明确要求：*「每步是一个 action，你可以抽象 action 编辑器」* —— 因此**不要**在宏那边
+另造「步骤类型」这一层，宏的每一步就是一个 `actionExpression`。
+
+`spec` 接受完整的动作表达式形态：
+
+| 传入 | 识别为 | 类型下拉选中 |
+|---|---|---|
+| `"word.left"`（字符串） | 引用已命名动作 | `ref` |
+| `{ action: "word.left" }` | 同上（内联包装） | `ref` |
+| `{ action: { type:'key',… } }` | 内联动作 | 按内层 `type` |
+| `{ macro: "m" }` | 宏调用 | `macro` |
+| `{ type:'key',… }` | 直接动作 | `key` |
+
+`opts`：
+
+- `allowRef: true` —— 提供「引用动作名」选项（宏步骤与动作定义都需要；**按键手势不需要**）。
+- `exclude: ['macro']` —— 隐藏某些类型。宏步骤必须传它：文档明确说嵌套宏在转换步骤时会被丢弃。
+- `onChange()` —— 任一控件改动或切换类型后回调。**控件是每次 `buildFields()` 新建的**，
+  所以调用方不用自己找控件绑事件，直接用它写回即可。
+
+`getValue()`：引用形态返回**字符串**，其余返回对象，空则 `null`（调用方据此避免写回空值）。
 - **jscolor 取色（`FE.installJscolor` 一段，踩过坑，改前必读该段注释）**：面板必须挂进最近的 `<dialog>`
   并对输入框做 `position: fixed`，否则被 `dialog` 与 `::backdrop` 盖住表现为"点了没反应"；
   `new jscolor` 必须在元素进入 DOM 之后，未挂载时惰性安装
@@ -555,6 +581,39 @@ tooltip 由 `itemTooltip(item, shift)` 生成（读 `item.summaries` / `item.hin
     这是刻意的——`folderPlan` 含全部文件原文，塞进 localStorage 体积过大。
     要恢复分包导出，重新用「导入 JSON」选中 `definitions.json`（或整包多选）一次即可。
 
+### 4.10 动作与宏的图形化编辑（macro-editor.js）⭐ 每步就是一个 action
+
+**背景**：这一页原先只是把 JSON 塞进 `<textarea>`（`app.js` 的 `jsonTextarea`），本质仍是手写
+JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：**鼠标、下拉框、点选**。
+
+**核心抽象（原作者的要点）**：*「每步是一个 action，你可以抽象 action 编辑器」*。
+所以**没有**「步骤类型」这一层——宏的每一步就是一个 `actionExpression`，直接复用
+`FE.buildActionEditor`（见 §4.5）。宏编辑器只负责「一行一步」的外壳：序号、增删、排序、逃生口。
+**不要把「引用动作名 / 直接动作」做成两个下拉二选一**，那是把抽象又拆回去了。
+
+- **纯逻辑（core 有断言）**：
+  - `FE.macroStepToDraft(step)` → `{ spec, form, raw, readonly?, reason? }`。
+    `form` 记住原写法（`bare` 裸字符串 / `wrapped` `{action:名}` / `inline` 对象），
+    **往返稳定**：没改过的步骤原样写回，不因「打开一次」就改写用户文件。
+    控件覆盖不到的写法（`{macro:名}`、`actions` 数组、非对象）标为 `readonly` 并给 `reason`，
+    只读展示 + 引导用「原始 JSON…」，**绝不静默改写**。
+  - `FE.macroValueToStep(value, form)` / `FE.macroStepsToDrafts` / `FE.describeMacroStep(s)`
+    / `FE.moveMacroStep(steps, from, to)`（拖动与 ▲▼ 共用的数据层）。
+- **UI**：`FE.buildMacroStepEditor(steps, {commit})` → `{el, getValue, getDrafts, getValues}`；
+  `FE.buildActionDefEditor(name, spec, {commit, onReplace})` → actions 列表用，同一个动作编辑器。
+- ⚠️ **持久化契约**：控件改动走 `opts.commit(...)`，由 `app.js` 的 `commitActionEdits()` **静默**
+  写回（只压历史 + 重校验 + 刷新 JSON 文本），**不调 `afterChange()/renderAll()`**——
+  否则每选一次下拉就重建整个列表，正在操作的控件会被销毁、焦点丢失。
+  只有结构性改动（增删/换形状）才走 `mutate()`。
+- ⚠️ **不要闭包捕获渲染时的对象**：撤销 / 导入会整块替换 `state.profile`，
+  所以 commit 回调里要**实时**取 `state.profile.actions[n]`，别用渲染那一刻的快照。
+- ⚠️ **加载顺序**：本模块依赖 `key-dialog.js` 的 `FE.buildActionEditor` / `FE.buildJsonSnippetEditor`，
+  必须排在它之后。而 `app.js` 的 `boot()` 在 app.js 加载时就跑过，那时本模块还没定义，
+  两个列表只能给占位 —— 模块末尾有一段 `bootMacroEditors()` 补一次 `FE.renderActionsTab()`。
+  **跨文件调用记得导出**：`FE.renderActionsTab` 就是为这个补渲染而导出的。
+- ⚠️ **DOM 桩不冒泡**，所以动作编辑器内部控件用 `opts.onChange` 回调（不靠事件委托），
+  宏步骤行内也把 `change` 逐个绑到编辑器元素上。
+
 ---
 
 ## 5. 已知的坑（都踩过，别重蹈）
@@ -639,8 +698,8 @@ cd foxy-editor
 node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
-node test/test-core.js       # 期望：337 通过, 0 失败
-node test/test-ui.js         # 期望：437 通过, 0 失败
+node test/test-core.js       # 期望：373 通过, 0 失败
+node test/test-ui.js         # 期望：466 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
 node test/check-real-files.js   # 期望：共 18 个文件，0 个存在错误

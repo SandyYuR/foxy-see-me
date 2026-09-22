@@ -360,30 +360,99 @@ FE.openKeyPicker = function (opts) {
 };
 
 /* ================================================================
- * 动作编辑器（嵌入组件）
- * 返回 { el, getValue() }
+ * 动作编辑器（嵌入组件）—— 所有「需要一个动作」的地方共用这一个组件：
+ * 按键手势、动作定义列表、宏的每一个步骤。
+ *
+ * spec 可以是一个 actionExpression：
+ *   · 字符串            → 引用已命名动作（type 下拉选中 ref）
+ *   · 动作对象 {type…}  → 直接动作
+ *   · { action: X }     → 内联引用，语义等价于 X 本身
+ *   · { macro: 名 }     → 宏调用
+ *
+ * opts:
+ *   allowRef  是否提供「引用动作名」这一形态（宏步骤里这是常见写法）
+ *   exclude   要隐藏的类型，如 ['macro']（宏步骤不能调用宏，嵌套会被运行时丢弃）
+ *   onChange  任一控件改动 / 切换类型后回调（调用方据此写回，不用自己找控件绑事件）
+ * 返回 { el, getValue() }；getValue() 对引用形态返回字符串，其余返回对象，空则 null。
  * ================================================================ */
-FE.buildActionEditor = function (spec) {
-  spec = FE.isPlainObject(spec) ? FE.deepClone(spec) : null;
-  var initType = spec ? (spec.macro != null ? 'macro' : (spec.type || '')) : '';
+/* 每个动作编辑器实例一份 datalist：id 必须唯一。
+ * 同页可能同时存在多个动作编辑器（宏的每一步一个 + 动作定义列表 + 手势对话框），
+ * 写死 id 会产生重复 id（非法 HTML，且 list= 的关联行为不可靠）。 */
+var dlLayoutSeq = 0;
+
+FE.buildActionEditor = function (spec, opts) {
+  opts = opts || {};
+  var excluded = Array.isArray(opts.exclude) ? opts.exclude : [];
+  var allowRef = opts.allowRef === true;
+
+  /* 引用形态：spec 是字符串，或 { action: '名字' } */
+  var refName = null;
+  if (typeof spec === 'string') { refName = spec; spec = null; }
+  else if (FE.isPlainObject(spec)) {
+    spec = FE.deepClone(spec);
+    if (typeof spec.action === 'string') { refName = spec.action; spec = null; }
+    else if (FE.isPlainObject(spec.action)) { spec = FE.deepClone(spec.action); }
+  } else spec = null;
+
+  var initType = refName != null ? 'ref'
+    : (spec ? (spec.macro != null ? 'macro' : (spec.type || '')) : '');
 
   var root = h('div', { class: 'action-editor' });
   var typeSel = h('select', { class: 'mini-select' });
-  var typeLabels = { '': '（无动作）', key: '按键 key', modifier: '修饰 modifier', text: '文本 text', commit: '上屏 commit', switch_layout: '切换布局 switch_layout', app: '应用命令 app', macro: '宏调用 macro' };
-  Object.keys(typeLabels).forEach(function (t) {
-    typeSel.appendChild(h('option', { value: t, selected: t === initType }, typeLabels[t]));
+  var typeLabels = {
+    key: '按键 key', modifier: '修饰 modifier', text: '文本 text', commit: '上屏 commit',
+    switch_layout: '切换布局 switch_layout', app: '应用命令 app', macro: '宏调用 macro'
+  };
+  /* 选项顺序：引用形态优先（宏步骤最常用），随后是直接动作 */
+  var ordered = [];
+  if (allowRef) ordered.push(['ref', '引用动作名']);
+  ordered.push(['', '（无动作）']);
+  ordered.push(['key', typeLabels.key]);
+  ['modifier', 'text', 'commit', 'switch_layout', 'app', 'macro'].forEach(function (k) {
+    if (excluded.indexOf(k) < 0) ordered.push([k, typeLabels[k]]);
   });
+  ordered.forEach(function (pair) {
+    typeSel.appendChild(h('option', { value: pair[0], selected: pair[0] === initType }, pair[1]));
+  });
+
   var fields = h('div', { class: 'action-fields' });
   root.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '类型'), typeSel));
   root.appendChild(fields);
 
-  var keySel, metaChks = [], modSel, modStateSel, textInp, textTypeSel, layoutInp, cmdSel, argInp, macroSel;
+  var keySel, metaChks = [], modSel, modStateSel, textInp, textTypeSel, layoutInp, cmdSel, argInp, macroSel, refSel;
+
+  function emit() { if (typeof opts.onChange === 'function') opts.onChange(); }
+
+  /* 控件是每次 buildFields 新建的，所以绑事件也在这里做（DOM 桩不冒泡，逐个绑） */
+  function bindFields() {
+    ['select', 'input', 'textarea'].forEach(function (tag) {
+      fields.querySelectorAll(tag).forEach(function (c) {
+        c.addEventListener('change', emit);
+      });
+    });
+  }
 
   function buildFields() {
     clearEl(fields);
     metaChks = [];
     var t = typeSel.value;
-    if (t === 'key') {
+    if (t === 'ref') {
+      /* 引用已命名动作：列出 actions，当前值不在表内时补一个"未定义"项 */
+      refSel = h('select', { class: 'mini-select wide action-ref-select' });
+      var acts = (state.profile && FE.isPlainObject(state.profile.actions)) ? state.profile.actions : {};
+      var names = Object.keys(acts);
+      var hasCur = false;
+      names.forEach(function (n) {
+        var isCur = n === refName;
+        if (isCur) hasCur = true;
+        refSel.appendChild(h('option', { value: n, selected: isCur }, n + ' · ' + FE.actionDisplay(acts[n])));
+      });
+      if (!names.length) refSel.appendChild(h('option', { value: '' }, '（尚无动作定义，请先在「动作与宏」页新增）'));
+      if (refName && !hasCur) {
+        refSel.appendChild(h('option', { value: refName, selected: true }, refName + '（未在当前文件中定义）'));
+      }
+      fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '动作名'), refSel));
+    } else if (t === 'key') {
       keySel = h('select', { class: 'mini-select wide' });
       FE.KEYCODE_GROUPS.forEach(function (g) {
         var og = h('optgroup', { label: g.label });
@@ -423,8 +492,9 @@ FE.buildActionEditor = function (spec) {
       fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '方式'), textTypeSel));
       fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '内容'), textInp));
     } else if (t === 'switch_layout') {
-      layoutInp = h('input', { type: 'text', class: 'mini-input wide', list: 'dl-layouts', value: spec && spec.layout != null ? String(spec.layout) : '', placeholder: '布局名（如 numpad；symbols/emoji/kaomoji 为内置面板）' });
-      var dl = h('datalist', { id: 'dl-layouts' });
+      var dlId = 'dl-layouts-' + (++dlLayoutSeq);
+      layoutInp = h('input', { type: 'text', class: 'mini-input wide', list: dlId, value: spec && spec.layout != null ? String(spec.layout) : '', placeholder: '布局名（如 numpad；symbols/emoji/kaomoji 为内置面板）' });
+      var dl = h('datalist', { id: dlId });
       Object.keys(state.profile.layouts || {}).forEach(function (n) { dl.appendChild(h('option', { value: n })); });
       ['symbols', 'emoji', 'kaomoji'].forEach(function (n) { dl.appendChild(h('option', { value: n })); });
       fields.appendChild(dl);
@@ -448,13 +518,19 @@ FE.buildActionEditor = function (spec) {
       if (!hasMacro) macroSel.appendChild(h('option', { value: '' }, '（尚无宏，请在“动作与宏”中添加）'));
       fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '宏'), macroSel));
     }
+    bindFields();
   }
-  typeSel.addEventListener('change', buildFields);
+  typeSel.addEventListener('change', function () { buildFields(); emit(); });
   buildFields();
 
   function getValue() {
     var t = typeSel.value;
     if (!t) return null;
+    if (t === 'ref') {
+      /* 引用形态返回字符串：actionExpression 允许字符串，宏步骤里这是常见写法 */
+      if (!refSel || !refSel.value) return null;
+      return refSel.value;
+    }
     if (t === 'key') {
       if (!keySel.value) return null;
       var a = { type: 'key', key: keySel.value };

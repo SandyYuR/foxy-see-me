@@ -19,6 +19,7 @@ load('default-profile.js');
 load('app.js');
 load('folder-import.js');
 load('key-dialog.js');
+load('macro-editor.js');
 load('popup-editor.js');
 
 const FE = global.FE;
@@ -957,6 +958,77 @@ if (fs.existsSync(wsPkgDir)) {
 } else {
   console.log('  （跳过：工作区 布局/简易 目录不存在）');
 }
+
+/* ================================================================
+ * 动作与宏：把「一步就是一个 action」抽象到底的纯逻辑
+ * 宏步骤 = 一个 actionExpression（字符串=引用动作名 / 对象=内联动作），
+ * 编辑器不再另造「步骤类型」层；这里锁住往返稳定与只读兜底。
+ * ================================================================ */
+console.log('== 宏步骤 = 一个动作表达式 ==');
+
+/* ---- 步骤 → 草稿：三种写法各自识别，且记住原写法 ---- */
+const dStr = FE.macroStepToDraft('word.left');
+eq(dStr.spec, 'word.left', '裸字符串步骤识别为引用');
+eq(dStr.form, 'bare', '裸字符串写法被记住（往返不改写）');
+ok(!dStr.readonly, '裸字符串可编辑');
+
+const dWrap = FE.macroStepToDraft({ action: 'word.left' });
+eq(dWrap.spec, 'word.left', '{action:名} 步骤识别为引用');
+eq(dWrap.form, 'wrapped', '{action:名} 写法被记住');
+
+const dInline = FE.macroStepToDraft({ type: 'key', key: 'BACKSPACE' });
+eq(dInline.form, 'inline', '内联动作对象识别为 inline');
+eq(dInline.spec.type, 'key', '内联动作原样交给动作编辑器');
+
+const dNested = FE.macroStepToDraft({ action: { type: 'key', key: 'A' }, note: 'x' });
+eq(dNested.form, 'inline', '{action:对象} 归一为内联动作（丢掉外层包装）');
+eq(dNested.spec.type, 'key', '{action:对象} 取内层动作');
+
+/* ---- 控件覆盖不到的写法：只读 + 给原因，绝不静默改写 ---- */
+const dMacroCall = FE.macroStepToDraft({ macro: 'other' });
+eq(dMacroCall.readonly, true, '{macro:名} 标记为只读（禁止嵌套宏）');
+ok(dMacroCall.reason.indexOf('嵌套宏') >= 0, '只读原因说明嵌套宏会被丢弃');
+eq(dMacroCall.raw, { macro: 'other' }, '只读项保留原始 JSON 供逃生口');
+ok(FE.macroStepToDraft({ actions: [{ type: 'key', key: 'A' }] }).readonly, 'actions 数组写法归为只读');
+ok(FE.macroStepToDraft(123).readonly, '非对象非字符串归为只读');
+ok(FE.macroStepToDraft({}).readonly, '空对象归为只读（无法识别）');
+
+/* ---- 草稿值 → 步骤：往返稳定 ---- */
+eq(FE.macroValueToStep('a', 'bare'), 'a', '裸字符串改写后仍是裸字符串');
+eq(FE.macroValueToStep('a', 'wrapped'), { action: 'a' }, 'wrapped 写法改写后仍是 {action:名}');
+eq(FE.macroValueToStep({ type: 'key', key: 'A' }, 'inline'), { type: 'key', key: 'A' }, '内联动作原样写回');
+eq(FE.macroValueToStep(null, 'bare'), null, '空值视为无效步骤');
+eq(FE.macroValueToStep('', 'bare'), null, '空字符串视为无效步骤');
+
+/* ---- 摘要 ---- */
+eq(FE.describeMacroStep('word.left'), '引用 word.left', '引用步骤摘要');
+eq(FE.describeMacroStep({ type: 'key', key: 'BACKSPACE' }), 'BACKSPACE', '内联步骤摘要走 actionDisplay');
+ok(FE.describeMacroStep({ macro: 'm' }).indexOf('宏调用') >= 0, '嵌套宏摘要标出警告');
+eq(FE.describeMacroSteps([]), '（空宏）', '空宏摘要');
+eq(FE.describeMacroSteps(['a', 'b']), '引用 a → 引用 b', '两步摘要用箭头连接');
+ok(FE.describeMacroSteps(['a', 'b', 'c', 'd']).indexOf('共 4 步') >= 0, '超过三步给出总步数');
+
+/* ---- 重排（拖动与 ▲▼ 共用的数据层） ---- */
+const mv = ['a', 'b', 'c'];
+ok(FE.moveMacroStep(mv, 0, 2) === true, '重排返回 true');
+eq(mv, ['b', 'c', 'a'], '把第 1 步移到末位');
+ok(FE.moveMacroStep(mv, 1, 1) === false, '原地不动返回 false');
+ok(FE.moveMacroStep(mv, 9, 0) === false, '越界的 from 返回 false');
+const mvClamp = ['a', 'b'];
+FE.moveMacroStep(mvClamp, 0, 99);
+eq(mvClamp, ['b', 'a'], 'to 越界被夹到末位');
+const mvNeg = ['a', 'b'];
+FE.moveMacroStep(mvNeg, 1, -5);
+eq(mvNeg, ['b', 'a'], 'to 为负数被夹到首位');
+ok(FE.moveMacroStep(null, 0, 1) === false, '非数组输入安全返回 false');
+
+/* ---- 动作编辑器支持「引用动作名」形态（宏步骤复用的正是它） ---- */
+console.log('== 动作编辑器：引用 / 内联 / 上下文裁剪 ==');
+/* 纯逻辑层验证：动作编辑器本身需要 DOM，这里用无 DOM 时的降级行为确认 API 存在；
+ * 交互细节（类型下拉、写回 profile）由 test-ui.js 覆盖。 */
+ok(typeof FE.macroStepToDraft === 'function', '宏步骤抽象已导出');
+ok(typeof FE.macroValueToStep === 'function', '步骤回写函数已导出');
+ok(FE.MACRO_STEP_KINDS === undefined, '旧的「步骤类型」二选一常量已移除（改由动作编辑器承载）');
 
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
 process.exit(failed ? 1 : 0);

@@ -1633,18 +1633,6 @@ FE.buildJsonSnippetEditor = function (opts) {
   return api;
 };
 
-/* 兼容旧调用：返回 { el }（内部已含问题提醒与状态行） */
-function jsonTextarea(value, onApply, rows) {
-  var ed = FE.buildJsonSnippetEditor({
-    value: value != null ? JSON.stringify(value, null, 2) : '',
-    rows: rows || 4,
-    onApply: onApply,
-    applyOnBlur: true,
-    applyAfterFix: true
-  });
-  return { el: ed.el };
-}
-
 /* 检查 JSON 编辑区内容并刷新问题面板 */
 function checkJsonText() {
   var ta = $('json-editor');
@@ -3089,6 +3077,26 @@ function renderActionsTab() {
   renderActionsList();
   renderMacrosList();
 }
+/* 跨文件调用（macro-editor.js 就绪后要补一次渲染，见该模块末尾） */
+FE.renderActionsTab = renderActionsTab;
+
+/* 「动作与宏」页的图形化编辑：控件改动静默写回。
+ * 关键：**不能**调 afterChange()/renderAll() —— 那会重建整个列表，
+ * 正在操作的下拉框会被销毁、选择丢失。这里只压历史 + 重校验 + 刷新 JSON 文本，
+ * 卡片上的徽标由调用方就地更新。结构性改动（增删/换形状）才走 mutate()。 */
+function commitActionEdits() {
+  state.validation = FE.validateProfile(state.profile);
+  autosave();
+  renderJsonTab();
+  updateUndoButtons();
+}
+
+/* 值没变就不压历史，避免「只是重渲染一下」也留一个撤销点 */
+function commitIfChanged(getCurrent, next) {
+  if (JSON.stringify(next) === JSON.stringify(getCurrent)) return false;
+  pushHistory();
+  return true;
+}
 
 function renderActionsList() {
   var host = $('actions-list');
@@ -3096,27 +3104,65 @@ function renderActionsList() {
   clearEl(host);
   var actions = state.profile && isPlainObject(state.profile.actions) ? state.profile.actions : {};
   var names = Object.keys(actions);
+
   if (!names.length) {
-    host.appendChild(h('div', { class: 'status' }, '尚无动作定义。动作可被按键以字符串形式引用，如 "tap": "my.action"。'));
+    host.appendChild(h('div', { class: 'status' },
+      '尚无动作定义。动作是可复用的单个动作，可被按键以字符串形式引用，如 "tap": "my.action"。'));
   }
+
+  /* buildActionDefEditor 来自 macro-editor.js，它排在 app.js 之后加载，
+   * 而 boot() 在 app.js 加载时就跑过一次 —— 首次渲染时可能还没就绪。
+   * 那时给出占位，加载完成后由 macro-editor.js 触发重渲染。 */
+  if (typeof FE.buildActionDefEditor !== 'function') {
+    if (names.length) host.appendChild(h('div', { class: 'status' }, '正在载入图形化编辑器…'));
+    appendActionAddRow(host);
+    return;
+  }
+
   names.forEach(function (n) {
-    var editor = jsonTextarea(actions[n], function (v) {
-      if (v === null) mutate(function () { delete state.profile.actions[n]; });
-      else mutate(function () { state.profile.actions[n] = v; });
-    });
-    host.appendChild(h('div', { class: 'def-item col' },
+    var badge = h('span', { class: 'def-badges' }, FE.actionDisplay(actions[n]));
+    var item = h('div', { class: 'def-item col def-gui' },
       h('div', { class: 'def-main' },
         h('code', { class: 'def-name' }, n),
-        h('span', { class: 'def-badges' }, FE.actionDisplay(actions[n])),
-        h('button', { class: 'danger mini-button', onclick: function () { mutate(function () { delete state.profile.actions[n]; }); } }, '删除')
-      ),
-      editor.el
-    ));
+        badge,
+        h('button', {
+          class: 'danger mini-button',
+          onclick: function () {
+            if (!confirm('删除动作 “' + n + '”？引用它的地方会变成未解析引用。')) return;
+            mutate(function () { delete state.profile.actions[n]; });
+          }
+        }, '删除')));
+
+    var ed = FE.buildActionDefEditor(n, actions[n], {
+      commit: function (spec) {
+        if (!isPlainObject(spec)) return;
+        /* 从 state.profile 取实时值：撤销 / 导入会整块替换 profile，
+         * 闭包里的 actions 只是渲染那一刻的快照，不能当作事实来源。 */
+        var live = isPlainObject(state.profile.actions) ? state.profile.actions : (state.profile.actions = {});
+        if (!commitIfChanged(live[n], spec)) { badge.textContent = FE.actionDisplay(spec); return; }
+        live[n] = spec;
+        badge.textContent = FE.actionDisplay(spec);
+        commitActionEdits();
+      },
+      onReplace: function (spec) {
+        /* 形状可能完全变了（如从 key 变成 modifier）：整列表重建最稳妥。
+         * 此刻用户刚关掉对话框，重建不会打断他正在操作的控件。 */
+        mutate(function () { state.profile.actions[n] = spec; });
+      }
+    });
+    item.appendChild(ed.el);
+    host.appendChild(item);
   });
+
+  appendActionAddRow(host);
+}
+
+function appendActionAddRow(host) {
   var addName = h('input', { type: 'text', placeholder: '新动作名称，如 editor.select_all', class: 'mini-input wide' });
   host.appendChild(h('div', { class: 'toolbar' },
     addName,
     h('button', {
+      type: 'button', class: 'mini-button',
       onclick: function () {
         var n = addName.value.trim();
         if (!n) { alert('请输入动作名称'); return; }
@@ -3133,27 +3179,56 @@ function renderMacrosList() {
   clearEl(host);
   var macros = state.profile && isPlainObject(state.profile.macros) ? state.profile.macros : {};
   var names = Object.keys(macros);
+
   if (!names.length) {
-    host.appendChild(h('div', { class: 'status' }, '尚无宏。宏是有序动作步骤数组，用 { "macro": "名称" } 调用。'));
+    host.appendChild(h('div', { class: 'status' },
+      '尚无宏。宏是有序的动作步骤序列，用 { "macro": "名称" } 在被按键调用。'));
   }
+
+  if (typeof FE.buildMacroStepEditor !== 'function') {
+    if (names.length) host.appendChild(h('div', { class: 'status' }, '正在载入图形化编辑器…'));
+    appendMacroAddRow(host);
+    return;
+  }
+
   names.forEach(function (n) {
-    var editor = jsonTextarea(macros[n], function (v) {
-      if (v === null) mutate(function () { delete state.profile.macros[n]; });
-      else mutate(function () { state.profile.macros[n] = v; });
-    }, 5);
-    host.appendChild(h('div', { class: 'def-item col' },
+    var badge = h('span', { class: 'def-badges' }, FE.describeMacroSteps(macros[n]));
+    var item = h('div', { class: 'def-item col def-gui' },
       h('div', { class: 'def-main' },
         h('code', { class: 'def-name' }, n),
-        h('span', { class: 'def-badges' }, Array.isArray(macros[n]) ? macros[n].length + ' 步' : ''),
-        h('button', { class: 'danger mini-button', onclick: function () { mutate(function () { delete state.profile.macros[n]; }); } }, '删除')
-      ),
-      editor.el
-    ));
+        badge,
+        h('button', {
+          class: 'danger mini-button',
+          onclick: function () {
+            if (!confirm('删除宏 “' + n + '”？引用它的地方会变成未解析引用。')) return;
+            mutate(function () { delete state.profile.macros[n]; });
+          }
+        }, '删除')));
+
+    var ed = FE.buildMacroStepEditor(macros[n], {
+      commit: function (steps) {
+        if (!Array.isArray(steps)) return;
+        /* 同上：实时读取，不依赖渲染时的快照 */
+        var live = isPlainObject(state.profile.macros) ? state.profile.macros : (state.profile.macros = {});
+        commitIfChanged(live[n], steps);
+        live[n] = steps;
+        badge.textContent = FE.describeMacroSteps(steps);
+        commitActionEdits();
+      }
+    });
+    item.appendChild(ed.el);
+    host.appendChild(item);
   });
+
+  appendMacroAddRow(host);
+}
+
+function appendMacroAddRow(host) {
   var addName = h('input', { type: 'text', placeholder: '新宏名称，如 delete_to_line_start', class: 'mini-input wide' });
   host.appendChild(h('div', { class: 'toolbar' },
     addName,
     h('button', {
+      type: 'button', class: 'mini-button',
       onclick: function () {
         var n = addName.value.trim();
         if (!n) { alert('请输入宏名称'); return; }

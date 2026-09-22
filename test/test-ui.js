@@ -54,6 +54,7 @@ load('examples-bundle.js');
 load('app.js');
 load('folder-import.js');
 load('key-dialog.js');
+load('macro-editor.js');
 load('popup-editor.js');
 
 const FE = global.FE;
@@ -455,25 +456,112 @@ ok(sed2.el.textContent.indexOf('无法解析') >= 0, '片段编辑器显示解�
 const sed3 = FE.buildJsonSnippetEditor({ value: '', applyOnBlur: false, onApply: function (v) { sedApplied2 = v; } });
 ok(sed3.apply() === true && sedApplied2 === null, '空内容 apply 回传 null（用于删除）');
 
-console.log('== 统一：动作片段编辑（尾逗号自动修复并应用） ==');
-FE.mutate(() => { FE.state.profile.actions['test.act'] = { type: 'key', key: 'A' }; });
-const actEditors = $('actions-list').querySelectorAll('.snippet-editor');
-ok(actEditors.length >= 1, '动作列表使用片段编辑器');
-const lastActEditor = actEditors[actEditors.length - 1];
-ok(lastActEditor.textContent.indexOf('检查通过') >= 0, '合法动作显示检查通过');
-const lastActTa = lastActEditor.querySelectorAll('textarea')[0];
-lastActTa.value = '{\n  // 注释也不该拦住我\n  "type": "key",\n  "key": "B",\n}';
-lastActTa._fire('blur');
-ok(FE.state.profile.actions['test.act'] && FE.state.profile.actions['test.act'].key === 'B', '动作片段：注释+尾逗号自动修复并应用');
+console.log('== 动作：图形化编辑（不再是 JSON 文本框） ==');
+FE.mutate(() => {
+  FE.state.profile.actions['test.act'] = { type: 'app', command: 'settings' };
+  FE.state.profile.actions['test.left'] = { type: 'key', key: 'LEFT', meta: ['CTRL'] };
+  FE.state.profile.actions['test.del'] = { type: 'key', key: 'BACKSPACE' };
+});
+const actHost = $('actions-list');
+ok(actHost.querySelectorAll('.snippet-editor').length === 0, '动作列表不再使用 JSON 片段编辑器');
+const actDefEditors = actHost.querySelectorAll('.action-def-editor');
+ok(actDefEditors.length >= 3, '动作列表为每个动作渲染图形化编辑器');
+const delItem = actHost.querySelectorAll('.def-item').find(it => {
+  const n = it.querySelectorAll('.def-name')[0];
+  return n && n.textContent === 'test.del';
+});
+ok(!!delItem, '动作 test.del 出现在列表中');
+const actEd = delItem.querySelectorAll('.action-def-editor')[0];
+ok(!!actEd, '动作项内含图形化编辑器');
+ok(actEd.querySelectorAll('.action-editor').length === 1, '动作编辑器含类型下拉与字段区');
+ok(actEd.textContent.indexOf('编辑原始 JSON') >= 0, '动作编辑器保留「编辑原始 JSON…」逃生口');
+const actTypeSel = actEd.querySelectorAll('select')[0];
+eq(actTypeSel.value, 'key', '类型下拉按当前动作类型预选');
+/* 关键：只动下拉框、不碰任何 JSON 文本，就应当写回 profile */
+actTypeSel.value = 'modifier';
+actTypeSel._fire('change');
+eq(FE.state.profile.actions['test.del'].type, 'modifier', '切换类型下拉即写回 profile');
+eq(FE.state.profile.actions['test.del'].modifier, 'SHIFT', '修饰键默认值写回 profile');
+/* 改回 key，供后续宏测试当作可引用动作 */
+const delEd2 = actHost.querySelectorAll('.def-item').find(it => {
+  const n = it.querySelectorAll('.def-name')[0];
+  return n && n.textContent === 'test.del';
+}).querySelectorAll('.action-def-editor')[0];
+const delTypeSel2 = delEd2.querySelectorAll('select')[0];
+delTypeSel2.value = 'key';
+delTypeSel2._fire('change');
+eq(FE.state.profile.actions['test.del'].type, 'key', '改回 key 类型同样立即写回');
 
-console.log('== 统一：宏片段编辑（单引号 + 尾逗号自动修复） ==');
-FE.mutate(() => { FE.state.profile.macros['test.macro'] = [{ action: { type: 'key', key: 'A' } }]; });
-const macEditors = $('macros-list').querySelectorAll('.snippet-editor');
-const lastMacTa = macEditors[macEditors.length - 1].querySelectorAll('textarea')[0];
-lastMacTa.value = "[{ 'action': { 'type': 'key', 'key': 'C' } },]";
-lastMacTa._fire('blur');
-ok(Array.isArray(FE.state.profile.macros['test.macro']) &&
-   FE.state.profile.macros['test.macro'][0].action.key === 'C', '宏片段：单引号+尾逗号自动修复并应用');
+console.log('== 宏：步骤图形化编辑（每步一行 + 下拉框 + 增删排序） ==');
+FE.mutate(() => {
+  FE.state.profile.macros['test.macro'] = [
+    { action: 'test.left' },
+    { type: 'key', key: 'BACKSPACE' },
+    { action: 'test.act' }
+  ];
+});
+const macHost = $('macros-list');
+ok(macHost.querySelectorAll('.snippet-editor').length === 0, '宏列表不再使用 JSON 片段编辑器');
+const macItem = macHost.querySelectorAll('.def-item').find(it => {
+  const n = it.querySelectorAll('.def-name')[0];
+  return n && n.textContent === 'test.macro';
+});
+ok(!!macItem, '宏 test.macro 出现在列表中');
+const macRoot = macItem.querySelectorAll('.macro-steps')[0];
+ok(!!macRoot, '宏使用图形化步骤编辑器');
+let msteps = macRoot.querySelectorAll('.macro-step');
+eq(msteps.length, 3, '宏的 3 个步骤各占一行');
+/* 核心抽象：每一步就是一个 action，行内是同一个动作编辑器 */
+eq(msteps[0].querySelectorAll('.action-editor').length, 1, '引用型步骤也是同一个动作编辑器');
+eq(msteps[0].querySelectorAll('select.action-ref-select').length, 1, '引用型步骤显示动作名下拉');
+eq(msteps[0].querySelectorAll('.action-editor select')[0].value, 'ref', '引用型步骤的类型下拉选中「引用动作名」');
+eq(msteps[1].querySelectorAll('.action-editor select')[0].value, 'key', '内联型步骤的类型下拉选中 key');
+ok(msteps[2].querySelectorAll('button').some(b => b.title === '删除此步'), '每步都有删除按钮');
+eq(msteps[0].textContent.indexOf('1') >= 0, true, '步骤显示序号');
+/* 不允许有第二层「步骤类型」下拉：抽象归一到动作编辑器 */
+eq(macRoot.querySelectorAll('select.macro-step-kind').length, 0, '不再有额外的「步骤类型」下拉（已抽象为动作编辑器）');
+
+/* ▲ 重排：步骤 3 上移到第 2 位，且不把 {action:名} 改写成别的写法 */
+const stepId = (s) => (typeof s === 'string') ? s : (typeof s.action === 'string' ? s.action : s.type);
+eq(FE.state.profile.macros['test.macro'].map(stepId), ['test.left', 'key', 'test.act'], '初始顺序正确');
+const upBtn = msteps[2].querySelectorAll('button').find(b => b.title === '上移');
+ok(!!upBtn, '每步都有上移按钮');
+upBtn.click();
+eq(FE.state.profile.macros['test.macro'].map(stepId), ['test.left', 'test.act', 'key'], '上移按钮调整了步骤顺序');
+eq(FE.state.profile.macros['test.macro'][1].action, 'test.act', '重排后引用步骤仍是 { action: 名 } 写法');
+
+/* ＋ 插入 / ✕ 删除 */
+msteps = macRoot.querySelectorAll('.macro-step');
+msteps[0].querySelectorAll('button').find(b => b.title === '在下方插入一步').click();
+eq(FE.state.profile.macros['test.macro'].length, 4, '「＋」在下方插入一步');
+msteps = macRoot.querySelectorAll('.macro-step');
+msteps[0].querySelectorAll('button').find(b => b.title === '删除此步').click();
+eq(FE.state.profile.macros['test.macro'].length, 3, '「✕」删除该步');
+
+/* 动作名下拉：换一个动作即写回 profile（纯下拉操作，不动 JSON 文本）。
+ * 该步原本是裸字符串写法，改名后仍应保持裸字符串（不因编辑就改写成 {action:名}）。 */
+msteps = macRoot.querySelectorAll('.macro-step');
+const aSel = msteps[0].querySelectorAll('select.action-ref-select')[0];
+aSel.value = 'test.del';
+aSel._fire('change');
+eq(FE.state.profile.macros['test.macro'][0], 'test.del', '改动作名下拉即写回 profile（裸字符串写法保持）');
+
+/* 宏不能调用宏：动作编辑器的类型下拉里不应出现 macro（文档：嵌套宏步骤会被丢弃）。
+ * 注意：上面的增删/移动已改变步骤位置，这里**动态定位**引用型步骤，不写死下标。 */
+const refRow = msteps.find(r => r.querySelectorAll('select.action-ref-select').length > 0);
+ok(!!refRow, '引用型步骤仍在列表中（动态定位）');
+const refIdx = msteps.indexOf(refRow);
+const inlineEd = refRow.querySelectorAll('.action-editor')[0];
+const inlineTypeSel = inlineEd.querySelectorAll('select')[0];
+const inlineOpts = inlineTypeSel.querySelectorAll('option').map(o => o.getAttribute('value'));
+ok(inlineOpts.indexOf('macro') < 0, '动作编辑器去掉了「宏调用」选项（禁止嵌套宏）');
+ok(inlineOpts.indexOf('key') >= 0 && inlineOpts.indexOf('app') >= 0, '仍保留 key / app 等直接动作类型');
+ok(inlineOpts.indexOf('ref') >= 0, '保留「引用动作名」类型');
+
+/* 引用步骤切为内联动作 → 写回 profile（验证类型下拉直接驱动数据） */
+inlineTypeSel.value = 'app';
+inlineTypeSel._fire('change');
+eq(FE.state.profile.macros['test.macro'][refIdx].type, 'app', '引用步骤切为 app 后写回 profile');
 
 console.log('== 统一：按键对话框「原始 JSON」一键修复 ==');
 documentStub._openDialogs.length = 0;
