@@ -504,19 +504,39 @@ function buildSkeleton() {
   const wb = el('div', { class: 'workbench' }, el('div', { class: 'col-main' }, opCard, layoutCard, layoutJsonCard));
   tabLayout.appendChild(wb);
 
-  /* 按键定义面板 */
+  /* 按键定义面板（工具条与 index.html 保持同步：搜索组 + 新建组） */
   const tabKeys = el('section', { class: 'tabpanel', id: 'tab-keys' });
   tabKeys.appendChild(el('details', { class: 'card', open: 'open' },
-    el('div', { class: 'toolbar' },
-      el('input', { id: 'keys-filter', type: 'text' }),
-      el('button', { id: 'keys-add' })),
+    el('div', { class: 'def-toolbar' },
+      el('div', { class: 'def-tool-group' },
+        el('input', { id: 'keys-filter', type: 'text', placeholder: '搜索：名称 / 引用' }),
+        el('button', { id: 'keys-search' }, '搜索')),
+      el('div', { class: 'def-tool-group' },
+        el('input', { id: 'keys-new', type: 'text', placeholder: '新按键定义名称，如 my.tab' }),
+        el('button', { id: 'keys-add' }, '+ 新建按键定义'))),
     el('div', { id: 'keys-list' })));
 
-  /* 动作与宏面板 */
+  /* 动作与宏面板（与按键定义页同构：各自一组搜索、一组新建） */
   const tabActions = el('section', { class: 'tabpanel', id: 'tab-actions' });
   tabActions.append(
-    el('details', { class: 'card', open: 'open' }, el('div', { id: 'actions-list' })),
-    el('details', { class: 'card', open: 'open' }, el('div', { id: 'macros-list' })));
+    el('details', { class: 'card', open: 'open' },
+      el('div', { class: 'def-toolbar' },
+        el('div', { class: 'def-tool-group' },
+          el('input', { id: 'actions-filter', type: 'text', placeholder: '搜索：名称 / 动作内容' }),
+          el('button', { id: 'actions-search' }, '搜索')),
+        el('div', { class: 'def-tool-group' },
+          el('input', { id: 'actions-new', type: 'text', placeholder: '新动作名称，如 editor.select_all' }),
+          el('button', { id: 'actions-add' }, '+ 新建动作'))),
+      el('div', { id: 'actions-list' })),
+    el('details', { class: 'card', open: 'open' },
+      el('div', { class: 'def-toolbar' },
+        el('div', { class: 'def-tool-group' },
+          el('input', { id: 'macros-filter', type: 'text', placeholder: '搜索：名称 / 步骤内容' }),
+          el('button', { id: 'macros-search' }, '搜索')),
+        el('div', { class: 'def-tool-group' },
+          el('input', { id: 'macros-new', type: 'text', placeholder: '新宏名称，如 delete_to_line_start' }),
+          el('button', { id: 'macros-add' }, '+ 新建宏'))),
+      el('div', { id: 'macros-list' })));
 
   /* 弹出菜单面板（与 index.html 同样的卡片顺序与标题）：
    * 弹出菜单文件（最上）→ 弹出效果预览 → 弹出菜单键定义 → 弹出菜单 JSON（最下） */

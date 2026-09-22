@@ -155,9 +155,15 @@
     <section class="tabpanel" id="tab-keys" role="tabpanel">
       <details class="card" open>
         <summary>按键定义（keys）— 可复用按键与手势</summary>
-        <div class="toolbar">
-          <input id="keys-filter" type="text" class="mini-input wide" placeholder="搜索：名称 / 引用">
-          <button id="keys-add" class="mini-button">+ 新建按键定义</button>
+        <div class="def-toolbar">
+          <div class="def-tool-group">
+            <input id="keys-filter" type="text" class="mini-input" placeholder="搜索：名称 / 引用">
+            <button id="keys-search" type="button" class="mini-button">搜索</button>
+          </div>
+          <div class="def-tool-group">
+            <input id="keys-new" type="text" class="mini-input" placeholder="新按键定义名称，如 my.tab">
+            <button id="keys-add" type="button" class="mini-button primary">+ 新建按键定义</button>
+          </div>
         </div>
         <div id="keys-list"></div>
       </details>
@@ -167,10 +173,30 @@
     <section class="tabpanel" id="tab-actions" role="tabpanel">
       <details class="card" open>
         <summary>动作定义（actions）</summary>
+        <div class="def-toolbar">
+          <div class="def-tool-group">
+            <input id="actions-filter" type="text" class="mini-input" placeholder="搜索：名称 / 动作内容">
+            <button id="actions-search" type="button" class="mini-button">搜索</button>
+          </div>
+          <div class="def-tool-group">
+            <input id="actions-new" type="text" class="mini-input" placeholder="新动作名称，如 editor.select_all">
+            <button id="actions-add" type="button" class="mini-button primary">+ 新建动作</button>
+          </div>
+        </div>
         <div id="actions-list"></div>
       </details>
       <details class="card" open>
         <summary>宏（macros）</summary>
+        <div class="def-toolbar">
+          <div class="def-tool-group">
+            <input id="macros-filter" type="text" class="mini-input" placeholder="搜索：名称 / 步骤内容">
+            <button id="macros-search" type="button" class="mini-button">搜索</button>
+          </div>
+          <div class="def-tool-group">
+            <input id="macros-new" type="text" class="mini-input" placeholder="新宏名称，如 delete_to_line_start">
+            <button id="macros-add" type="button" class="mini-button primary">+ 新建宏</button>
+          </div>
+        </div>
         <div id="macros-list"></div>
       </details>
     </section>

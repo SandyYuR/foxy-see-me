@@ -528,11 +528,41 @@ label.check { cursor: pointer; white-space: nowrap; }
 .def-tools { display: flex; gap: 6px; }
 
 /* 整行可点即进入编辑（按键定义页）。行内按钮会 stopPropagation 排除。
- * 键盘可达性由行内「编辑」按钮承担 —— 刻意**不**在行上加角色/键盘处理：
- * 交互元素里嵌交互元素是非法 ARIA，且焦点在子按钮上按空格会误触发整行。 */
+ * 键盘可达性由行自带 tabindex + keydown 承担（见 app.js 注释）。 */
 .def-item.def-row-click { cursor: pointer; }
 .def-item.def-row-click:hover { border-color: #4a4f58; background: #24272e; }
 .def-item.def-row-click .def-tools { cursor: default; }
+
+/* ---------------- 定义列表的工具条（按键定义 / 动作 / 宏 共用） ----------------
+ * 三个列表外观与行为完全一致，改这里三处同时生效。
+ * 结构：.def-toolbar > 若干 .def-tool-group；每组 = 输入框 + 按钮（同一功能）。
+ * 桌面：两组并排一行；手机竖屏：每组各占一行，且**组内输入框与按钮仍在同一行**。 */
+.def-toolbar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin: 8px 0;
+}
+.def-tool-group {
+  display: flex; gap: 6px; align-items: center;
+  flex: 1 1 auto; min-width: 0;
+}
+/* 输入框吃掉剩余宽度，按钮保持自然宽度不被压扁 */
+.def-tool-group > .mini-input { flex: 1 1 auto; min-width: 0; width: auto; }
+.def-tool-group > .mini-button { flex: 0 0 auto; }
+@media (min-width: 641px) {
+  /* 桌面上限宽，两组靠左，不要拉满整行显得松散 */
+  .def-tool-group { flex: 0 1 auto; }
+  .def-tool-group > .mini-input { width: min(260px, 100%); }
+}
+@media (max-width: 640px) {
+  /* 手机竖屏：搜索一行、新建一行，各自的输入框与按钮同处一行 */
+  .def-tool-group { flex: 1 1 100%; }
+  .def-tool-group > .mini-input { width: auto; }
+}
+/* 过滤生效时的提示行（匹配 N / 总数） */
+.def-match-hint {
+  font-size: 12px; color: var(--text-dim);
+  padding: 2px 0 4px;
+}
 
 /* ---------------- 使用情况对话框 ---------------- */
 .usage-summary {

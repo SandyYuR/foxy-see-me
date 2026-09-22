@@ -4,7 +4,7 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 396 / UI 557 / 真实文件体检 18 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 396 / UI 598 / 真实文件体检 18 个示例 0 错误。
 
 ### ⚠️ 本文件有两份，必须保持一致
 
@@ -126,7 +126,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **396 core + 557 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **396 core + 598 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -682,6 +682,38 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
 - **摘要行内的按钮**（动作/宏条目）：都在 `<summary>` 里，**必须 `stopEv(e)`**
   （`preventDefault` + `stopPropagation`），否则点按钮会连带展开/收起。
 
+### 4.12 定义列表的工具条（搜索 + 新建）⭐ 三页必须同构
+
+按键定义 / 动作 / 宏 三张列表共用同一套工具条，**外观与行为完全一致**（用户明确要求同步）：
+
+```
+.def-toolbar                  ← 一行，可换行
+  ├── .def-tool-group         ← 搜索组：输入框 + 「搜索」按钮
+  └── .def-tool-group         ← 新建组：输入框 + 「+ 新建…」按钮
+```
+
+- **结构写在 `index.html` 的静态 HTML 里**（不在 JS 里现渲染），三个列表各一份，
+  id 规律：`<前缀>-filter` / `<前缀>-search` / `<前缀>-new` / `<前缀>-add`，
+  前缀分别是 `keys` / `actions` / `macros`。
+  ⚠️ 改这里必须同步 `test/dom-stub.js` 的 `buildSkeleton()`，否则 UI 测试全崩。
+- **接线统一在 `initToolbar()` 的 `wireSearch()` / `wireAdd()`**：
+  - `wireSearch`：`input` 即时过滤 **+** 按钮显式触发 **+** 回车触发。
+    为什么两者都要：手机输入法有时不派发 `input`，按钮是兜底；桌面则习惯边打边筛。
+  - `wireAdd`：输入框 + 按钮（不再用 `prompt`）。`opts.openKey` 传给可折叠列表，
+    新建后写进 `openSet` 从而**默认展开**；按键定义不是折叠条目，不传该字段。
+- **过滤文本**：按键定义 = 名字 + `ref`；动作 = 名字 + `actionDisplay` 摘要；
+  宏 = 名字 + `describeMacroSteps` 摘要。所以「搜 CTRL」「搜 HOME」都能命中，
+  不只是按名字（`defMatch()` + `defFilterValue()`）。
+- **匹配提示**：过滤生效时列表顶部渲染 `.def-match-hint`（`appendMatchHint()`），
+  显示「匹配 N / 总数 项」或「没有匹配的…」。
+  ⚠️ 因此测试里**数条目要用 `.def-item`，不能数 `children.length`**（提示行也算一个子节点）。
+- **响应式**（`style.css`）：`.def-tool-group` 桌面 `flex: 0 1 auto`（两组并排靠左），
+  手机 `max-width: 640px` 时 `flex: 1 1 100%` → **搜索一行、新建一行**，
+  但**组内输入框与按钮始终同一行**（输入框 `flex: 1 1 auto`，按钮 `flex: 0 0 auto`）。
+- **悬停提示**：按键定义行 `title="点击编辑这个按键定义"`；
+  动作/宏摘要行由 `collapsibleDefItem` 的 `opts.summaryTitle` 或默认
+  「展开并配置「名」」生成。三处都要有——缺了会出现「一页有提示、另一页没有」。
+
 ---
 
 ## 5. 已知的坑（都踩过，别重蹈）
@@ -784,7 +816,7 @@ node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
 node test/test-core.js       # 期望：396 通过, 0 失败
-node test/test-ui.js         # 期望：557 通过, 0 失败
+node test/test-ui.js         # 期望：598 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
 node test/check-real-files.js   # 期望：共 18 个文件，0 个存在错误
@@ -807,6 +839,6 @@ node tools/check-agent-sync.js --write
 
 ### 版本信息（改动可能影响这些对外说法）
 
-- 测试基线：core **396** / UI **557** / 示例 **18**（15 布局 + 3 弹出菜单）
+- 测试基线：core **396** / UI **598** / 示例 **18**（15 布局 + 3 弹出菜单）
 - 仓库 `README.md` 里的功能描述与 `index.html` 的图例，与实现同步维护；
   新增用户可见功能时一并更新，避免文档漂移。

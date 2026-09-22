@@ -3276,20 +3276,41 @@ function gridEditor(section, si, csec) {
 /* ================================================================
  * 按键定义 Tab
  * ================================================================ */
+/* 搜索过滤：空串视为全部通过。matcher 返回该条目的可搜索文本（名称 + 引用/内容摘要），
+ * 调用方负责把它拼全。过滤只做字符串比较，被匹配的子集才去 evalPlacement，
+ * 所以边输入边过滤不会卡（200+ 条目也只是几百次字符串比较）。 */
+function defFilterValue(inputId) {
+  var el = $(inputId);
+  return (el && el.value || '').trim().toLowerCase();
+}
+function defMatch(names, filter, matcher) {
+  if (!filter) return names;
+  return names.filter(function (n) { return String(matcher(n) || '').toLowerCase().indexOf(filter) >= 0; });
+}
+/* 过滤生效时在列表顶部显示「匹配 N / 总数 项」，让用户知道确实筛过 */
+function appendMatchHint(host, shown, total, filter, what) {
+  if (!filter) return;
+  host.appendChild(h('div', { class: 'def-match-hint' },
+    shown ? ('匹配 ' + shown + ' / ' + total + ' 项 · 关键字「' + filter + '」')
+      : ('没有匹配的' + what + '（共 ' + total + ' 项）')));
+}
+
 function renderKeysTab() {
   var host = $('keys-list');
   if (!host) return;
   clearEl(host);
-  var filter = ($('keys-filter') && $('keys-filter').value || '').trim().toLowerCase();
+  var filter = defFilterValue('keys-filter');
   var keys = state.profile && isPlainObject(state.profile.keys) ? state.profile.keys : {};
-  var names = Object.keys(keys).filter(function (n) {
-    if (!filter) return true;
+  var all = Object.keys(keys);
+  var names = defMatch(all, filter, function (n) {
     var kd = keys[n];
-    return n.toLowerCase().indexOf(filter) >= 0 ||
-      (isPlainObject(kd) && typeof kd.ref === 'string' && kd.ref.toLowerCase().indexOf(filter) >= 0);
+    return n + ' ' + (isPlainObject(kd) && typeof kd.ref === 'string' ? kd.ref : '');
   });
+  appendMatchHint(host, names.length, all.length, filter, '按键定义');
   if (!names.length) {
-    host.appendChild(h('div', { class: 'status' }, filter ? '没有匹配的按键定义。' : '尚无按键定义。布局中的内联按键不会出现在这里。'));
+    if (!filter) {
+      host.appendChild(h('div', { class: 'status' }, '尚无按键定义。布局中的内联按键不会出现在这里。'));
+    }
     return;
   }
   /* 引用索引只走一遍：条目多时（真实布局包 200+ 按键定义）
@@ -3588,7 +3609,12 @@ function collapsibleDefItem(name, badge, openSet, opts) {
     }
   }, '删除'));
 
-  det.appendChild(h('summary', { class: 'def-summary' },
+  det.appendChild(h('summary', {
+    class: 'def-summary',
+    /* 悬停提示：与按键定义页的「点击编辑…」对齐（那边整行可点=进编辑，
+     * 这边整行可点=展开/收起配置，提示要说清点下去会发生什么）。 */
+    title: opts.summaryTitle || ((det.open ? '收起' : '展开') + '并配置「' + name + '」')
+  },
     h('span', { class: 'def-summary-caret', 'aria-hidden': 'true' }, '▸'),
     h('code', { class: 'def-name' }, name),
     badge,
@@ -3604,19 +3630,27 @@ function renderActionsList() {
   if (!host) return;
   clearEl(host);
   var actions = state.profile && isPlainObject(state.profile.actions) ? state.profile.actions : {};
-  var names = Object.keys(actions);
-
-  if (!names.length) {
-    host.appendChild(h('div', { class: 'status' },
-      '尚无动作定义。动作是可复用的单个动作，可被按键以字符串形式引用，如 "tap": "my.action"。'));
-  }
+  var all = Object.keys(actions);
+  /* 过滤文本 = 名字 + 动作内容摘要，所以「搜 select_all」或「搜 按键」都能命中 */
+  var filter = defFilterValue('actions-filter');
+  var names = defMatch(all, filter, function (n) {
+    return n + ' ' + FE.actionDisplay(actions[n]);
+  });
 
   /* buildActionDefEditor 来自 macro-editor.js，它排在 app.js 之后加载，
    * 而 boot() 在 app.js 加载时就跑过一次 —— 首次渲染时可能还没就绪。
    * 那时给出占位，加载完成后由 macro-editor.js 触发重渲染。 */
   if (typeof FE.buildActionDefEditor !== 'function') {
-    if (names.length) host.appendChild(h('div', { class: 'status' }, '正在载入图形化编辑器…'));
-    appendActionAddRow(host);
+    if (all.length) host.appendChild(h('div', { class: 'status' }, '正在载入图形化编辑器…'));
+    return;
+  }
+
+  appendMatchHint(host, names.length, all.length, filter, '动作');
+  if (!names.length) {
+    if (!filter) {
+      host.appendChild(h('div', { class: 'status' },
+        '尚无动作定义。动作是可复用的单个动作，可被按键以字符串形式引用，如 "tap": "my.action"。'));
+    }
     return;
   }
 
@@ -3655,26 +3689,6 @@ function renderActionsList() {
     });
     host.appendChild(item);
   });
-
-  appendActionAddRow(host);
-}
-
-function appendActionAddRow(host) {
-  var addName = h('input', { type: 'text', placeholder: '新动作名称，如 editor.select_all', class: 'mini-input wide' });
-  host.appendChild(h('div', { class: 'toolbar' },
-    addName,
-    h('button', {
-      type: 'button', class: 'mini-button',
-      onclick: function () {
-        var n = addName.value.trim();
-        if (!n) { alert('请输入动作名称'); return; }
-        if (state.profile.actions[n]) { alert('动作已存在'); return; }
-        /* 新建后默认展开：用户刚建完就是要接着配置它 */
-        ensureOpenSet('openActions')[n] = true;
-        mutate(function () { state.profile.actions[n] = { type: 'key', key: 'A' }; });
-      }
-    }, '+ 新增动作')
-  ));
 }
 
 function renderMacrosList() {
@@ -3682,16 +3696,24 @@ function renderMacrosList() {
   if (!host) return;
   clearEl(host);
   var macros = state.profile && isPlainObject(state.profile.macros) ? state.profile.macros : {};
-  var names = Object.keys(macros);
-
-  if (!names.length) {
-    host.appendChild(h('div', { class: 'status' },
-      '尚无宏。宏是有序的动作步骤序列，用 { "macro": "名称" } 在被按键调用。'));
-  }
+  var all = Object.keys(macros);
+  /* 过滤文本 = 名字 + 步骤摘要，所以「搜 宏名」或「搜某一步干了什么」都能命中 */
+  var filter = defFilterValue('macros-filter');
+  var names = defMatch(all, filter, function (n) {
+    return n + ' ' + FE.describeMacroSteps(macros[n]);
+  });
 
   if (typeof FE.buildMacroStepEditor !== 'function') {
-    if (names.length) host.appendChild(h('div', { class: 'status' }, '正在载入图形化编辑器…'));
-    appendMacroAddRow(host);
+    if (all.length) host.appendChild(h('div', { class: 'status' }, '正在载入图形化编辑器…'));
+    return;
+  }
+
+  appendMatchHint(host, names.length, all.length, filter, '宏');
+  if (!names.length) {
+    if (!filter) {
+      host.appendChild(h('div', { class: 'status' },
+        '尚无宏。宏是有序的动作步骤序列，用 { "macro": "名称" } 在被按键调用。'));
+    }
     return;
   }
 
@@ -3723,26 +3745,6 @@ function renderMacrosList() {
     });
     host.appendChild(item);
   });
-
-  appendMacroAddRow(host);
-}
-
-function appendMacroAddRow(host) {
-  var addName = h('input', { type: 'text', placeholder: '新宏名称，如 delete_to_line_start', class: 'mini-input wide' });
-  host.appendChild(h('div', { class: 'toolbar' },
-    addName,
-    h('button', {
-      type: 'button', class: 'mini-button',
-      onclick: function () {
-        var n = addName.value.trim();
-        if (!n) { alert('请输入宏名称'); return; }
-        if (state.profile.macros[n]) { alert('宏已存在'); return; }
-        /* 新建后默认展开：用户刚建完就是要接着配置它 */
-        ensureOpenSet('openMacros')[n] = true;
-        mutate(function () { state.profile.macros[n] = [{ action: { type: 'key', key: 'BACKSPACE' } }]; });
-      }
-    }, '+ 新增宏')
-  ));
 }
 
 /* ================================================================
@@ -4295,18 +4297,60 @@ function initToolbar() {
   if (hp) bindHeightInput(hp, 'keyboardHeightPercent');
   if (hl) bindHeightInput(hl, 'keyboardHeightPercentLandscape');
 
-  /* 按键定义过滤 */
-  $('keys-filter').addEventListener('input', renderKeysTab);
-  $('keys-add').addEventListener('click', function () {
-    var name = prompt('新按键定义名称（如 my.tab）：');
-    if (!name) return;
-    name = name.trim();
-    if (!name) return;
-    if (state.profile.keys[name]) { alert('按键定义已存在'); return; }
-    mutate(function () {
-      state.profile.keys[name] = { ref: 'rime.Tab' };
+  /* 「按键定义」与「动作与宏」三张列表共用同一套工具条接线：
+   * 每组是「输入框 + 按钮」，两侧行为完全一致，样式也同步（.def-toolbar / .def-tool-group）。
+   *
+   * 搜索：输入时即时过滤（input 事件），右侧按钮再补一次显式触发 ——
+   *   手机输入法有时不派发 input，按钮保证一定能筛。
+   *   空串时等价于「显示全部」。 */
+  function wireSearch(inputId, btnId, render) {
+    var inp = $(inputId), btn = $(btnId);
+    if (inp) inp.addEventListener('input', render);
+    if (inp) inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { stopEv(e); render(); }
     });
-    if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'definition', name: name });
+    if (btn) btn.addEventListener('click', function (e) { stopEv(e); render(); });
+  }
+  /* 新建：输入框 + 按钮（不再是 prompt 了，输入框就在这一行右侧）。
+   * opts.openKey 给可折叠列表用（新建后默认展开，建完即可接着配置）；
+   * 按键定义不是折叠条目，不传该字段。 */
+  function wireAdd(inputId, btnId, opts) {
+    var inp = $(inputId), btn = $(btnId);
+    if (!inp || !btn) return;
+    function doAdd() {
+      var n = inp.value.trim();
+      if (!n) { alert('请输入' + opts.label + '名称'); inp.focus(); return; }
+      var bucket = isPlainObject(state.profile[opts.section]) ? state.profile[opts.section] : {};
+      if (bucket[n]) { alert(opts.label + '已存在：' + n); return; }
+      if (opts.openKey) ensureOpenSet(opts.openKey)[n] = true;
+      mutate(function () { state.profile[opts.section][n] = opts.initial(); });
+      inp.value = '';
+      if (opts.afterAdd) opts.afterAdd(n);
+    }
+    btn.addEventListener('click', function (e) { stopEv(e); doAdd(); });
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { stopEv(e); doAdd(); }
+    });
+  }
+
+  wireSearch('keys-filter', 'keys-search', renderKeysTab);
+  wireAdd('keys-new', 'keys-add', {
+    section: 'keys', label: '按键定义',
+    initial: function () { return { ref: 'rime.Tab' }; },
+    /* 新建后直接打开定义对话框：按键定义基本都要接着配手势 */
+    afterAdd: function (n) { if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'definition', name: n }); }
+  });
+
+  wireSearch('actions-filter', 'actions-search', renderActionsList);
+  wireAdd('actions-new', 'actions-add', {
+    section: 'actions', openKey: 'openActions', label: '动作',
+    initial: function () { return { type: 'key', key: 'A' }; }
+  });
+
+  wireSearch('macros-filter', 'macros-search', renderMacrosList);
+  wireAdd('macros-new', 'macros-add', {
+    section: 'macros', openKey: 'openMacros', label: '宏',
+    initial: function () { return [{ action: { type: 'key', key: 'BACKSPACE' } }]; }
   });
 
   /* 预览控件 */

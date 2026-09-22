@@ -133,10 +133,11 @@ ok($('keys-list').children.length > 30, '按键定义列表');
 ok($('json-editor').value.indexOf('"layouts"') >= 0, 'JSON 实时同步');
 ok($('json-editor').value.indexOf('qwerty.q') >= 0, 'JSON 包含按键定义');
 
-/* 按键定义过滤 */
+/* 按键定义过滤（搜索按钮 + 即时过滤） */
 $('keys-filter').value = 'comma';
 $('keys-filter')._fire('input');
-const filterCount = $('keys-list').children.length;
+/* 注意只数 .def-item：过滤生效时列表顶部还会有一行「匹配 N / 总数」提示 */
+const filterCount = $('keys-list').querySelectorAll('.def-item').length;
 ok(filterCount >= 1 && filterCount < 10, '过滤后只剩少数定义: ' + filterCount);
 $('keys-filter').value = '';
 $('keys-filter')._fire('input');
@@ -617,23 +618,21 @@ afterRe.open = false;
 afterRe._fire('toggle');
 ok(!FE.state.openActions[firstName], '收起后展开状态被清除');
 
-/* 新建动作 / 宏：默认展开，方便建完立刻配置 */
-const actAddInput = $('actions-list').querySelectorAll('input')
-  .find(i => String(i.getAttribute('placeholder') || '').indexOf('新动作名称') >= 0);
-ok(!!actAddInput, '动作列表有新增输入框');
-actAddInput.value = 'test.fresh';
-$('actions-list').querySelectorAll('button').find(b => b.textContent === '+ 新增动作').click();
+/* 新建动作 / 宏：默认展开，方便建完立刻配置。
+ * 工具条已移到静态 HTML（搜索组 + 新建组各一行），不再渲染在列表容器内。 */
+ok(!!$('actions-new') && !!$('actions-add'), '动作页有新建输入框与新建按钮（工具条内）');
+$('actions-new').value = 'test.fresh';
+$('actions-add').click();
 ok(!!FE.state.profile.actions['test.fresh'], '新建动作已写入 profile');
 ok(FE.state.openActions['test.fresh'] === true, '新建动作默认展开');
+eq($('actions-new').value, '', '新建后输入框已清空');
 const freshItem = $('actions-list').querySelectorAll('.def-item.def-collapsible')
   .find(it => it.querySelectorAll('.def-name')[0].textContent === 'test.fresh');
 ok(!!freshItem && freshItem.open === true, '新建条目在界面上确实展开');
 
-const macAddInput = $('macros-list').querySelectorAll('input')
-  .find(i => String(i.getAttribute('placeholder') || '').indexOf('新宏名称') >= 0);
-ok(!!macAddInput, '宏列表有新增输入框');
-macAddInput.value = 'test.freshmacro';
-$('macros-list').querySelectorAll('button').find(b => b.textContent === '+ 新增宏').click();
+ok(!!$('macros-new') && !!$('macros-add'), '宏页有新建输入框与新建按钮（工具条内）');
+$('macros-new').value = 'test.freshmacro';
+$('macros-add').click();
 ok(!!FE.state.profile.macros['test.freshmacro'], '新建宏已写入 profile');
 ok(FE.state.openMacros['test.freshmacro'] === true, '新建宏默认展开');
 
@@ -667,24 +666,18 @@ ok(!FE.state.profile.actions['test.del'], '动作已删除');
 ok(scrollHost.scrollTop === 520, '删除动作后滚动位置保持原处（未跳回分栏顶部）');
 
 /* --- 新增动作 --- */
-const actAddInput2 = $('actions-list').querySelectorAll('input')
-  .find(i => String(i.getAttribute('placeholder') || '').indexOf('新动作名称') >= 0);
-const actAddBtn2 = $('actions-list').querySelectorAll('button').find(b => b.textContent === '+ 新增动作');
-actAddInput2.value = 'test.scrolladd';
+$('actions-new').value = 'test.scrolladd';
 scrollHost.scrollTop = 640;
-actAddBtn2.focus();
-actAddBtn2.click();
+$('actions-add').focus();
+$('actions-add').click();
 ok(!!FE.state.profile.actions['test.scrolladd'], '新增动作成功');
 ok(scrollHost.scrollTop === 640, '新增动作后滚动位置保持原处');
 
 /* --- 新增宏 --- */
-const macAddInput2 = $('macros-list').querySelectorAll('input')
-  .find(i => String(i.getAttribute('placeholder') || '').indexOf('新宏名称') >= 0);
-const macAddBtn2 = $('macros-list').querySelectorAll('button').find(b => b.textContent === '+ 新增宏');
-macAddInput2.value = 'test.scrollmacro';
+$('macros-new').value = 'test.scrollmacro';
 scrollHost.scrollTop = 780;
-macAddBtn2.focus();
-macAddBtn2.click();
+$('macros-add').focus();
+$('macros-add').click();
 ok(!!FE.state.profile.macros['test.scrollmacro'], '新增宏成功');
 ok(scrollHost.scrollTop === 780, '新增宏后滚动位置保持原处');
 
@@ -1819,6 +1812,102 @@ setTimeout(async function () {
   ok(lonelyDlg.textContent.indexOf('没有被任何地方引用') >= 0, '零引用时弹窗说明清楚');
   eq(lonelyDlg.querySelectorAll('.usage-item.usage-jump').length, 0, '零引用时没有跳转按钮');
   lonelyDlg.close();
+
+  console.log('== 定义列表工具条：搜索 + 新建（三页同构） ==');
+  /* 三张列表的工具条结构必须一致（用户要求两页外观同步） */
+  [['keys', '按键定义'], ['actions', '动作'], ['macros', '宏']].forEach(([k, label]) => {
+    ok(!!$(k + '-filter') && !!$(k + '-search'), label + '页有搜索框与搜索按钮');
+    ok(!!$(k + '-new') && !!$(k + '-add'), label + '页有新建输入框与新建按钮');
+    eq($(k + '-search').textContent, '搜索', label + '页搜索按钮文案统一');
+  });
+  /* 搜索与新建各自的输入框/按钮同处一个 .def-tool-group（手机竖屏一组占一行） */
+  ['keys', 'actions', 'macros'].forEach(k => {
+    eq($(k + '-filter').parentNode.className, 'def-tool-group', k + ' 搜索框与按钮同组');
+    eq($(k + '-new').parentNode.className, 'def-tool-group', k + ' 新建框与按钮同组');
+    ok($(k + '-filter').parentNode !== $(k + '-new').parentNode, k + ' 搜索与新建是不同分组（手机可各占一行）');
+  });
+
+  /* 搜索：按钮触发 + 即时过滤 + 匹配提示 + 清空恢复 */
+  FE.applyProfileText(JSON.stringify({
+    type: 'foxy.keyboard-layout',
+    keys: { 'k.alpha': { ref: 'rime.a' }, 'k.beta': { ref: 'rime.b' }, 'k.rare': { ref: 'rime.Escape' } },
+    actions: {
+      'act.copy': { type: 'key', key: 'C', meta: ['CTRL'] },
+      'act.paste': { type: 'key', key: 'V', meta: ['CTRL'] },
+      'act.uniq': { type: 'app', command: 'settings' }
+    },
+    macros: {
+      'mac.home': [{ type: 'key', key: 'HOME' }],
+      'mac.word': [{ action: 'act.copy' }],
+      'mac.other': [{ type: 'text', text: 'zzz' }]
+    },
+    layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.alpha' }, { ref: 'k.beta' }, { ref: 'k.rare' }]] }] } }
+  }), {});
+  FE.renderAll();
+  const itemCount = (hostId) => $(hostId).querySelectorAll('.def-item').length;
+  const hintOf = (hostId) => {
+    const n = $(hostId).querySelectorAll('.def-match-hint')[0];
+    return n ? n.textContent : '';
+  };
+
+  eq(itemCount('keys-list'), 3, '按键定义共 3 条');
+  $('keys-filter').value = 'beta';
+  $('keys-search').click();
+  eq(itemCount('keys-list'), 1, '搜索按钮生效（beta → 1 条）');
+  ok(hintOf('keys-list').indexOf('匹配 1 / 3') >= 0, '显示匹配计数提示');
+  /* 按 ref 也能命中（不只按名字） */
+  $('keys-filter').value = 'Escape';
+  $('keys-search').click();
+  eq(itemCount('keys-list'), 1, '按 ref 命中（Escape → 1 条）');
+  $('keys-filter').value = 'no_such_xyz';
+  $('keys-search').click();
+  eq(itemCount('keys-list'), 0, '无匹配时列表为空');
+  ok(hintOf('keys-list').indexOf('没有匹配') >= 0, '无匹配时给出提示');
+  $('keys-filter').value = '';
+  $('keys-search').click();
+  eq(itemCount('keys-list'), 3, '清空关键字恢复全部');
+  eq(hintOf('keys-list'), '', '清空后不再显示匹配提示');
+
+  /* 即时过滤：不点按钮也要生效（手机输入法可能不派发 input，故按钮是兜底） */
+  $('keys-filter').value = 'alpha';
+  $('keys-filter')._fire('input');
+  eq(itemCount('keys-list'), 1, '输入即过滤（不必点搜索按钮）');
+  $('keys-filter')._fire('keydown', { key: 'Enter' });
+  eq(itemCount('keys-list'), 1, '搜索框回车同样生效');
+  $('keys-filter').value = '';
+  $('keys-filter')._fire('input');
+
+  /* 动作 / 宏搜索：名字 + 内容摘要都能命中 */
+  eq(itemCount('actions-list'), 3, '动作共 3 条');
+  $('actions-filter').value = 'paste';
+  $('actions-search').click();
+  eq(itemCount('actions-list'), 1, '动作按名字搜索命中');
+  $('actions-filter').value = 'CTRL';
+  $('actions-search').click();
+  eq(itemCount('actions-list'), 2, '动作按内容摘要搜索命中（CTRL → 2 条）');
+  $('actions-filter').value = '';
+  $('actions-search').click();
+  eq(itemCount('actions-list'), 3, '动作清空恢复全部');
+
+  eq(itemCount('macros-list'), 3, '宏共 3 条');
+  $('macros-filter').value = 'word';
+  $('macros-search').click();
+  eq(itemCount('macros-list'), 1, '宏按名字搜索命中');
+  $('macros-filter').value = 'HOME';
+  $('macros-search').click();
+  eq(itemCount('macros-list'), 1, '宏按步骤内容搜索命中');
+  $('macros-filter').value = '';
+  $('macros-search').click();
+  eq(itemCount('macros-list'), 3, '宏清空恢复全部');
+
+  console.log('== 悬停提示：两页都有 ==');
+  const hoverKeyRow = $('keys-list').querySelectorAll('.def-item.def-row-click')[0];
+  ok(!!hoverKeyRow.getAttribute('title'), '按键定义行有悬停提示：' + hoverKeyRow.getAttribute('title'));
+  const hoverAct = $('actions-list').querySelectorAll('.def-summary')[0];
+  ok(!!hoverAct.getAttribute('title'), '动作摘要行有悬停提示：' + hoverAct.getAttribute('title'));
+  const hoverMac = $('macros-list').querySelectorAll('.def-summary')[0];
+  ok(!!hoverMac.getAttribute('title'), '宏摘要行有悬停提示：' + hoverMac.getAttribute('title'));
+  ok(hoverAct.getAttribute('title').indexOf('展开') >= 0, '动作悬停提示说明点下去会展开配置');
 
   console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
   process.exit(failed ? 1 : 0);
