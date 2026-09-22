@@ -669,19 +669,55 @@ ok(!FE.state.openActions[firstName], '收起后展开状态被清除');
  * 工具条已移到静态 HTML（搜索组 + 新建组各一行），不再渲染在列表容器内。 */
 ok(!!$('actions-new') && !!$('actions-add'), '动作页有新建输入框与新建按钮（工具条内）');
 $('actions-new').value = 'test.fresh';
+documentStub._openDialogs.length = 0;
 $('actions-add').click();
 ok(!!FE.state.profile.actions['test.fresh'], '新建动作已写入 profile');
 ok(FE.state.openActions['test.fresh'] === true, '新建动作默认展开');
 eq($('actions-new').value, '', '新建后输入框已清空');
+/* 三页统一：新建**不自动弹编辑对话框**，只建好 + 滚过去高亮 */
+ok(dialogCount() === 0, '新建动作不自动弹出编辑对话框');
 const freshItem = $('actions-list').querySelectorAll('.def-item.def-collapsible')
   .find(it => it.querySelectorAll('.def-name')[0].textContent === 'test.fresh');
 ok(!!freshItem && freshItem.open === true, '新建条目在界面上确实展开');
+ok(freshItem.classList.contains('def-flash'), '新建条目带高亮，方便一眼找到');
 
 ok(!!$('macros-new') && !!$('macros-add'), '宏页有新建输入框与新建按钮（工具条内）');
 $('macros-new').value = 'test.freshmacro';
+documentStub._openDialogs.length = 0;
 $('macros-add').click();
 ok(!!FE.state.profile.macros['test.freshmacro'], '新建宏已写入 profile');
 ok(FE.state.openMacros['test.freshmacro'] === true, '新建宏默认展开');
+ok(dialogCount() === 0, '新建宏不自动弹出编辑对话框');
+
+console.log('== 方案 B：新建后滚过去 + 高亮（不改 JSON 键序） ==');
+/* 按键定义页此前会「新建即弹编辑框」，已按用户要求改成与另两页一致 */
+ok(!!$('keys-new') && !!$('keys-add'), '按键定义页有新建输入框与新建按钮');
+const keysOrderBefore = Object.keys(FE.state.profile.keys).join(',');
+$('keys-new').value = 'test.newkey';
+documentStub._openDialogs.length = 0;
+$('keys-add').click();
+ok(!!FE.state.profile.keys['test.newkey'], '新建按键定义已写入 profile');
+ok(dialogCount() === 0, '新建按键定义不再自动弹出编辑对话框（三页统一）');
+eq(Object.keys(FE.state.profile.keys).join(','), keysOrderBefore + ',test.newkey',
+  'JSON 键顺序保持插入序（UI 操作不重排喂给 Foxy 的文件）');
+const newKeyRow = $('keys-list').querySelectorAll('.def-item.def-row-click')
+  .find(r => r.querySelectorAll('.def-name')[0].textContent === 'test.newkey');
+ok(!!newKeyRow, '新按键定义出现在列表里');
+ok(newKeyRow.classList.contains('def-flash'), '新按键定义带高亮');
+/* 仍在末位：方案 B 刻意不改数据结构，只把视口挪过去 */
+const allKeyRows = $('keys-list').querySelectorAll('.def-item.def-row-click');
+ok(allKeyRows[allKeyRows.length - 1] === newKeyRow, '新条目追加在列表末尾（未重排）');
+/* 用户之后自己点整行进编辑 */
+documentStub._openDialogs.length = 0;
+newKeyRow._fire('click');
+ok(dialogCount() === 1, '新建后用户点整行才进编辑（不再自动弹）');
+documentStub._openDialogs[0].close();
+
+/* scrollToDefItem 的行为契约 */
+ok(typeof FE.scrollToDefItem === 'function', '暴露 scrollToDefItem');
+ok(FE.scrollToDefItem('test.newkey', 'keys-list') === true, 'scrollToDefItem 能找到并高亮条目');
+ok(FE.scrollToDefItem('no_such_definition', 'keys-list') === false, '找不到时返回 false');
+ok(FE.scrollToDefItem('test.newkey', 'no_such_host') === false, '宿主不存在时返回 false 不抛错');
 
 /* 摘要行内的删除按钮：可用（会先弹内建确认框），且顺手清掉展开状态（不留脏记录） */
 FE.renderAll();

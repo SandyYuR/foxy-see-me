@@ -274,10 +274,16 @@ label.check { cursor: pointer; white-space: nowrap; }
 .issue-locatable:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 .issue-path { color: var(--text-dim); font-size: 11.5px; margin-left: 6px; }
 .st-dim { color: var(--text-dim); }
-/* 定位后目标键的短暂高亮 */
+/* 定位后目标键的短暂高亮（红色：表示"这里有问题"） */
 .issue-flash { animation: issue-flash 1.1s ease-out; }
 @keyframes issue-flash {
   0%, 40% { box-shadow: 0 0 0 3px var(--err); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+/* 新建条目后的短暂高亮（蓝色 accent：表示"刚建好的是这个"，与红色的出错高亮区分） */
+.def-flash { animation: def-flash 1.2s ease-out; }
+@keyframes def-flash {
+  0%, 45% { box-shadow: 0 0 0 3px var(--accent); border-color: var(--accent); }
   100% { box-shadow: 0 0 0 0 transparent; }
 }
 

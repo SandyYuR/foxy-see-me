@@ -2434,6 +2434,34 @@ function locateIssue(it) {
   scrollToSelection();
 }
 
+/* 滚动到某个定义列表条目并短暂高亮。
+ * 用途：新建动作/宏/按键定义后，条目追加在列表**末尾**，而工具条在卡片顶部 ——
+ * 不滚过去的话用户看不到刚建的东西。**不改数据结构**：JSON 键顺序保持插入序，
+ * 只把视口挪过去（布局文件是喂给 Foxy 的，UI 操作不该顺手重排它的键序）。
+ * 这是「有意的滚动」，所以先 cancelScrollRestore()，否则 afterChange 排下的那一帧
+ * 会把位置拽回原处（与 locateIssue 同样的处理）。 */
+function scrollToDefItem(name, hostId) {
+  var host = $(hostId);
+  if (!host) return false;
+  var items = host.querySelectorAll('.def-item');
+  var target = null;
+  for (var i = 0; i < items.length; i++) {
+    var nm = items[i].querySelectorAll('.def-name')[0];
+    if (nm && nm.textContent === name) { target = items[i]; break; }
+  }
+  if (!target) return false;
+  /* 所在卡片若是收起的，先展开，否则滚过去也看不见 */
+  var card = (target.closest && target.closest('details.card')) || null;
+  if (card) card.open = true;
+  cancelScrollRestore();
+  /* dom-stub 不实现 scrollIntoView，测试环境下静默跳过（与 scrollToSelection 一致） */
+  if (target.scrollIntoView) target.scrollIntoView({ block: 'center' });
+  else if (card && card.scrollIntoView) card.scrollIntoView({ block: 'center' });
+  target.classList.add('def-flash');
+  return true;
+}
+FE.scrollToDefItem = scrollToDefItem;
+
 function scrollToSelection() {
   var sel = state.sel;
   if (!sel) return;
@@ -4330,7 +4358,15 @@ function initToolbar() {
   }
   /* 新建：输入框 + 按钮（不再是 prompt 了，输入框就在这一行右侧）。
    * opts.openKey 给可折叠列表用（新建后默认展开，建完即可接着配置）；
-   * 按键定义不是折叠条目，不传该字段。 */
+   * 按键定义不是折叠条目，不传该字段。
+   *
+   * 方案 B：新条目追加在列表**末尾**而工具条在卡片顶部，所以新建后
+   * **滚过去 + 短暂高亮**（复用 scrollToDefItem），否则用户看不到刚建的东西。
+   * 刻意不改数据结构 —— JSON 键顺序保持插入序，布局文件是喂给 Foxy 的，
+   * UI 操作不该顺手重排它的键序。
+   *
+   * 三页行为统一：**新建后一律不自动弹编辑对话框**，只滚过去高亮；
+   * 要配置时用户自己点条目（按键定义页整行可点，动作/宏页点摘要行展开）。 */
   function wireAdd(inputId, btnId, opts) {
     var inp = $(inputId), btn = $(btnId);
     if (!inp || !btn) return;
@@ -4342,7 +4378,9 @@ function initToolbar() {
       if (opts.openKey) ensureOpenSet(opts.openKey)[n] = true;
       mutate(function () { state.profile[opts.section][n] = opts.initial(); });
       inp.value = '';
-      if (opts.afterAdd) opts.afterAdd(n);
+      /* 滚动要在 mutate（内部 renderAll）**之后**：条目此刻才存在，
+       * 且 scrollToDefItem 会 cancelScrollRestore 作废 afterChange 排下的位置恢复帧。 */
+      scrollToDefItem(n, opts.scrollHost);
     }
     btn.addEventListener('click', function (e) { stopEv(e); doAdd(); });
     inp.addEventListener('keydown', function (e) {
@@ -4352,21 +4390,19 @@ function initToolbar() {
 
   wireSearch('keys-filter', 'keys-search', renderKeysTab);
   wireAdd('keys-new', 'keys-add', {
-    section: 'keys', label: '按键定义',
-    initial: function () { return { ref: 'rime.Tab' }; },
-    /* 新建后直接打开定义对话框：按键定义基本都要接着配手势 */
-    afterAdd: function (n) { if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'definition', name: n }); }
+    section: 'keys', label: '按键定义', scrollHost: 'keys-list',
+    initial: function () { return { ref: 'rime.Tab' }; }
   });
 
   wireSearch('actions-filter', 'actions-search', renderActionsList);
   wireAdd('actions-new', 'actions-add', {
-    section: 'actions', openKey: 'openActions', label: '动作',
+    section: 'actions', openKey: 'openActions', label: '动作', scrollHost: 'actions-list',
     initial: function () { return { type: 'key', key: 'A' }; }
   });
 
   wireSearch('macros-filter', 'macros-search', renderMacrosList);
   wireAdd('macros-new', 'macros-add', {
-    section: 'macros', openKey: 'openMacros', label: '宏',
+    section: 'macros', openKey: 'openMacros', label: '宏', scrollHost: 'macros-list',
     initial: function () { return [{ action: { type: 'key', key: 'BACKSPACE' } }]; }
   });
 
