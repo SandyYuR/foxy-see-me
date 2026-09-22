@@ -22,6 +22,10 @@
 }
 
 * { box-sizing: border-box; }
+/* hidden 属性兜底：UA 样式里的 [hidden]{display:none} 会被作者样式覆盖，
+ * 例如 .form-row{display:flex} 会让带 hidden 的行照常显示。
+ * 缺了这条，#op-folder / #op-folder-hint 的 hidden 就形同虚设。 */
+[hidden] { display: none !important; }
 html { scrollbar-color: #3a3e45 #16171a; }
 body {
   margin: 0;
@@ -217,6 +221,38 @@ label.check { cursor: pointer; white-space: nowrap; }
 @media (max-width: 640px) {
   .color-input { width: 100%; }
 }
+
+/* 需要补选文件夹时的醒目提示行：黄框 + 黄底 + 高亮按钮。
+ * 触发场景：选中 definitions.json（它自己不是布局），或布局导入后仍有引用解析不了。 */
+.folder-hint {
+  background: rgba(226, 163, 63, 0.12);
+  border: 1px solid var(--warn);
+  border-left-width: 4px;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  align-items: center;
+  gap: 10px;
+}
+.folder-hint-text {
+  flex: 1 1 260px;
+  min-width: 0;
+  color: var(--warn);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: normal;   /* 覆盖 .mini-label 的 nowrap，长文案要换行 */
+  word-break: break-word;
+}
+/* 需要用户动手的按钮：黄底实心，明显区别于普通按钮 */
+.mini-button.attention {
+  background: var(--warn);
+  border-color: var(--warn);
+  color: #1a1c20;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+.mini-button.attention:hover { background: #f0b455; border-color: #f0b455; }
+.mini-button.attention:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
 
 .status { font-size: 12.5px; color: var(--text-dim); margin: 6px 0; word-break: break-all; }
 .status.ok, .st-ok { color: var(--ok); }

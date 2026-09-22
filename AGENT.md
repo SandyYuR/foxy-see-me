@@ -4,7 +4,7 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 267 / UI 386 / 真实文件体检 18 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 304 / UI 437 / 真实文件体检 18 个示例 0 错误。
 
 ### ⚠️ 本文件有两份，必须保持一致
 
@@ -126,7 +126,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **267 core + 386 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **304 core + 437 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -166,6 +166,7 @@ foxy-editor/
 │   ├── default-profile.js  内置默认布局文本（FE.DEFAULT_PROFILE_TEXT）
 │   ├── examples-bundle.js  示例打包产物（**生成的文件，不要手改**）
 │   ├── app.js         主体（3600+ 行）：状态 / 解析引擎 / 校验器 / 编译层 / 预览 / 布局编辑 UI
+│   ├── folder-import.js 文件夹批量导入：识别 definitions.json 与被引用文件（纯逻辑，无 DOM）
 │   ├── key-dialog.js  对话框：按键 / 手势 / 动作 / 变体 / 按键选择器 / jscolor 取色
 │   ├── popup-editor.js 弹出菜单编辑（纯逻辑 + 该标签页 UI）
 │   └── jscolor/jscolor.js  vendor 取色器（GPLv3，**不要改**）
@@ -189,10 +190,11 @@ foxy-editor/
 
 ```
 data.js → default-profile.js → examples-bundle.js → app.js
-  → jscolor/jscolor.js → key-dialog.js → popup-editor.js
+  → folder-import.js → jscolor/jscolor.js → key-dialog.js → popup-editor.js
 ```
 
 - `app.js` 的 UI 段在加载时**立刻执行 `boot()`**（初始化标签、工具栏、渲染一次）。
+- `folder-import.js` 复用 `FE.sanitizeJsonText` / `FE.normalizeProfile`，**必须在 app.js 之后**加载。
 - `key-dialog.js` / `popup-editor.js` 是 IIFE，**加载时自行初始化**（绑事件 + 首次渲染），
   依赖 app.js 已导出的 `FE.h / FE.clearEl / FE.$ / FE.state`。
 - 因此：**不要**把 key-dialog.js 或 popup-editor.js 移到 app.js 前面。
@@ -459,6 +461,79 @@ tooltip 由 `itemTooltip(item, shift)` 生成（读 `item.summaries` / `item.hin
   否则页面加载的还是旧内容。
 - `examples-bundle.js` 是生成物，**不要手改**（会与 `examples/` 失同步）。
 
+### 4.9 多文件布局包导入（folder-import.js）⭐ 单入口，别退回单文件假设
+
+**为什么存在**：Foxy 运行时的布局包是**跨文件**的 —— `frontend/definitions.json` 放共享
+`keys/actions/macros`，而 `frontend/layouts/<profile>.json` 往往只定义寥寥几个自己的键，
+其余全引用共享定义（真实例子：工作区 `布局/简易/layouts/simple.json` 自带 8 个键、
+引用外部 185 个键 + 34 个宏）。
+
+**单文件模型必然误判**：`test/check-real-files.js` 直接跑 `simple.json` 会报
+**16211 个错**（`qwerty.q` / `nav.space` 等“ref 无法解析”），但把 definitions 合并后
+是 **0 错**。所以「ref 无法解析」在分包布局里**不是真实缺陷**，是缺合并。
+
+- **入口是唯一的**：只有一个「导入 JSON」按钮（`op-import` → `#op-import-file`，
+  **不要**再加第二个「导入文件夹」按钮 —— 用户明确要求单入口）。同一个入口按输入自动分流：
+  1. **选中多个文件** → 当作一个小型布局包，直接走 `importPackage()` 合并；
+  2. **选中 `definitions.json`** → 它自己不是布局，`requestFolderPick()` 尽力自动接一步
+     选文件夹，并显示 `#op-folder-hint` 醒目提示行；
+  3. **选中薄布局文件**（导入后仍有 `unresolved-ref`）→ 同样显示提示行，说明引用解析不了
+     是因为共享定义在同文件夹；
+  4. **选中自包含布局 / 弹出菜单文件** → 走原来的单文件 / 路由到弹出菜单页逻辑。
+  ⚠️ **平台限制（决定了为什么必须由用户再选一次文件夹）**：浏览器只把用户**选中的那些
+  文件**交给网页，`File` 对象**不携带所在目录信息**，所以「仅凭选中的文件反推同目录」在
+  Web 上做不到。选目录只能靠 `webkitdirectory`（纯前端约束下唯一方式，`D3`：无依赖、
+  `file://` 可用）。读文件走 `readFileText()`（FileReader 的 Promise 封装），**不引入 fetch**。
+  ⚠️ **`requestFolderPick()` 只是 best-effort，不可依赖**：浏览器把「用户激活」消耗在第一次
+  文件选择上了，紧接着程序化 `click()` 打开文件对话框**常被 Chrome 静默拦掉**，外部表现就是
+  「点了没反应」。所以：
+  - **提示文案绝不能承诺「正在自动读取同文件夹」** —— 被拦掉时就成了假承诺。要写清
+    「还需选择一次布局包所在的文件夹」，并解释原因（浏览器不透露目录）。
+  - 真正的兜底是提示行里那个高亮按钮 `#op-folder-complete`（`class="mini-button attention"`）。
+  - 有 UI 断言锁定这两点：文案含「还需选择一次」「浏览器不会透露」，且**不含**「正在读取同文件夹」。
+  `#op-import-dir-file` 因此是**隐藏的**，只由代码触发，不作为独立入口露出。
+  > 最省事的用法是一次多选（`definitions.json` + 布局 + 弹出菜单），不依赖任何自动接续。
+- **纯逻辑（可单测，core 有断言）**：
+  - `FE.classifyFoxyFile(text, path)` → `layout` / `popup` / `definitions` / `unknown`。
+    判定优先级：**显式 `type` > 目录约定（`layouts/`、`popups/`、文件名 `definitions.json`）
+    > 结构特征（有 `layouts` 无 `schemas` 等）**。向后兼容：无 `type` 的文件靠后两级认出来。
+  - `FE.mergeDefinitions(profile, definitions)` → 合并共享定义，**布局自身同名项覆盖共享项**
+    （对齐文档 “merge their own definitions over the shared names”）。不动入参。
+  - `FE.collectPopupKeys(profile)` → **整树递归**收集 `popupKey`（keys 定义与放置点 override
+    都要收）；`FE.collectPopupSchemaKeys(popup)` 收集弹出菜单已定义的键。
+  - `FE.matchPopupFile(layoutProfile, popupEntries, layoutName)` → 挑覆盖 popupKey 最多的
+    弹出菜单文件；**覆盖数并列时优先同名词**（`simple.json` ↔ `simple.json`），
+    覆盖数为 0 返回 `null`（该布局不用弹出菜单）。
+  - `FE.planFolderImport(entries)` → 分类归集 + 多个 definitions 取路径最浅者 + 错误/警告。
+  - `FE.buildProfileFromPlan(plan, layoutPath)` → 产出可直接装入编辑器的自包含 profile。
+- **UI 侧**（app.js 的 `initToolbar` 文件操作段）：
+  - `filesToEntries(files)` 批量读文件；`readFileText(file)` 单个 File → 文本（Promise）。
+  - `importPackage(entries, pickName)` 整包装入（选 default.json 优先）；`importFromDirectoryInput(input)`
+    读目录输入框并整包识别。
+  - `loadFromFolderPlan(plan, layoutPath)` 装入 + 自动关联弹出菜单。
+  - `renderFolderOps()` 在 `renderOps()` 里被调用（每次 `renderAll()` 都跑），渲染
+    `#op-folder`（包内布局下拉，可切换）/ `#op-folder-report`（识别结果、缺失 popupKey、warning）
+    / `#op-folder-hint`（补选文件夹提示行）。
+  - 状态字段：`state.folderPlan` / `state.folderDefs` / `state.folderLayoutPath` / `state.folderHint`。
+  - ⚠️ **提示行是派生渲染**：`showFolderHint(msg)` / `hideFolderHint()` 只写 `state.folderHint`，
+    显隐交给 `renderFolderOps()`。**不要**在别处直接改 `#op-folder-hint` 的 `hidden` ——
+    那样在「先导入薄布局显示提示、再加载示例」时会残留一条过期提示。
+- **导出还原（关键，别漏）**：合并后编辑器持有的是自包含 profile，**不能原样存回**
+  ——否则布局文件里会多出 205 个键。`exportLayoutText()` 走 `FE.splitProfileForExport()`：
+  把**与共享定义逐字节相同**的项剥离回 `definitions.json`（`op-export-defs` 按钮单独导出），
+  **被用户改动过的项保留在布局文件里**（否则引用会断）。导出往返后重新合并仍 0 错。
+- ⚠️ **`applyProfileText` 会清空 `state.folderPlan/folderDefs/folderLayoutPath/folderHint`**：
+  单文件导入 / 示例 / JSON 页应用都是「自包含单文件」语义，残留旧包上下文会让导出错拆。
+  这条有 UI 断言锁定（「单文件导入清空文件夹上下文」）。
+- 已知取舍：
+  - 不解析 `switch_layout` 目标与 `popupKey` 的语义关系（只按名字匹配）；
+    definitions 只取一个（多份时按路径层级选，其余告警）。
+  - **文件夹上下文不进本地草稿**（`autosave` 只存 `state.profile` 等）。
+    所以刷新页面后 `state.folderDefs` 为 `null`：布局仍是**自包含且有效**的
+    （合并后的 profile 已存进草稿），只是导出时不再剥离回分包结构。
+    这是刻意的——`folderPlan` 含全部文件原文，塞进 localStorage 体积过大。
+    要恢复分包导出，重新用「导入 JSON」选中 `definitions.json`（或整包多选）一次即可。
+
 ---
 
 ## 5. 已知的坑（都踩过，别重蹈）
@@ -470,6 +545,7 @@ tooltip 由 `itemTooltip(item, shift)` 生成（读 `item.summaries` / `item.hin
 | `examples/` 下任何文件 | `node tools/build-examples.js` |
 | 新增/改名 `FE.xxx` | 检查 `test-core.js` / `test-ui.js` 是否要跟着改 |
 | `index.html` 加/删元素 | `test/dom-stub.js` 的 `buildSkeleton()` 也要加/删，否则 UI 测试全崩 |
+| 新增 `js/*.js` 模块 | `index.html` 的 `<script>` 顺序、`test-core.js` / `test-ui.js` 的 `load()` 列表三处都要加 |
 | 改折叠卡片数量/顺序/标题 | `test-ui.js` 里对应的顺序断言（布局页、弹出菜单页都有） |
 | 改角标含义或样式类 | `index.html` 预览下方的图例文字 |
 | 改校验规则 | `test-core.js` 的校验器断言；并对照 skill 文档 |
@@ -542,8 +618,8 @@ cd foxy-editor
 node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
-node test/test-core.js       # 期望：267 通过, 0 失败
-node test/test-ui.js         # 期望：386 通过, 0 失败
+node test/test-core.js       # 期望：304 通过, 0 失败
+node test/test-ui.js         # 期望：437 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
 node test/check-real-files.js   # 期望：共 18 个文件，0 个存在错误
@@ -566,6 +642,6 @@ node tools/check-agent-sync.js --write
 
 ### 版本信息（改动可能影响这些对外说法）
 
-- 测试基线：core **267** / UI **386** / 示例 **18**（15 布局 + 3 弹出菜单）
+- 测试基线：core **304** / UI **437** / 示例 **18**（15 布局 + 3 弹出菜单）
 - 仓库 `README.md` 里的功能描述与 `index.html` 的图例，与实现同步维护；
   新增用户可见功能时一并更新，避免文档漂移。

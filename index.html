@@ -82,6 +82,7 @@
               <button id="op-import" class="mini-button">导入 JSON</button>
               <input id="op-import-file" type="file" accept="application/json,.json" hidden>
               <button id="op-export" class="mini-button">导出 JSON</button>
+              <button id="op-export-defs" class="mini-button" hidden title="把共享定义还原为 definitions.json">导出 definitions</button>
               <select id="op-example" class="mini-select wide"></select>
               <button id="op-load-example" class="mini-button">加载示例</button>
               <button id="op-undo" class="mini-button" disabled>↶ 撤销</button>
@@ -92,6 +93,18 @@
               <input id="op-author" type="text" class="mini-input wide" placeholder="显示在方案选择器中">
               <label class="check"><input type="checkbox" id="op-type" checked> 导出时包含 type 字段</label>
             </div>
+            <div id="op-folder" class="form-row form-inline" hidden>
+              <label class="mini-label">包内布局</label>
+              <select id="op-folder-layout" class="mini-select wide" aria-label="文件夹内的布局文件"></select>
+              <button id="op-folder-load" class="mini-button">切换到所选</button>
+            </div>
+            <!-- 需要补选文件夹时的醒目提示（选中 definitions.json，或布局仍有引用解析不了） -->
+            <div id="op-folder-hint" class="form-row form-inline folder-hint" hidden>
+              <span id="op-folder-hint-text" class="folder-hint-text"></span>
+              <button id="op-folder-complete" class="mini-button attention">选择文件夹…</button>
+              <input id="op-import-dir-file" type="file" webkitdirectory directory multiple hidden>
+            </div>
+            <div id="op-folder-report" class="status"></div>
             <div id="op-status" class="status"></div>
           </details>
 
@@ -216,6 +229,7 @@
   <script src="./js/default-profile.js"></script>
   <script src="./js/examples-bundle.js"></script>
   <script src="./js/app.js"></script>
+  <script src="./js/folder-import.js"></script>
   <script src="./js/jscolor/jscolor.js"></script>
   <script src="./js/key-dialog.js"></script>
   <script src="./js/popup-editor.js"></script>

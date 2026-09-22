@@ -37,6 +37,10 @@ var NEUTRAL_STATUS = { composing: false, ascii_mode: false, disabled: false };
 var state = {
   profile: null,          // 当前布局 profile（foxy.keyboard-layout JSON）
   fileName: 'foxy-layout.json',
+  folderPlan: null,       // 「导入文件夹」的识别结果（FE.planFolderImport 产物）
+  folderDefs: null,       // 该文件夹里的共享 definitions.json（导出时用于还原分包）
+  folderLayoutPath: null, // 当前正在编辑的包内布局文件路径
+  folderHint: null,       // 需补选文件夹时的提示文案（null = 不提示，由 renderFolderOps 派生渲染）
   layoutName: null,       // 当前正在编辑/预览的命名布局
   status: { composing: false, ascii_mode: false, disabled: false, shift: false },
   statusSample: '朙月拼音',
@@ -1377,6 +1381,12 @@ function applyProfileText(text, opts) {
   }
   p = FE.normalizeProfile(p);
   state.profile = p;
+  /* 单文件导入 / 示例 / JSON 页应用：均为「自包含单文件」语义，
+   * 清掉文件夹导入上下文与补全提示，避免导出时按旧包剥离定义而错拆、提示残留。 */
+  state.folderPlan = null;
+  state.folderDefs = null;
+  state.folderLayoutPath = null;
+  state.folderHint = null;
   state.jsonDirty = false;
   var names = Object.keys(p.layouts);
   state.layoutName = (opts.layoutName && p.layouts[opts.layoutName]) ? opts.layoutName
@@ -3167,6 +3177,7 @@ function renderOps() {
   var a = $('op-author'), t = $('op-type');
   if (a && document.activeElement !== a) a.value = state.profile && state.profile.author != null ? String(state.profile.author) : '';
   if (t) t.checked = state.includeType !== false;
+  if (FE.renderFolderOps) renderFolderOps();
 }
 
 function updateUndoButtons() {
@@ -3184,6 +3195,113 @@ function updateUndoButtons() {
     tr.title = (state.future.length ? '重做' : '没有可重做的操作') + ' (Ctrl+Y)';
   }
 }
+
+function downloadJson(text, name) {
+  var blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name || 'foxy-layout.json';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+
+/* 导出布局文本。若当前来自「导入文件夹」，把未被改动的共享定义剥离回
+ * definitions.json，还原成运行时那套分包结构（薄布局 + definitions.json）。 */
+function exportLayoutText() {
+  if (state.folderDefs && state.folderPlan && FE.splitProfileForExport) {
+    var r = FE.splitProfileForExport(state.profile, state.folderDefs);
+    var n = r.split.stripped.length;
+    return {
+      text: FE.serializeProfile(r.layout, state.includeType),
+      note: n
+        ? '已导出 ' + state.fileName + '（剥离 ' + n + ' 项来自 definitions.json 的定义；' +
+          '共享定义用「导出 definitions」还原）'
+        : '已导出 ' + state.fileName + '（没有可剥离的共享定义）'
+    };
+  }
+  return {
+    text: FE.serializeProfile(state.profile, state.includeType),
+    note: '已导出 ' + (state.fileName || 'foxy-layout.json')
+  };
+}
+
+/* 读单个 File 为文本（Promise 封装，便于按序读取整个文件夹） */
+function readFileText(file) {
+  return new Promise(function (resolve) {
+    var reader = new FileReader();
+    reader.onload = function () { resolve(String(reader.result)); };
+    reader.onerror = function () { resolve(null); };
+    try { reader.readAsText(file, 'utf-8'); } catch (e) { resolve(null); }
+  });
+}
+
+/* 把识别结果装入编辑器：合并共享定义 → 自包含 profile → 自动关联弹出菜单 */
+function loadFromFolderPlan(plan, layoutPath) {
+  var built = FE.buildProfileFromPlan(plan, layoutPath);
+  if (!built) { setOpStatus('该文件夹里没有可用的布局文件', 'error'); return false; }
+  /* 先关联弹出菜单（它内部会渲染一次），随后用新布局再渲染一次 */
+  if (built.popupMatch && built.popupMatch.covered > 0 && FE.loadPopupProfileText) {
+    FE.loadPopupProfileText(built.popupMatch.entry.text, built.popupMatch.entry.name);
+  }
+  state.profile = FE.normalizeProfile(built.profile);
+  state.folderPlan = plan;
+  state.folderDefs = plan.definitions ? plan.definitions.data : null;
+  state.folderLayoutPath = built.entry.path;
+  state.folderHint = null;   // 整包已识别，补全提示随之失效
+  state.fileName = built.entry.name;
+  state.layoutName = state.profile.layouts['default'] ? 'default'
+    : (Object.keys(state.profile.layouts)[0] || null);
+  state.sel = null;
+  state.history = [];
+  state.future = [];
+  afterChange();
+  return true;
+}
+FE.loadFromFolderPlan = loadFromFolderPlan;
+
+/* 文件夹识别结果面板：包内布局下拉 + 共享定义/弹出菜单关联说明 */
+function renderFolderOps() {
+  var box = $('op-folder'), sel = $('op-folder-layout'), rep = $('op-folder-report');
+  var defsBtn = $('op-export-defs');
+  if (defsBtn) defsBtn.hidden = !state.folderDefs;
+  /* 提示行由 state.folderHint 派生：加载示例 / JSON 页应用 / 整包导入后都会随之消失，
+   * 不能直接改 DOM，否则会残留一条过期提示。 */
+  var hintRow = $('op-folder-hint'), hintTxt = $('op-folder-hint-text');
+  if (hintRow) hintRow.hidden = !state.folderHint;
+  if (hintTxt) { clearEl(hintTxt); if (state.folderHint) hintTxt.append(state.folderHint); }
+  if (!box || !sel) return;
+  var plan = state.folderPlan;
+  if (!plan || !plan.layouts.length) { box.hidden = true; if (rep) clearEl(rep); return; }
+  box.hidden = false;
+  clearEl(sel);
+  plan.layouts.forEach(function (it) {
+    sel.appendChild(h('option', { value: it.path }, it.path));
+  });
+  sel.value = state.folderLayoutPath || (plan.layouts[0] && plan.layouts[0].path) || '';
+  if (!rep) return;
+  clearEl(rep);
+  rep.className = 'status ' + (plan.errors.length ? 'warn' : 'ok');
+  var built = FE.buildProfileFromPlan(plan, state.folderLayoutPath);
+  var parts = [FE.describePlan(plan)];
+  if (built && built.report.keys.length) {
+    parts.push('并入共享键 ' + built.report.keys.length +
+      (built.report.overridden.length ? '（本地覆盖 ' + built.report.overridden.length + '）' : ''));
+  }
+  if (built && built.report.macros.length) parts.push('宏 ' + built.report.macros.length + ' 个');
+  if (built && built.popupMatch && built.popupMatch.covered > 0) {
+    parts.push('弹出菜单 ' + built.popupMatch.entry.name + '（覆盖 ' +
+      built.popupMatch.covered + '/' + built.popupMatch.total + ' 个 popupKey）');
+  }
+  rep.append('✓ ' + parts.join(' · '));
+  if (built && built.popupMatch && built.popupMatch.missing.length) {
+    rep.append(h('div', { class: 'st-warn' },
+      '弹出菜单里缺少这些 popupKey：' + built.popupMatch.missing.join('、')));
+  }
+  plan.errors.forEach(function (e) { rep.append(h('div', { class: 'st-warn' }, '· ' + e)); });
+  plan.warnings.forEach(function (w) { rep.append(h('div', { class: 'st-warn' }, '· ' + w)); });
+}
+FE.renderFolderOps = renderFolderOps;
 
 /* ================================================================
  * 顶部工具栏 / 标签页 / 事件绑定
@@ -3264,15 +3382,128 @@ function initToolbar() {
     });
   });
 
-  /* 文件操作 */
+  /* ---------------- 文件操作 ----------------
+   * 单一入口「导入 JSON」：既吃单个布局文件，也吃整个布局包。
+   * 布局包是 Foxy 运行时的常态 —— 共享定义在 frontend/definitions.json，布局文件里
+   * 只写自己特有的键，其余全靠引用共享定义。因此：
+   *   · 一次选中多个文件（含 definitions.json + layouts/ + popups/）→ 当作整包合并；
+   *   · 只选中 definitions.json → 自动接一步「选同文件夹」，把关联文件全部认出来；
+   *   · 单文件布局导入后若仍有 ref 无法解析 → 就地提示补全。
+   * 浏览器只把「用户选中的文件」交给网页、不提供其所在目录信息，所以补全必须再取
+   * 一次文件夹授权，无法仅凭文件名反推同目录。 */
+  function filesToEntries(files) {
+    return Promise.all(files.map(function (f) {
+      return readFileText(f).then(function (text) {
+        return text == null ? null : {
+          name: f.name,
+          path: f.webkitRelativePath || f.name,
+          text: text
+        };
+      });
+    })).then(function (list) { return list.filter(Boolean); });
+  }
+
+  /* 提示行：只改 state.folderHint，实际显隐由 renderFolderOps() 派生渲染。
+   * 这样加载示例 / JSON 页应用 / 整包导入时提示会随新状态自动消失，不会残留。 */
+  function showFolderHint(msg) {
+    state.folderHint = msg || null;
+    if (FE.renderFolderOps) renderFolderOps();
+  }
+  function hideFolderHint() {
+    state.folderHint = null;
+    if (FE.renderFolderOps) renderFolderOps();
+  }
+
+  /* 尽力自动接一步「选文件夹」。但必须清楚：**这不可靠** ——
+   * 浏览器把「用户激活」消耗在第一次文件选择上了，紧接着程序化 click() 打开文件对话框
+   * 常被静默拦掉（Chrome 的 user-activation 限制），所以外部表现就是「点了没反应」。
+   * 因此它只是 best-effort：真正兜底的是提示行里那个高亮的「选择文件夹…」按钮。
+   * 不要在提示文案里承诺「正在自动读取」—— 拦掉时就成了假承诺。 */
+  function requestFolderPick() {
+    var dirInput = $('op-import-dir-file');
+    if (!dirInput) return;
+    try { dirInput.click(); } catch (e) { /* 被拦掉则依赖提示行按钮 */ }
+  }
+
+  /* 用一整包文件装入编辑器；pickName 指定优先载入哪个布局 */
+  function importPackage(entries, pickName) {
+    var plan = FE.planFolderImport(entries);
+    if (!plan.layouts.length) {
+      setOpStatus('没有找到布局文件（foxy.keyboard-layout）：' + plan.errors.join('；'), 'error');
+      return false;
+    }
+    var pick = null;
+    if (pickName) {
+      pick = plan.layouts.filter(function (it) { return it.name === pickName; })[0] || null;
+    }
+    if (!pick) pick = plan.layouts.filter(function (it) { return /^default\.json$/i.test(it.name); })[0];
+    if (!pick) pick = plan.layouts[0];
+    if (!loadFromFolderPlan(plan, pick.path)) return false;
+    hideFolderHint();
+    var rep = FE.inspectJsonText(pick.text);
+    var note = rep.total ? '（该文件已自动修复 ' + rep.total + ' 处语法问题）' : '';
+    setOpStatus('已识别布局包：载入 ' + pick.path + note + ' —— ' + FE.describePlan(plan), 'ok');
+    setJsonStatus('✓ 已导入 ' + pick.name + '（已合并 definitions.json 共享定义）', 'ok');
+    return true;
+  }
+
+  /* 读文件夹并把整包认出来（自动接续与按钮兜底共用） */
+  function importFromDirectoryInput(input) {
+    var files = input.files ? Array.prototype.slice.call(input.files) : [];
+    input.value = '';
+    var jsons = files.filter(function (f) { return /\.json$/i.test(f.name || ''); });
+    if (!jsons.length) {
+      setOpStatus('所选文件夹里没有 JSON 文件', 'error');
+      return;
+    }
+    setOpStatus('正在识别同文件夹的 ' + jsons.length + ' 个 JSON 文件…', '');
+    filesToEntries(jsons).then(function (entries) {
+      importPackage(entries);
+    }).catch(function (e) {
+      setOpStatus('读取文件夹失败: ' + (e && e.message ? e.message : e), 'error');
+    });
+  }
+
   $('op-import').addEventListener('click', function () { $('op-import-file').click(); });
   $('op-import-file').addEventListener('change', function () {
-    var file = this.files && this.files[0];
+    var files = this.files ? Array.prototype.slice.call(this.files) : [];
     this.value = '';
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function () {
-      var text = String(reader.result);
+    if (!files.length) return;
+
+    /* 多选：当作一个小型布局包处理 */
+    if (files.length > 1) {
+      filesToEntries(files).then(function (entries) { importPackage(entries); });
+      return;
+    }
+
+    var file = files[0];
+    readFileText(file).then(function (text) {
+      if (text == null) { setOpStatus('读取 ' + file.name + ' 失败', 'error'); return; }
+      var cls = FE.classifyFoxyFile(text, file.name);
+
+      /* 选中的是 definitions.json：它自己不是布局，必须补同文件夹的布局与弹出菜单 */
+      if (cls.kind === 'definitions') {
+        var n = 0;
+        ['keys', 'actions', 'macros'].forEach(function (s) {
+          if (cls.data && isPlainObject(cls.data[s])) n += Object.keys(cls.data[s]).length;
+        });
+        setOpStatus('已识别 ' + file.name + '（' + n + ' 项共享定义）。'
+          + '还需选择一次布局包所在的文件夹，才能读取同目录的布局与弹出菜单。', 'warn');
+        showFolderHint('还需选择一次布局包所在的文件夹 ——「' + file.name + '」本身只是共享定义，'
+          + '不是键盘布局，且浏览器不会透露所选文件所在目录，无法自动读取同目录的其他文件。'
+          + '请点右侧「选择文件夹…」，选中它所在的文件夹，编辑器会自动识别其中的 layouts / popups 并完成合并。');
+        requestFolderPick();
+        return;
+      }
+
+      /* 选中的是弹出菜单文件：路由到弹出菜单页 */
+      if (cls.kind === 'popup') {
+        if (FE.loadPopupProfileText && FE.loadPopupProfileText(text, file.name)) {
+          setOpStatus('已导入弹出菜单 ' + file.name, 'ok');
+        }
+        return;
+      }
+
       var rep = FE.inspectJsonText(text);
       if (applyProfileText(text)) {
         state.fileName = file.name;
@@ -3284,6 +3515,18 @@ function initToolbar() {
           setOpStatus('已导入 ' + file.name, 'ok');
           setJsonStatus('✓ 已导入 ' + file.name + '，JSON 语法检查通过', 'ok');
         }
+        /* 单文件常见于分包布局：引用解析不了是因为定义在同文件夹的 definitions.json */
+        var unresolved = state.validation.issues.filter(function (it) {
+          return it.code === 'unresolved-ref';
+        });
+        if (unresolved.length) {
+          showFolderHint('这个文件有 ' + unresolved.length + ' 处引用无法解析（如 “'
+            + unresolved[0].message.replace(/^.*?无法解析[:：]?\s*/, '').slice(0, 24)
+            + '”）。若它的共享定义在 definitions.json 里，请点右侧「选择文件夹…」'
+            + '选中该布局包所在的文件夹，即可自动合并共享定义。');
+        } else {
+          hideFolderHint();
+        }
       } else {
         /* 无法解析：把原文放进布局 JSON 卡片（现位于布局编辑页底部），并展示问题 + 一键修复入口 */
         var ta = $('json-editor');
@@ -3293,19 +3536,32 @@ function initToolbar() {
         setOpStatus('无法直接读取 ' + file.name + '：' + (state.lastParseError || 'JSON 语法错误') + extra + ' 已把原文载入布局 JSON 卡片', 'error');
         setJsonStatus('✗ ' + file.name + ' 无法解析: ' + (state.lastParseError || '') + extra, 'error');
       }
-    };
-    reader.readAsText(file, 'utf-8');
+    });
+  });
+
+  /* 文件夹补全（提示行按钮的手动兜底；自动触发走的也是这个 input） */
+  $('op-import-dir-file').addEventListener('change', function () {
+    importFromDirectoryInput(this);
+  });
+  $('op-folder-complete').addEventListener('click', function () {
+    $('op-import-dir-file').click();
+  });
+  $('op-folder-load').addEventListener('click', function () {
+    var sel = $('op-folder-layout');
+    if (!sel || !sel.value) return;
+    if (!loadFromFolderPlan(state.folderPlan, sel.value)) return;
+    setOpStatus('已切换到包内布局 ' + sel.value, 'ok');
   });
   $('op-export').addEventListener('click', function () {
-    var text = FE.serializeProfile(state.profile, state.includeType);
-    var blob = new Blob([text], { type: 'application/json;charset=utf-8' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = state.fileName || 'foxy-layout.json';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-    setOpStatus('已导出 ' + a.download, 'ok');
+    var res = exportLayoutText();
+    downloadJson(res.text, state.fileName || 'foxy-layout.json');
+    setOpStatus(res.note, 'ok');
+  });
+  $('op-export-defs').addEventListener('click', function () {
+    if (!state.folderDefs) { setOpStatus('当前不是文件夹导入，没有可导出的 definitions.json', 'warn'); return; }
+    var text = FE.serializeDefinitions(state.folderDefs);
+    downloadJson(text, 'definitions.json');
+    setOpStatus('已导出 definitions.json（原样保留识别时的共享定义）', 'ok');
   });
 
   /* 示例（已打包进 js/examples-bundle.js，file:// 直开无需服务器）。

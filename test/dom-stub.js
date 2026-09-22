@@ -433,12 +433,21 @@ function buildSkeleton() {
       el('button', { id: 'op-import' }),
       el('input', { id: 'op-import-file', type: 'file' }),
       el('button', { id: 'op-export' }),
+      el('button', { id: 'op-export-defs' }),
       el('select', { id: 'op-example' }),
       el('button', { id: 'op-load-example' }),
       el('button', { id: 'op-undo' }),
       el('button', { id: 'op-redo' })),
     el('input', { id: 'op-author', type: 'text' }),
     el('input', { id: 'op-type', type: 'checkbox' }),
+    el('div', { id: 'op-folder' },
+      el('select', { id: 'op-folder-layout' }),
+      el('button', { id: 'op-folder-load' })),
+    el('div', { id: 'op-folder-hint', class: 'form-row form-inline folder-hint' },
+      el('span', { id: 'op-folder-hint-text', class: 'folder-hint-text' }),
+      el('button', { id: 'op-folder-complete', class: 'mini-button attention' }, '选择文件夹…'),
+      el('input', { id: 'op-import-dir-file', type: 'file' })),
+    el('div', { id: 'op-folder-report' }),
     el('div', { id: 'op-status', class: 'status' })
   );
   const wb = el('div', { class: 'workbench' }, el('div', { class: 'col-main' }, opCard, layoutCard, layoutJsonCard));

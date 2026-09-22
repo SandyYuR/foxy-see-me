@@ -24,13 +24,13 @@ let lastPrompt = null;
 global.prompt = (msg, def) => { lastPrompt = { msg, def }; return lastPrompt.answer; };
 global.alert = (msg) => { throw new Error('alert 被调用: ' + msg); };
 global.fetch = () => Promise.reject(new Error('no fetch in test'));
-/* 可用的 FileReader 桩：读取 global.__fileContent，用于测试导入流程 */
+/* 可用的 FileReader 桩：读取 file.__content（多文件场景），回退 global.__fileContent */
 global.__fileContent = '';
 global.FileReader = class {
-  readAsText() {
+  readAsText(file) {
     const self = this;
     setTimeout(() => {
-      self.result = global.__fileContent;
+      self.result = (file && file.__content != null) ? file.__content : global.__fileContent;
       if (self.onload) self.onload();
     }, 0);
   }
@@ -52,6 +52,7 @@ load('data.js');
 load('default-profile.js');
 load('examples-bundle.js');
 load('app.js');
+load('folder-import.js');
 load('key-dialog.js');
 load('popup-editor.js');
 
@@ -834,6 +835,159 @@ setTimeout(async function () {
   $('op-example').value = 'cc lite.json';
   $('op-load-example').click();
   ok(!!FE.state.profile.layouts.default, '保证3b 示例下拉加载 cc lite.json 成功');
+
+  /* ==================== 导入 JSON：单一入口的三种输入 ==================== */
+  console.log('== 导入 JSON：单入口（单文件 / 多选整包 / definitions.json 自动接续） ==');
+  const pkgDefs = JSON.stringify({
+    type: 'foxy.definitions', author: 'pkg',
+    keys: {
+      'qwerty.q': { ref: 'rime.q', longPress: { popupKey: 'sym.a' } },
+      'nav.space': { ref: 'rime.space' }
+    },
+    actions: { 'act.hello': { type: 'key', key: 'A', meta: ['CTRL'] } },
+    macros: { 'mac.hello': [{ action: 'act.hello' }] }
+  });
+  const pkgLayout = JSON.stringify({
+    type: 'foxy.keyboard-layout', author: 'pkg',
+    keys: { 'local.one': { ref: 'rime.1' } },
+    layouts: {
+      default: {
+        sections: [{ type: 'rows', rows: [
+          [{ ref: 'qwerty.q' }, { ref: 'nav.space' }, { ref: 'local.one' }]
+        ] }]
+      }
+    }
+  });
+  const pkgPopup = JSON.stringify({
+    type: 'foxy.popup-profile',
+    schemas: { default: { 'sym.a': { normal: ['@', '#'] } } }
+  });
+  const soloOk = JSON.stringify({
+    type: 'foxy.keyboard-layout',
+    layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }] } }
+  });
+  /* 对照：同一份布局单文件导入必然报错（这正是用户反馈的“不支持”场景） */
+  ok(FE.validateProfile(FE.normalizeProfile(JSON.parse(pkgLayout))).errors.length > 0,
+    '对照：薄布局单文件解析报错（qwerty.q 无法解析）');
+
+  /* 无文件夹上下文时两个入口应处于隐藏态（先确认，再验证导入后显示） */
+  FE.state.folderPlan = null;
+  FE.state.folderDefs = null;
+  FE.renderFolderOps();
+  ok($('op-folder').hidden === true, '无文件夹上下文时「包内布局」面板隐藏');
+  ok($('op-export-defs').hidden === true, '无文件夹上下文时「导出 definitions」隐藏');
+
+  /* ---- 输入 1：选中 definitions.json → 醒目提示「还需选择一次文件夹」 ---- */
+  global.__fileContent = pkgDefs;
+  fileInput.files = [{ name: 'definitions.json' }];
+  fileInput._fire('change');
+  await sleep(30);
+  ok($('op-folder-hint').hidden === false, '选中 definitions.json 后出现补选文件夹提示');
+  ok($('op-folder-hint-text').textContent.indexOf('definitions.json') >= 0, '提示行说明为何需要文件夹');
+  ok($('op-folder-hint-text').textContent.indexOf('还需选择一次') >= 0, '提示行明确「还需选择一次」文件夹');
+  ok($('op-folder-hint-text').textContent.indexOf('浏览器不会透露') >= 0, '提示行解释为何不能自动读取');
+  ok($('op-status').textContent.indexOf('definitions.json') >= 0, '状态栏说明已识别 definitions.json');
+  ok($('op-status').textContent.indexOf('还需选择一次') >= 0, '状态栏明确「还需选择一次」文件夹');
+  /* 不能再出现「正在读取」这类假承诺：自动触发可能被浏览器拦掉 */
+  ok($('op-status').textContent.indexOf('正在读取同文件夹') < 0, '状态栏不再承诺“正在读取”同文件夹');
+  /* 醒目化：提示行与按钮都要有对应类，样式在 style.css */
+  ok($('op-folder-hint').classList.contains('folder-hint'), '提示行挂 folder-hint 醒目样式类');
+  ok($('op-folder-complete').classList.contains('attention'), '「选择文件夹」按钮挂 attention 高亮类');
+  ok($('op-folder-complete').textContent.indexOf('选择文件夹') >= 0, '按钮文案写明「选择文件夹」');
+  /* definitions.json 本身不是布局，不能被当作布局装入 */
+  ok(Array.isArray(FE.state.profile.layouts.default.sections), '未把 definitions.json 误当布局装入');
+  ok(FE.state.folderPlan === null, '补选文件夹前不建立文件夹上下文');
+
+  /* ---- 输入 2：一次多选（definitions.json + 布局）→ 当作整包 ---- */
+  fileInput.files = [
+    { name: 'definitions.json', __content: pkgDefs },
+    { name: 'a.json', __content: pkgLayout },
+    { name: 'p.json', __content: pkgPopup }
+  ];
+  fileInput._fire('change');
+  await sleep(40);
+  ok(FE.state.profile.keys['qwerty.q'] !== undefined, '多选整包：共享 definitions 的键已并入');
+  ok(FE.state.profile.keys['local.one'] !== undefined, '多选整包：布局自有定义保留');
+  eq(FE.validateProfile(FE.state.profile).errors, [], '多选整包：校验 0 错误');
+  ok($('op-folder-hint').hidden === true, '整包导入后不再提示补选文件夹');
+  ok(FE.state.folderDefs !== null, '整包导入记住了共享定义（供导出还原）');
+  ok($('op-folder').hidden === false, '整包导入显示「包内布局」面板');
+
+  /* ---- 输入 3：薄布局单文件 → 提示引用无法解析、可就地补全 ---- */
+  global.__fileContent = pkgLayout;
+  fileInput.files = [{ name: 'a.json' }];
+  fileInput._fire('change');
+  await sleep(30);
+  ok($('op-folder-hint').hidden === false, '薄布局单文件导入后提示可就地补全');
+  ok($('op-folder-hint-text').textContent.indexOf('引用无法解析') >= 0, '提示说明存在无法解析的引用');
+  ok(FE.state.folderPlan === null, '单文件导入不建立文件夹上下文');
+  ok(FE.state.folderDefs === null, '单文件导入清空共享定义上下文');
+
+  /* ---- 自包含布局单文件 → 不应出现补全提示 ---- */
+  global.__fileContent = soloOk;
+  fileInput.files = [{ name: 'solo.json' }];
+  fileInput._fire('change');
+  await sleep(30);
+  eq(FE.validateProfile(FE.state.profile).errors, [], '自包含单文件布局导入 0 错误');
+  ok($('op-folder-hint').hidden === true, '自包含布局不提示补选文件夹');
+
+  /* ---- 选中弹出菜单文件 → 路由到弹出菜单页 ---- */
+  global.__fileContent = pkgPopup;
+  fileInput.files = [{ name: 'p.json' }];
+  fileInput._fire('change');
+  await sleep(30);
+  ok(FE.state.popupProfile && FE.state.popupProfile.schemas.default['sym.a'] !== undefined,
+    '选中弹出菜单文件被路由到弹出菜单编辑器');
+
+  /* ---- 手动兜底：提示行「选择文件夹」按钮 / 直接给目录 input 喂文件 ---- */
+  const dirInput = $('op-import-dir-file');
+  dirInput.files = [
+    { name: 'definitions.json', webkitRelativePath: 'pkg/definitions.json', __content: pkgDefs },
+    { name: 'a.json', webkitRelativePath: 'pkg/layouts/a.json', __content: pkgLayout },
+    { name: 'a.json', webkitRelativePath: 'pkg/popups/a.json', __content: pkgPopup },
+    { name: 'notes.txt', webkitRelativePath: 'pkg/notes.txt', __content: 'ignore me' }
+  ];
+  dirInput._fire('change');
+  await sleep(40);
+  ok(!!FE.state.profile.layouts.default, '文件夹补全建立了布局');
+  ok(FE.state.profile.keys['qwerty.q'] !== undefined, '共享 definitions.json 的键已并入');
+  ok(FE.state.profile.actions['act.hello'] !== undefined, '共享 actions 已并入');
+  ok(FE.state.profile.macros['mac.hello'] !== undefined, '共享 macros 已并入');
+  ok(FE.state.profile.keys['local.one'] !== undefined, '布局自有定义保留');
+  eq(FE.validateProfile(FE.state.profile).errors, [], '文件夹导入后校验 0 错误');
+  ok(FE.state.fileName === 'a.json', '文件名记录为包内布局文件名');
+  ok(FE.state.folderDefs !== null, '共享定义已被记住（供导出还原）');
+  ok($('op-folder').hidden === false, '识别结果面板已显示');
+  ok($('op-folder-report').textContent.indexOf('definitions.json') >= 0, '结果面板说明已识别 definitions.json');
+  ok($('op-folder-report').textContent.indexOf('弹出菜单') >= 0, '结果面板说明已关联弹出菜单');
+  ok($('op-export-defs').hidden === false, '「导出 definitions」按钮已可用');
+  eq($('op-folder-layout').children.length, 1, '包内布局下拉列出 1 个布局文件');
+  eq(q('.kb-key').length, 3, '预览渲染合并后的按键');
+  ok($('preview-meta').textContent.indexOf('校验通过') >= 0, '合并后预览显示校验通过');
+
+  /* 导出：未改动的共享定义被剥离回 definitions.json */
+  const expRes = FE.splitProfileForExport(FE.state.profile, FE.state.folderDefs);
+  ok(expRes.split.stripped.indexOf('keys.qwerty.q') >= 0, '导出时剥离了来自 definitions 的键');
+  ok(expRes.split.kept.indexOf('keys.local.one') >= 0, '导出时保留布局自有键');
+  eq(expRes.layout.keys['nav.space'], undefined, '剥离后布局不含共享键');
+  ok(FE.serializeDefinitions(FE.state.folderDefs).indexOf('foxy.definitions') >= 0,
+    '导出的 definitions.json 带正确 type');
+
+  /* 编辑后仍能导出：改动过的定义不会被错误剥离 */
+  FE.mutate(function () {
+    FE.state.profile.keys['qwerty.q'] = { ref: 'rime.w', longPress: { popupKey: 'sym.a' } };
+  });
+  const expRes2 = FE.splitProfileForExport(FE.state.profile, FE.state.folderDefs);
+  ok(expRes2.split.kept.indexOf('keys.qwerty.q') >= 0, '被改动的共享键保留在布局文件中');
+  eq(expRes2.layout.keys['qwerty.q'].ref, 'rime.w', '改动的定义随布局导出');
+
+  /* 退出文件夹上下文：单文件导入后不再按旧包剥离 */
+  global.__fileContent = pkgLayout;
+  fileInput.files = [{ name: 'solo.json' }];
+  fileInput._fire('change');
+  await sleep(30);
+  ok(FE.state.folderDefs === null, '单文件导入清空文件夹上下文');
+  ok($('op-export-defs').hidden === true, '「导出 definitions」按钮随之隐藏');
 
   /* ==================== 分体布局（split） ==================== */
   console.log('== 分体布局（split）==');

@@ -17,6 +17,7 @@ function load(file) {
 load('data.js');
 load('default-profile.js');
 load('app.js');
+load('folder-import.js');
 load('key-dialog.js');
 load('popup-editor.js');
 
@@ -762,6 +763,118 @@ eq(FE.resolveActionSpec('my_action', actScope).kind, 'action-name', 'resolveActi
 /* 宏名要经 {macro:...} 规格，字符串形式只查 actions 表 */
 eq(FE.resolveActionSpec({ macro: 'my_macro' }, actScope).unresolved, undefined, '宏在显式 scope 下可解析');
 eq(FE.resolveActionSpec({ macro: 'my_macro' }).unresolved, 'my_macro', '无 scope 时宏走全局并解析失败');
+
+/* ================================================================
+ * 文件夹导入：多文件包（definitions.json + layouts/ + popups/）
+ * ================================================================ */
+console.log('== 文件夹导入：多文件包识别 ==');
+
+/* ---- 1. 文件类型判别 ---- */
+eq(FE.classifyFoxyFile('{"type":"foxy.keyboard-layout","layouts":{}}', 'x.json').kind, 'layout', '显式 type 判为布局');
+eq(FE.classifyFoxyFile('{"type":"foxy.popup-profile","schemas":{}}', 'x.json').kind, 'popup', '显式 type 判为弹出菜单');
+eq(FE.classifyFoxyFile('{"type":"foxy.definitions","keys":{}}', 'x.json').kind, 'definitions', '显式 type 判为共享定义');
+eq(FE.classifyFoxyFile('{"keys":{"a":{"ref":"rime.a"}}}', 'pkg/definitions.json').kind, 'definitions', '无 type 时按文件名 definitions.json 识别');
+eq(FE.classifyFoxyFile('{"layouts":{"default":{"sections":[]}}}', 'pkg/layouts/foo.json').kind, 'layout', '无 type 时按 layouts/ 目录识别');
+eq(FE.classifyFoxyFile('{"schemas":{"default":{}}}', 'pkg/popups/foo.json').kind, 'popup', '无 type 时按 popups/ 目录识别');
+eq(FE.classifyFoxyFile('{ 坏 JSON', 'x.json').kind, 'unknown', '坏 JSON 归为无法识别');
+ok(FE.classifyFoxyFile('{ 坏 JSON', 'x.json').error !== null, '无法识别时带出错误原因');
+
+/* ---- 2. 共享定义合并（布局自身覆盖共享） ---- */
+const sharedDefs = {
+  type: 'foxy.definitions',
+  keys: { 'qwerty.q': { ref: 'rime.q' }, 'nav.x': { ref: 'rime.1' } },
+  actions: { 'act.a': { type: 'key', key: 'A' } },
+  macros: { 'mac.a': [{ action: 'act.a' }] }
+};
+const thinLayout = {
+  type: 'foxy.keyboard-layout',
+  keys: {
+    'local.k': { ref: 'qwerty.q' },
+    'nav.x': { ref: 'rime.2', longPress: { popupKey: 'sym.a' } }
+  },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'local.k' }]] }] } }
+};
+const mergedRes = FE.mergeDefinitions(thinLayout, sharedDefs);
+eq(Object.keys(mergedRes.profile.keys).length, 3, '共享键并入后共 3 个键定义');
+eq(mergedRes.profile.keys['nav.x'].ref, 'rime.2', '本地同名定义覆盖共享定义');
+eq(mergedRes.report.overridden, ['keys.nav.x'], '覆盖项被记录');
+eq(mergedRes.profile.layouts.default.sections[0].rows[0][0].ref, 'local.k', '原布局结构保持不变');
+ok(!thinLayout.keys['local.k'].hasOwnProperty('x') && thinLayout.actions === undefined, '合并不改动入参');
+eq(FE.validateProfile(mergedRes.profile).errors, [], '合并后可校验通过');
+ok(FE.validateProfile(FE.normalizeProfile(thinLayout)).errors.some(e => e.indexOf('qwerty.q') >= 0),
+  '对照：未合并时 qwerty.q 无法解析（这正是单文件导入报错的根源）');
+
+/* ---- 3. popupKey 递归收集 与 弹出菜单文件匹配 ---- */
+const layWithPopup = {
+  keys: { 'k.a': { ref: 'rime.a', longPress: { popupKey: 'sym.a' } } },
+  layouts: {
+    default: {
+      sections: [{ type: 'rows', rows: [[{ ref: 'k.a', override: { longPress: { popupKey: 'sym.b' } } }]] }]
+    }
+  }
+};
+eq(FE.collectPopupKeys(layWithPopup).sort(), ['sym.a', 'sym.b'], '递归收集 popupKey（含放置点 override）');
+const popBoth = { type: 'foxy.popup-profile', schemas: { default: { 'sym.a': { normal: ['@'] }, 'sym.b': { normal: ['#'] } } } };
+const mSame = FE.matchPopupFile(layWithPopup, [
+  { name: 'other.json', path: 'p/other.json', data: popBoth, text: '' },
+  { name: 'k.json', path: 'p/k.json', data: popBoth, text: '' }
+], 'k.json');
+eq(mSame.entry.name, 'k.json', '覆盖数并列时优先同名词弹出菜单');
+eq(mSame.covered, 2, '覆盖数统计正确');
+eq(mSame.missing, [], '无缺失 popupKey');
+eq(FE.matchPopupFile({ keys: {}, layouts: {} }, [{ name: 'p.json', path: 'p.json', data: popBoth, text: '' }]), null,
+  '布局未使用 popupKey 时不关联弹出菜单');
+
+/* ---- 4. 文件夹导入计划 ---- */
+const planE = FE.planFolderImport([
+  { name: 'definitions.json', path: 'pkg/definitions.json', text: JSON.stringify(sharedDefs) },
+  { name: 'a.json', path: 'pkg/layouts/a.json', text: JSON.stringify(thinLayout) },
+  { name: 'p.json', path: 'pkg/popups/p.json', text: JSON.stringify(popBoth) },
+  { name: 'readme.txt', path: 'pkg/readme.txt', text: 'not json' }
+]);
+eq(planE.summary, { layouts: 1, popups: 1, definitions: 1, unknown: 0 }, '文件夹分类统计正确（非 JSON 被忽略）');
+eq(planE.layouts[0].name, 'a.json', '布局文件被识别');
+ok(planE.definitions !== null, 'definitions.json 被识别');
+const builtE = FE.buildProfileFromPlan(planE, planE.layouts[0].path);
+eq(FE.validateProfile(builtE.profile).errors, [], 'buildProfileFromPlan 产出可校验通过的 profile');
+eq(builtE.popupMatch.entry.name, 'p.json', '自动关联到弹出菜单文件');
+ok(FE.planFolderImport([{ name: 'x.json', path: 'x.json', text: '{}' }]).errors.length > 0, '无布局文件时报错');
+
+/* ---- 5. 导出还原：把未改动的共享定义剥回 definitions.json ---- */
+const splitRes = FE.splitProfileForExport(builtE.profile, sharedDefs);
+ok(splitRes.split.stripped.indexOf('keys.qwerty.q') >= 0, '未改动的共享键被剥离');
+ok(splitRes.split.kept.indexOf('keys.local.k') >= 0, '布局自有定义保留在布局文件里');
+ok(splitRes.split.kept.indexOf('keys.nav.x') >= 0, '本地改动过的定义保留（否则引用会断）');
+eq(splitRes.layout.keys['qwerty.q'], undefined, '剥离后布局不再含共享键');
+eq(FE.validateProfile(FE.mergeDefinitions(splitRes.layout, sharedDefs).profile).errors, [],
+  '剥离后重新合并仍可校验通过（导出往返一致）');
+ok(FE.serializeDefinitions(sharedDefs).indexOf('"type": "foxy.definitions"') >= 0, '导出的 definitions 带正确 type');
+
+/* ---- 6. 真实工作区多文件包（布局/简易）：目录不属于 foxy-editor 仓库，存在才测 ---- */
+const wsPkgDir = path.join(__dirname, '..', '..', '布局', '简易');
+if (fs.existsSync(wsPkgDir)) {
+  const walked = [];
+  (function walk(d, prefix) {
+    for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, ent.name);
+      if (ent.isDirectory()) walk(p, prefix + '/' + ent.name);
+      else if (/\.json$/i.test(ent.name)) {
+        walked.push({ name: ent.name, path: '简易' + prefix + '/' + ent.name, text: fs.readFileSync(p, 'utf8') });
+      }
+    }
+  })(wsPkgDir, '');
+  const wsPlan = FE.planFolderImport(walked);
+  eq(wsPlan.summary, { layouts: 2, popups: 2, definitions: 1, unknown: 0 }, '真实包 简易/ 分类正确');
+  const wsBuilt = FE.buildProfileFromPlan(wsPlan, wsPlan.layouts.find(l => l.name === 'simple.json').path);
+  eq(FE.validateProfile(wsBuilt.profile).errors, [], '真实包 简易/simple.json 合并后校验 0 错误');
+  ok(wsBuilt.report.keys.length > 100, '真实包并入大量共享键（' + wsBuilt.report.keys.length + ' 个）');
+  eq(wsBuilt.popupMatch.covered, wsBuilt.popupMatch.total, '真实包弹出菜单覆盖全部 popupKey');
+  const leftBuilt = FE.buildProfileFromPlan(wsPlan, wsPlan.layouts.find(l => l.name === 'simple_left.json').path);
+  eq(leftBuilt.popupMatch.entry.name, 'simple_left.json', '真实包左手版关联到同名弹出菜单');
+  console.log('  （已用真实 布局/简易 多文件包验证：单文件导入 16211 错 → 合并后 0 错）');
+} else {
+  console.log('  （跳过：工作区 布局/简易 目录不存在）');
+}
 
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
 process.exit(failed ? 1 : 0);
