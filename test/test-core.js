@@ -1030,5 +1030,86 @@ ok(typeof FE.macroStepToDraft === 'function', '宏步骤抽象已导出');
 ok(typeof FE.macroValueToStep === 'function', '步骤回写函数已导出');
 ok(FE.MACRO_STEP_KINDS === undefined, '旧的「步骤类型」二选一常量已移除（改由动作编辑器承载）');
 
+/* ================================================================
+ * 引用索引（「使用数」按钮与跳转的数据来源）
+ * 纯逻辑，无 DOM：UI 段在 Node 下会提前 return，所以这些必须待在纯逻辑段。
+ * ================================================================ */
+console.log('== 引用索引：使用数与穿透解析 ==');
+
+const riProfile = {
+  type: 'foxy.keyboard-layout',
+  keys: { 'k.a': { ref: 'rime.a' }, 'k.chain': { ref: 'k.a' } },
+  actions: { a1: { type: 'key', key: 'BACKSPACE' }, a2: { type: 'key', key: 'LEFT' } },
+  macros: { m1: [{ action: 'a1' }] },
+  layouts: {
+    default: {
+      sections: [{ type: 'rows', rows: [[
+        { ref: 'k.a', tap: { macro: 'm1' } },
+        { ref: 'k.chain' }
+      ]] }]
+    },
+    numpad: { sections: [{ type: 'grid', columns: 1, rows: 1, keys: [{ column: 0, row: 0, ref: 'k.a' }] }] }
+  }
+};
+const riPopup = {
+  type: 'foxy.popup-profile',
+  schemas: { default: { q: { normal: [{ ref: 'k.a' }, { action: 'a2' }], shifted: [{ ref: 'k.chain' }] } } }
+};
+const riIdx = FE.buildRefIndex(riProfile, riPopup);
+
+/* ---- 直接引用 + 穿透：按键定义 ---- */
+const useKa = FE.usageOf(riIdx, 'key', 'k.a');
+/* 直接 4 处：default 按键、numpad 网格键、弹出菜单候选、按键定义 k.chain 的 ref。
+ * 另有 2 处来自穿透（k.chain 引用了 k.a，而 k.chain 被 default 键2 与弹出菜单
+ * shifted 候选使用）—— 所以 6 才是对的，别按"肉眼数直接引用"去改这个数。 */
+eq(useKa.count, 6, 'k.a 共 6 处（4 直接 + 2 由 k.chain 穿透）');
+const kaLocated = useKa.items.filter(i => i.loc);
+ok(kaLocated.length >= 3, '多数引用带可跳转坐标（' + kaLocated.length + ' 处）');
+ok(useKa.items.some(i => !i.loc && i.label.indexOf('按键定义') >= 0),
+  '按键定义内部的引用没有布局坐标（只读展示）');
+eq(kaLocated.filter(i => i.loc.layout === 'numpad').length, 1, '含 numpad 网格键引用');
+const kaRow = kaLocated.find(i => i.loc.layout === 'default' && i.loc.rowIndex != null);
+eq(kaRow.loc.rowIndex, 0, '行内按键坐标含 rowIndex');
+const useGrid = kaLocated.find(i => i.loc.layout === 'numpad');
+eq(useGrid.loc.rowIndex, null, '网格键 rowIndex 为 null');
+eq(useGrid.loc.group, 'grid', '网格键带 group=grid');
+eq(FE.usageOf(riIdx, 'key', '不存在的键').count, 0, '未引用的名字计数为 0');
+
+/* ---- 弹出菜单候选：可跳到弹出菜单页 ---- */
+const popItem = kaLocated.find(i => i.loc.popupKey);
+eq(popItem.loc.popupKey, 'q', '弹出菜单引用带 popupKey（供跳转）');
+ok(!popItem.loc.layout, '弹出菜单引用没有布局坐标');
+
+/* ---- 穿透解析：动作被宏用、宏被布局用 → 动作也应追到布局 ---- */
+const useA1 = FE.usageOf(riIdx, 'action', 'a1');
+ok(useA1.count >= 2, 'a1 既被宏步骤直接引用，也穿透到布局按键');
+ok(useA1.items.some(i => !i.loc), '含无坐标的直接引用（宏步骤）');
+const indirect = useA1.items.find(i => i.loc && i.loc.layout === 'default');
+ok(!!indirect, 'a1 穿透到布局按键（可跳转）');
+ok(indirect.via && indirect.via.join('').indexOf('宏 m1') >= 0, '穿透项标出经由链「宏 m1」');
+
+/* ---- 穿透解析：按键定义链 ---- */
+const useRimeA = FE.usageOf(riIdx, 'key', 'rime.a');
+ok(useRimeA.items.some(i => !i.loc && i.label.indexOf('按键定义 k.a') >= 0), 'rime.a 被按键定义直接引用');
+ok(useRimeA.items.some(i => i.loc && i.loc.layout === 'default'),
+  'rime.a 穿透按键定义链追到布局按键');
+ok(useRimeA.count < 60, '穿透有上限，条目数不会爆炸（实际 ' + useRimeA.count + '）');
+
+/* ---- 穿透解析：弹出菜单里的动作名 ---- */
+eq(FE.usageOf(riIdx, 'action', 'a2').count, 1, 'a2 仅被弹出菜单候选引用');
+ok(!!FE.usageOf(riIdx, 'action', 'a2').items[0].loc.popupKey, '该引用可跳到弹出菜单');
+
+/* ---- 引用环不会死循环 ---- */
+const cyc = FE.buildRefIndex({
+  actions: { x: { action: 'y' }, y: { action: 'x' } },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a', tap: { action: 'x' } }]] }] } }
+}, null);
+ok(FE.usageOf(cyc, 'action', 'y').count < 60, '互相引用的动作不会无限膨胀');
+ok(FE.usageOf(cyc, 'action', 'y').items.some(i => i.loc), '环中的动作仍能追到布局坐标');
+
+/* ---- 空/异常输入安全 ---- */
+eq(FE.buildRefIndex(null, null), { key: {}, action: {}, macro: {} }, '空输入返回空索引');
+eq(FE.buildRefIndex({}, undefined).key, {}, '缺 popupProfile 不报错');
+
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
 process.exit(failed ? 1 : 0);

@@ -1663,6 +1663,163 @@ setTimeout(async function () {
   FE.locateIssue(noSplitIssue);
   eq(FE.state.splitMode, false, '无 split 片段的问题定位回落到常规模式');
 
+  console.log('== 使用数按钮 + 内建弹窗 + 整行可点 ==');
+  /* 造一份规模小但引用关系完整的配置：布局用按键、按键定义链、宏、动作、弹出菜单 */
+  FE.applyProfileText(JSON.stringify({
+    type: 'foxy.keyboard-layout',
+    keys: { 'k.a': { ref: 'rime.a' }, 'k.chain': { ref: 'k.a' }, 'k.unused': { ref: 'rime.b' } },
+    actions: { a1: { type: 'key', key: 'BACKSPACE' }, a2: { type: 'key', key: 'LEFT' } },
+    macros: { m1: [{ action: 'a1' }] },
+    layouts: {
+      default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.a', tap: { macro: 'm1' } }, { ref: 'k.chain' }]] }] },
+      numpad: { sections: [{ type: 'grid', columns: 1, rows: 1, keys: [{ column: 0, row: 0, ref: 'k.a' }] }] }
+    }
+  }), {});
+  FE.state.popupProfile = FE.normalizePopupProfile({
+    type: 'foxy.popup-profile',
+    schemas: { default: { q: { normal: [{ ref: 'k.a' }, { action: 'a2' }] } } }
+  });
+  FE.state._refIdxCache = null;
+  FE.renderAll();
+
+  const keysHost2 = $('keys-list');
+  const keyRows = keysHost2.querySelectorAll('.def-item.def-row-click');
+  ok(keyRows.length >= 3, '按键定义条目整行可点（' + keyRows.length + ' 条）');
+  const findKeyRow = (nm) => keysHost2.querySelectorAll('.def-item.def-row-click')
+    .find(r => r.querySelectorAll('.def-name')[0].textContent === nm);
+  const rowKa = findKeyRow('k.a');
+  ok(!!rowKa, '找到 k.a 条目');
+
+  /* 整行可点 → 打开按键编辑对话框 */
+  documentStub._openDialogs.length = 0;
+  rowKa._fire('click');
+  ok(documentStub._openDialogs.length === 1, '点整行进入按键编辑对话框');
+  documentStub._openDialogs[0].close();
+
+  /* 行内**没有**「编辑」按钮：整行点击就是编辑入口（用户明确要求，别加回来） */
+  const rowBtnTexts = rowKa.querySelectorAll('button').map(b => b.textContent);
+  ok(rowBtnTexts.indexOf('编辑') < 0, '按键定义行内不再有「编辑」按钮（整行可点代替）');
+  eq(rowBtnTexts.length, 2, '行内只剩「使用 N」与「删除」两个按钮');
+
+  /* 键盘可达性：行自带 tabindex，且刻意不用 role="button"
+   * （行内含按钮，role=button 里嵌交互元素是非法 ARIA） */
+  eq(rowKa.getAttribute('tabindex'), '0', '按键定义行可聚焦（tabindex=0）');
+  ok(rowKa.getAttribute('role') == null, '行上不使用 role=button（避免 ARIA 嵌套错误）');
+  documentStub._openDialogs.length = 0;
+  rowKa._fire('keydown', { key: 'Enter' });
+  ok(documentStub._openDialogs.length === 1, '行聚焦后回车进入编辑');
+  documentStub._openDialogs[0].close();
+  /* 焦点在子按钮上按回车不应代劳整行，否则一次回车触发两处 */
+  documentStub._openDialogs.length = 0;
+  rowKa._fire('keydown', { key: 'Enter', target: rowKa.querySelectorAll('button')[0] });
+  ok(documentStub._openDialogs.length === 0, '焦点在子按钮上回车不会误触发整行');
+
+  /* 点行内按钮 → 不当作点整行（clickedInteractive 防护） */
+  documentStub._openDialogs.length = 0;
+  rowKa._fire('click', { target: rowKa.querySelectorAll('button')[0] });
+  ok(documentStub._openDialogs.length === 0, '点行内按钮不会误触发整行编辑');
+
+  /* 使用数按钮：文案 + 内建弹窗（绝不是 alert —— 桩里 alert 会 throw） */
+  const uBtn2 = rowKa.querySelectorAll('button').find(b => /^使用 \d+$/.test(b.textContent));
+  ok(!!uBtn2, '按键定义条目有「使用 N」按钮：' + (uBtn2 && uBtn2.textContent));
+  documentStub._openDialogs.length = 0;
+  uBtn2._fire('click');
+  const usageDlg = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  ok(!!usageDlg, '点击使用数打开网页内建弹窗（未使用浏览器 alert）');
+  ok(usageDlg.textContent.indexOf('共被引用') >= 0, '弹窗显示引用总数');
+  const jumpBtns = usageDlg.querySelectorAll('.usage-item.usage-jump');
+  ok(jumpBtns.length >= 3, '可跳转条目已渲染（' + jumpBtns.length + ' 条）');
+  ok(usageDlg.textContent.indexOf('跳转') >= 0, '可跳转条目带跳转提示');
+
+  /* 点可跳转条目 → 切到布局编辑页并选中该键 */
+  documentStub._openDialogs.length = 0;
+  jumpBtns[0]._fire('click');
+  ok($('tab-layout').classList.contains('active'), '跳转后切到布局编辑页');
+  ok(FE.state.sel != null, '跳转后选中了对应按键');
+  ok(!usageDlg.open, '跳转后弹窗已关闭');
+
+  /* 跳转到 numpad（另一个布局）应切换 layoutName */
+  FE.applyProfileText(JSON.stringify(FE.state.profile), {});
+  FE.renderAll();
+  const rowKa2 = findKeyRow('k.a');
+  const uBtn3 = rowKa2.querySelectorAll('button').find(b => /^使用 \d+$/.test(b.textContent));
+  documentStub._openDialogs.length = 0;
+  uBtn3._fire('click');
+  const dlg3 = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  const numpadJump = dlg3.querySelectorAll('.usage-item.usage-jump').find(b => b.textContent.indexOf('numpad') >= 0);
+  ok(!!numpadJump, '弹窗列出 numpad 里的引用');
+  numpadJump._fire('click');
+  eq(FE.state.layoutName, 'numpad', '跳转到另一布局会切换当前布局');
+
+  /* ---- 动作与宏页：使用数按钮在删除按钮左侧 ---- */
+  FE.applyProfileText(JSON.stringify({
+    type: 'foxy.keyboard-layout',
+    keys: { 'k.a': { ref: 'rime.a' } },
+    actions: { a1: { type: 'key', key: 'BACKSPACE' } },
+    macros: { m1: [{ action: 'a1' }] },
+    layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.a', tap: { macro: 'm1' } }]] }] } }
+  }), {});
+  FE.renderAll();
+  const actItem2 = $('actions-list').querySelectorAll('.def-item.def-collapsible')
+    .find(it => it.querySelectorAll('.def-name')[0].textContent === 'a1');
+  const actBtns = actItem2.querySelectorAll('.def-summary button').map(b => b.textContent);
+  eq(actBtns.length, 2, '动作条目摘要行有两个按钮');
+  ok(/^使用 \d+$/.test(actBtns[0]), '使用数按钮在删除按钮左侧：' + actBtns[0]);
+  eq(actBtns[1], '删除', '删除按钮紧随其后');
+  /* 穿透：a1 被宏 m1 引用、m1 被布局按键调用 → a1 应显示 2 处 */
+  eq(actBtns[0], '使用 2', 'a1 的使用数含穿透（宏步骤 + 布局按键）');
+
+  /* 点使用数不误展开条目 */
+  documentStub._openDialogs.length = 0;
+  actItem2.querySelectorAll('.def-summary button')[0]._fire('click');
+  ok(documentStub._openDialogs.length === 1, '动作使用数打开弹窗');
+  ok(actItem2.open === false, '点使用数按钮不会连带展开条目');
+  const actDlg2 = documentStub._openDialogs[0];
+  ok(actDlg2.textContent.indexOf('宏 m1') >= 0, '动作弹窗列出无坐标的直接引用（宏步骤）');
+  ok(actDlg2.querySelectorAll('.usage-item.usage-jump').length >= 1, '动作弹窗含可跳转条目');
+  actDlg2.close();
+
+  /* 宏条目也有使用数 */
+  const macItem2 = $('macros-list').querySelectorAll('.def-item.def-collapsible')
+    .find(it => it.querySelectorAll('.def-name')[0].textContent === 'm1');
+  const macBtns = macItem2.querySelectorAll('.def-summary button').map(b => b.textContent);
+  ok(/^使用 \d+$/.test(macBtns[0]), '宏条目摘要行也有使用数按钮：' + macBtns[0]);
+  eq(macBtns[1], '删除', '宏条目删除按钮紧随其后');
+
+  /* ---- 静默写回后使用数就地刷新（不重建列表） ---- */
+  const beforeText = $('actions-list').querySelectorAll('.def-usage-btn')
+    .find(b => b.dataset && b.dataset.usageName === 'a1').textContent;
+  /* 把布局按键的宏调用改成引用 a2，a2 的使用数应上升 */
+  FE.mutate(() => {
+    FE.state.profile.actions.a2 = { type: 'key', key: 'LEFT' };
+    FE.state.profile.macros.m1 = [{ action: 'a2' }];
+  });
+  FE.refreshUsageLabels();
+  const afterA2 = $('actions-list').querySelectorAll('.def-usage-btn')
+    .find(b => b.dataset && b.dataset.usageName === 'a2').textContent;
+  ok(/^使用 [1-9]/.test(afterA2), 'a2 的使用数刷新为新值：' + afterA2);
+  ok(beforeText !== afterA2, '使用数确实随引用变化更新');
+
+  /* ---- 没有引用时弹窗给明确说明，且不出现跳转按钮 ----
+   * 注意要造**真正孤立**的定义：只要把 k.orphan 放进任何布局，
+   * 布局里的放置点本身就是一处引用（"使用 1"），不再是零引用。 */
+  FE.applyProfileText(JSON.stringify({
+    type: 'foxy.keyboard-layout',
+    keys: { 'k.orphan': { ref: 'rime.a' }, 'k.used': { ref: 'rime.b' } },
+    layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.used' }]] }] } }
+  }), {});
+  FE.renderAll();
+  const rowOrphan = $('keys-list').querySelectorAll('.def-item.def-row-click')
+    .find(r => r.querySelectorAll('.def-name')[0].textContent === 'k.orphan');
+  const orphanUsage = rowOrphan.querySelectorAll('button').find(b => /^使用 \d+$/.test(b.textContent));
+  eq(orphanUsage.textContent, '使用 0', '孤立定义显示「使用 0」');
+  documentStub._openDialogs.length = 0;
+  orphanUsage._fire('click');
+  const lonelyDlg = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  ok(lonelyDlg.textContent.indexOf('没有被任何地方引用') >= 0, '零引用时弹窗说明清楚');
+  eq(lonelyDlg.querySelectorAll('.usage-item.usage-jump').length, 0, '零引用时没有跳转按钮');
+  lonelyDlg.close();
+
   console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
   process.exit(failed ? 1 : 0);
 }, 350);

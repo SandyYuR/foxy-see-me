@@ -62,7 +62,11 @@ var state = {
    * 用对象（集合语义）而非数组，避免重复与顺序无谓地影响渲染。
    * 新建的条目会自动加入这里，因此新建后默认展开、方便立即编辑。 */
   openActions: null,
-  openMacros: null
+  openMacros: null,
+  /* 引用索引缓存（「使用数」用）。按 profile/popupProfile 的**对象引用**比对，
+   * 但 mutate 多为就地改属性、引用不变，所以数据变更处必须显式
+   * 调 invalidateRefIndex()，只靠引用比对会让计数停在旧值。 */
+  _refIdxCache: null
 };
 FE.state = state;
 FE.NEUTRAL_STATUS = NEUTRAL_STATUS;
@@ -1101,6 +1105,262 @@ function hintSizeOf(hts, dir) {
 }
 FE.hintSizeOf = hintSizeOf;
 
+/* 引用索引（纯逻辑，无 DOM）：上面这些是「使用数」按钮与跳转的数据来源。
+ * 放在纯逻辑段是为了让 test-core.js 能直接断言（UI 段在 Node 下会提前 return）。 */
+/* ================================================================
+ * 引用索引（「使用数」按钮的数据来源）
+ *
+ * 返回 { key: {名: [项]}, action: {名: [项]}, macro: {名: [项]} }，
+ * 每项 = { label, loc }：
+ *   · loc 形如 { layout, isSplit, sectionIndex, rowIndex, keyIndex, group }
+ *     → 可跳到布局里的该按键（交给 locateIssue）
+ *   · loc 形如 { popupKey } → 可跳到弹出菜单页的该键
+ *   · loc 为 null → 只读展示（引用发生在按键/动作定义内部，没有布局坐标）
+ *
+ * ⚠️ **必须单遍扫描**：按键定义页要给每个条目显示使用数，
+ * 若对每个名字都全量走一遍配置，代价是 O(条目数 × 配置大小)——
+ * 真实布局包有 200+ 按键定义，那样点开页面就会明显卡顿。
+ * 所以这里一次走完、把所有名字的引用一起收集起来。
+ * ================================================================ */
+function buildRefIndex(profile, popupProfile) {
+  profile = isPlainObject(profile) ? profile : {};
+  var idx = { key: {}, action: {}, macro: {} };
+  var GESTURES = ['tap', 'doubleTap', 'longPress', 'hold'];
+  /* hold 的起始/结束侧有 start/end 与 action/endAction(s) 两种写法 */
+  var HOLD_SIDES = ['start', 'end', 'endAction', 'endActions'];
+
+  function push(kind, name, label, loc) {
+    if (typeof name !== 'string' || !name) return;
+    var bucket = idx[kind][name] || (idx[kind][name] = []);
+    bucket.push({ label: label, loc: loc || null });
+  }
+
+  /* 从动作表达式里收集引用：字符串=动作名，{macro}=宏名，{action/actions}=递归 */
+  function specRefs(spec, label, loc, depth) {
+    if (spec == null || depth > 6) return;
+    if (typeof spec === 'string') { push('action', spec, label, loc); return; }
+    if (Array.isArray(spec)) {
+      spec.forEach(function (s) { specRefs(s, label, loc, depth + 1); });
+      return;
+    }
+    if (!isPlainObject(spec)) return;
+    if (typeof spec.macro === 'string') push('macro', spec.macro, label, loc);
+    if (spec.action != null && spec.action !== '') specRefs(spec.action, label, loc, depth + 1);
+    if (Array.isArray(spec.actions)) specRefs(spec.actions, label, loc, depth + 1);
+  }
+
+  function gestureRefs(g, label, loc) {
+    if (g == null) return;
+    /* 按键定义的引用形态是手势上的 ref */
+    if (isPlainObject(g) && typeof g.ref === 'string') push('key', g.ref, label + ' · ref', loc);
+    specRefs(g, label, loc, 0);
+    if (isPlainObject(g)) {
+      HOLD_SIDES.forEach(function (k) {
+        if (g[k] != null) specRefs(g[k], label + ' · ' + k, loc, 0);
+      });
+    }
+  }
+
+  function nodeRefs(node, base, loc, depth) {
+    if (!isPlainObject(node) || depth > 6) return;
+    if (typeof node.ref === 'string') push('key', node.ref, base, loc);
+    GESTURES.forEach(function (slot) { gestureRefs(node[slot], base + ' · ' + slot, loc); });
+    if (isPlainObject(node.swipe)) {
+      FE.SWIPE_DIRS.forEach(function (d) { gestureRefs(node.swipe[d], base + ' · swipe.' + d, loc); });
+    }
+    (Array.isArray(node.variants) ? node.variants : []).forEach(function (v, i) {
+      if (isPlainObject(v)) nodeRefs(v, base + ' · 变体' + (i + 1), loc, depth + 1);
+    });
+    if (isPlainObject(node.override)) nodeRefs(node.override, base + ' · override', loc, depth + 1);
+  }
+
+  function walkSections(sections, layoutName, isSplit) {
+    (Array.isArray(sections) ? sections : []).forEach(function (s, si) {
+      if (!isPlainObject(s)) return;
+      var secTag = '区段' + (si + 1);
+      var layoutTag = layoutName + (isSplit ? '（分体）' : '');
+      if (s.type === 'rows') {
+        FE.rowsOfSection(s).forEach(function (row, ri) {
+          row.keys.forEach(function (k, ki) {
+            nodeRefs(k, layoutTag + ' ' + secTag + ' 行' + (ri + 1) + ' 键' + (ki + 1),
+              { layout: layoutName, isSplit: !!isSplit, sectionIndex: si, rowIndex: ri, keyIndex: ki }, 0);
+          });
+        });
+      } else if (s.type === 'grid' && Array.isArray(s.keys)) {
+        s.keys.forEach(function (k, ki) {
+          nodeRefs(k, layoutTag + ' ' + secTag + ' 网格键' + (ki + 1),
+            { layout: layoutName, isSplit: !!isSplit, sectionIndex: si, rowIndex: null, keyIndex: ki, group: 'grid' }, 0);
+        });
+      }
+    });
+  }
+
+  /* 定义之间也可以互相引用：动作 → 动作/宏，宏步骤 → 动作 */
+  Object.keys(profile.actions || {}).forEach(function (an) {
+    specRefs(profile.actions[an], '动作定义 ' + an, null, 0);
+  });
+  Object.keys(profile.macros || {}).forEach(function (mn) {
+    var arr = profile.macros[mn];
+    (Array.isArray(arr) ? arr : []).forEach(function (step, si) {
+      specRefs(step, '宏 ' + mn + ' 步骤' + (si + 1), null, 0);
+    });
+  });
+  Object.keys(profile.keys || {}).forEach(function (kn) {
+    nodeRefs(profile.keys[kn], '按键定义 ' + kn, null, 0);
+  });
+  Object.keys(profile.layouts || {}).forEach(function (ln) {
+    var L = profile.layouts[ln];
+    if (!isPlainObject(L)) return;
+    walkSections(L.sections, ln, false);
+    if (isPlainObject(L.split)) walkSections(L.split.sections, ln, true);
+  });
+
+  /* 弹出菜单是独立文件：候选可用 action 名 / macro 名 / ref 共享键引用 */
+  if (isPlainObject(popupProfile) && isPlainObject(popupProfile.schemas)) {
+    Object.keys(popupProfile.schemas).forEach(function (sn) {
+      var grp = popupProfile.schemas[sn];
+      if (!isPlainObject(grp)) return;
+      Object.keys(grp).forEach(function (pk) {
+        var entry = grp[pk];
+        var lists = [];
+        if (Array.isArray(entry)) lists.push(['', entry]);
+        else if (isPlainObject(entry)) {
+          ['normal', 'shifted'].forEach(function (st) {
+            if (Array.isArray(entry[st])) lists.push([st + ' ', entry[st]]);
+          });
+        }
+        lists.forEach(function (pair) {
+          pair[1].forEach(function (c, ci) {
+            if (!isPlainObject(c)) return;
+            var tag = '弹出菜单 ' + sn + '.' + pk + ' ' + pair[0] + '候选' + (ci + 1);
+            if (typeof c.ref === 'string') push('key', c.ref, tag, { popupKey: pk });
+            specRefs(c, tag, { popupKey: pk }, 0);
+          });
+        });
+      });
+    });
+  }
+
+  /* ---- 传递闭包：把「带布局坐标的使用处」沿引用链传到被引用者 ----
+   * 「这个动作被哪些布局使用」常常隔着几层（布局 → 宏 → 动作 → 动作）。
+   * 上面只记录相邻一层的直接引用，且定义内部引用的 loc 为 null ——
+   * 不补这一遍，只被宏用到的动作会显示「被引用 0 处」，是错的。
+   * 结果里附 via（经由链），对话框展示时能说明"为什么它也算被用到"。 */
+  (function propagate() {
+    var MAX_ITEMS = 200;      // 单个名字的条目上限，防病态配置把弹窗撑爆
+    var MAX_VIA = 4;
+    var deps = {};            // 'kind:name' → [[kind, name], ...]
+
+    function collectSpec(spec, out, depth) {
+      if (spec == null || depth > 6) return;
+      if (typeof spec === 'string') { out.push(['action', spec]); return; }
+      if (Array.isArray(spec)) { spec.forEach(function (s) { collectSpec(s, out, depth + 1); }); return; }
+      if (!isPlainObject(spec)) return;
+      if (typeof spec.macro === 'string') out.push(['macro', spec.macro]);
+      if (spec.action != null && spec.action !== '') collectSpec(spec.action, out, depth + 1);
+      if (Array.isArray(spec.actions)) collectSpec(spec.actions, out, depth + 1);
+    }
+    function collectNode(node, out, depth) {
+      if (!isPlainObject(node) || depth > 6) return;
+      if (typeof node.ref === 'string') out.push(['key', node.ref]);
+      GESTURES.forEach(function (slot) { collectSpec(node[slot], out, depth + 1); });
+      if (isPlainObject(node.swipe)) {
+        FE.SWIPE_DIRS.forEach(function (d) { collectSpec(node.swipe[d], out, depth + 1); });
+      }
+      HOLD_SIDES.forEach(function (k) { if (node[k] != null) collectSpec(node[k], out, depth + 1); });
+      (Array.isArray(node.variants) ? node.variants : []).forEach(function (v) { collectNode(v, out, depth + 1); });
+      if (isPlainObject(node.override)) collectNode(node.override, out, depth + 1);
+    }
+    /* 同一目标只留一条依赖，避免重复传播把条目数放大 */
+    function addDeps(kind, name, list) {
+      var seen = {}, out = [];
+      list.forEach(function (d) {
+        if (!d) return;
+        var k = d[0] + ':' + d[1];
+        if (seen[k]) return;
+        seen[k] = 1;
+        out.push(d);
+      });
+      if (out.length) deps[kind + ':' + name] = out;
+    }
+
+    Object.keys(profile.actions || {}).forEach(function (an) {
+      var out = []; collectSpec(profile.actions[an], out, 0); addDeps('action', an, out);
+    });
+    Object.keys(profile.macros || {}).forEach(function (mn) {
+      var out = [];
+      (Array.isArray(profile.macros[mn]) ? profile.macros[mn] : []).forEach(function (st) { collectSpec(st, out, 0); });
+      addDeps('macro', mn, out);
+    });
+    Object.keys(profile.keys || {}).forEach(function (kn) {
+      var out = []; collectNode(profile.keys[kn], out, 0); addDeps('key', kn, out);
+    });
+
+    var KIND_TAG = { macro: '宏', key: '按键定义', action: '动作' };
+    var changed = true, guard = 0;
+    /* 迭代到不动点；有环也安全（下面按 label+loc 去重） */
+    while (changed && guard++ < 8) {
+      changed = false;
+      Object.keys(deps).forEach(function (key) {
+        var ci = key.indexOf(':');
+        var kind = key.slice(0, ci), name = key.slice(ci + 1);
+        var items = (idx[kind] && idx[kind][name]) || [];
+        var located = items.filter(function (it) { return it.loc; });
+        if (!located.length) return;
+        deps[key].forEach(function (d) {
+          var bucket = idx[d[0]][d[1]] || (idx[d[0]][d[1]] = []);
+          located.forEach(function (src) {
+            if (bucket.length >= MAX_ITEMS) return;
+            /* label 保持原样（不层层叠加前缀），另用 via 说明经由链 */
+            var sig = src.label + '|' + JSON.stringify(src.loc);
+            if (bucket.some(function (t) { return t.sig === sig; })) return;
+            var via = [KIND_TAG[kind] + ' ' + name].concat(src.via || []).slice(0, MAX_VIA);
+            bucket.push({ label: src.label, loc: src.loc, via: via, sig: sig, indirect: true });
+            changed = true;
+          });
+        });
+      });
+    }
+  })();
+
+  return idx;
+}
+FE.buildRefIndex = buildRefIndex;
+
+function usageOf(index, kind, name) {
+  var bucket = (index && index[kind] && index[kind][name]) || [];
+  return {
+    count: bucket.length,
+    places: bucket.map(function (i) { return i.label; }),
+    items: bucket
+  };
+}
+FE.usageOf = usageOf;
+
+/* 单次查询（一次性全量扫一遍）。页面渲染请改用 currentRefIndex 复用索引。 */
+function countKeyUsage(name) { return usageOf(currentRefIndex(), 'key', name); }
+FE.countKeyUsage = countKeyUsage;
+
+/* 同一轮渲染里复用索引：按键定义页与动作/宏列表都要「使用数」，
+ * 每处各扫一遍配置是 3 倍无谓开销（真实布局包 200+ 定义）。
+ * 缓存以 profile / popupProfile 的**对象引用**为键，并在每次数据变更后清空
+ * （见 afterChange / commitActionEdits）—— 因为 mutate 常是就地改属性、
+ * 引用不变，只按引用比对会让数字停在旧值。 */
+function currentRefIndex() {
+  var p = state.profile, pp = state.popupProfile;
+  var m = state._refIdxCache;
+  if (m && m.profile === p && m.popup === pp) return m.idx;
+  var idx = buildRefIndex(p, pp);
+  state._refIdxCache = { profile: p, popup: pp, idx: idx };
+  return idx;
+}
+FE.currentRefIndex = currentRefIndex;
+
+/* 数据变更后作废引用索引缓存。mutate 多为就地改属性（引用不变），
+ * 所以不能只靠对象引用比对——漏了这一句，「使用数」会停在旧值。 */
+function invalidateRefIndex() { state._refIdxCache = null; }
+FE.invalidateRefIndex = invalidateRefIndex;
+
 /* ================================================================
  * 四之二、布局编译（纯数据中间层）
  * ================================================================ */
@@ -1372,6 +1632,7 @@ function redo() {
 }
 function afterChange() {
   state.validation = FE.validateProfile(state.profile);
+  invalidateRefIndex();
   autosave();
   /* 数据驱动的整体重渲染会重建列表（clearEl 再 append），而此刻被点掉的按钮
    * 往往正是焦点元素：它一被移除，浏览器交回焦点并滚回文档顶部，
@@ -3031,6 +3292,10 @@ function renderKeysTab() {
     host.appendChild(h('div', { class: 'status' }, filter ? '没有匹配的按键定义。' : '尚无按键定义。布局中的内联按键不会出现在这里。'));
     return;
   }
+  /* 引用索引只走一遍：条目多时（真实布局包 200+ 按键定义）
+   * 逐个条目全量扫描会明显卡顿，见 buildRefIndex 的注释。 */
+  var refIdx = currentRefIndex();
+
   names.forEach(function (n) {
     var kd = keys[n];
     if (!isPlainObject(kd)) return;
@@ -3045,80 +3310,164 @@ function renderKeysTab() {
     if (kd.hold) gestures.push('按住');
     if (kd.doubleTap) gestures.push('双击');
     var label = rawLabelOf(eff, NEUTRAL_STATUS) || (eff.icon ? '图标 ' + eff.icon : '');
-    host.appendChild(h('div', { class: 'def-item' },
+    var used = usageOf(refIdx, 'key', n);
+
+    function openEditor() {
+      if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'definition', name: n });
+    }
+    /* 整行可点即进入编辑（与「动作与宏」一致的交互）——**不再单设「编辑」按钮**。
+     * · 点击落在行内按钮（使用/删除）上时不触发 → clickedInteractive 排除；
+     * · 键盘可达性：行自身 tabindex="0"，回车/空格打开。
+     *   刻意**不加** role="button"：行内含有按钮，role=button 中嵌套交互元素是非法 ARIA；
+     *   只要 tabindex + keydown 就能聚焦与触发，同时避开该问题。 */
+    var row = h('div', {
+      class: 'def-item def-row-click',
+      title: '点击编辑这个按键定义',
+      tabindex: '0',
+      onclick: function (e) { if (!clickedInteractive(e, row)) openEditor(); },
+      onkeydown: function (e) {
+        /* 焦点落在行内按钮上时不要代劳，否则一次回车会同时触发按钮与整行 */
+        if (e.target !== row) return;
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+          stopEv(e);
+          openEditor();
+        }
+      }
+    },
       h('div', { class: 'def-main' },
-        h('code', { class: 'def-name', onclick: function () { if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'definition', name: n }); } }, n),
+        h('code', { class: 'def-name' }, n),
         h('span', { class: 'def-label' }, label),
         h('span', { class: 'def-badges' }, [eff.keyType || '', badges.join(' '), gestures.join('·')].filter(Boolean).join(' · '))
       ),
       h('div', { class: 'def-tools' },
         h('button', {
-          onclick: function () { if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'definition', name: n }); }
-        }, '编辑'),
-        h('button', {
-          onclick: function () {
-            var used = countKeyUsage(n);
-            alert('按键定义 “' + n + '” 被引用 ' + used.count + ' 处' + (used.places.length ? '：\n' + used.places.join('\n') : ''));
+          type: 'button', class: 'mini-button def-usage-btn',
+          dataset: { usageKind: 'key', usageName: n },
+          title: '查看被哪些布局引用',
+          onclick: function (e) {
+            stopEv(e);
+            /* 点击时重算：列表不一定刚重建过，保证弹窗内容最新 */
+            showUsageDialog('按键定义 “' + n + '” 的使用情况', usageOf(currentRefIndex(), 'key', n));
           }
-        }, '使用 ' + countKeyUsage(n).count),
+        }, '使用 ' + used.count),
         h('button', {
-          class: 'danger', onclick: function () {
-            var used = countKeyUsage(n);
+          type: 'button', class: 'danger mini-button',
+          onclick: function (e) {
+            stopEv(e);
+            var u = usageOf(currentRefIndex(), 'key', n);
             var msg = '删除按键定义 “' + n + '”？';
-            if (used.count) msg += '\n它正被 ' + used.count + ' 处引用，删除后这些引用将无法解析。';
+            if (u.count) msg += '\n它正被 ' + u.count + ' 处引用，删除后这些引用将无法解析。';
             if (confirm(msg)) mutate(function () { delete state.profile.keys[n]; });
           }
         }, '删除')
       )
-    ));
+    );
+    host.appendChild(row);
   });
 }
 
-function countKeyUsage(name) {
-  var places = [];
-  var profile = state.profile;
-  function checkGestures(container, where) {
-    ['tap', 'doubleTap', 'longPress', 'hold'].forEach(function (f) {
-      var g = container[f];
-      if (isPlainObject(g) && g.ref === name) places.push(where + ' ' + f);
+
+/* ================================================================
+ * 使用情况对话框（网页内建弹窗；可点击条目跳转到引用处）
+ * ================================================================ */
+function showUsageDialog(title, usage) {
+  /* openModal 来自 key-dialog.js（本文件之后加载）；用户点击时才调用，届时已就绪 */
+  if (typeof FE.openModal !== 'function') return null;
+  var modal = FE.openModal({ title: title, wide: true });
+  modal.body.appendChild(h('div', { class: 'usage-summary' },
+    usage.count ? ('共被引用 ' + usage.count + ' 处') : '没有被任何地方引用'));
+
+  if (!usage.count) {
+    modal.body.appendChild(h('div', { class: 'status' },
+      '当前配置里找不到对它的引用。删掉它不会影响现有布局。'));
+  } else {
+    modal.body.appendChild(h('div', { class: 'dialog-hint' },
+      usage.items.some(function (i) { return i.loc; })
+        ? '点击带「跳转」的条目会切到对应的布局并选中该按键。'
+        : '这些引用都没有布局坐标，无法直接跳转。'));
+    var list = h('div', { class: 'usage-list' });
+    usage.items.forEach(function (it) {
+      if (!it.loc) {
+        list.appendChild(h('div', { class: 'usage-item' }, it.label));
+        return;
+      }
+      list.appendChild(h('button', {
+        type: 'button', class: 'usage-item usage-jump',
+        title: it.loc.layout ? '跳转到该布局的对应按键' : '跳转到弹出菜单页',
+        onclick: function (e) {
+          if (e && e.preventDefault) e.preventDefault();
+          modal.close();
+          jumpToUsage(it.loc);
+        }
+      }, it.label, h('span', { class: 'usage-jump-mark' }, '跳转 ↗')));
     });
-    if (isPlainObject(container.swipe)) {
-      FE.SWIPE_DIRS.forEach(function (d) {
-        var g = container.swipe[d];
-        if (isPlainObject(g) && g.ref === name) places.push(where + ' swipe.' + d);
-      });
-    }
-    (Array.isArray(container.variants) ? container.variants : []).forEach(function (v, i) {
-      if (isPlainObject(v)) checkNode(v, where + ' 变体' + i);
-    });
-    if (isPlainObject(container.override)) checkNode(container.override, where + ' override');
+    modal.body.appendChild(list);
   }
-  function checkNode(node, where) {
-    if (!isPlainObject(node)) return;
-    if (node.ref === name) places.push(where);
-    checkGestures(node, where);
-  }
-  function walkSections(sections, prefix) {
-    (Array.isArray(sections) ? sections : []).forEach(function (s, si) {
-      if (!isPlainObject(s)) return;
-      if (s.type === 'rows') FE.rowsOfSection(s).forEach(function (row, ri) {
-        row.keys.forEach(function (k, ki) { checkNode(k, prefix + ' 区段' + si + ' 行' + ri + ' 键' + ki); });
-      });
-      else if (s.type === 'grid' && Array.isArray(s.keys)) s.keys.forEach(function (k, ki) {
-        checkNode(k, prefix + ' 区段' + si + ' 网格键' + ki);
-      });
-    });
-  }
-  Object.keys(profile.keys || {}).forEach(function (kn) { checkNode(profile.keys[kn], '按键定义 ' + kn); });
-  Object.keys(profile.layouts || {}).forEach(function (ln) {
-    var L = profile.layouts[ln];
-    if (!isPlainObject(L)) return;
-    walkSections(L.sections, ln);
-    if (isPlainObject(L.split)) walkSections(L.split.sections, ln + ' 分体');
-  });
-  return { count: places.length, places: places };
+  modal.toolbar.appendChild(h('button', {
+    type: 'button', class: 'mini-button primary',
+    onclick: function () { modal.close(); }
+  }, '关闭'));
+  return modal;
 }
-FE.countKeyUsage = countKeyUsage;
+FE.showUsageDialog = showUsageDialog;
+
+/* 跳到某个引用处：布局坐标交给 locateIssue（自带切布局/选中/滚动），
+ * 弹出菜单交给它自己的编辑器（切到弹出菜单页并选中该键）。 */
+function jumpToUsage(loc) {
+  if (!loc) return;
+  if (loc.popupKey) {
+    if (FE.jumpToPopupEditor) FE.jumpToPopupEditor(loc.popupKey);
+    return;
+  }
+  locateIssue({
+    layout: loc.layout, isSplit: loc.isSplit,
+    sectionIndex: loc.sectionIndex, rowIndex: loc.rowIndex,
+    keyIndex: loc.keyIndex, group: loc.group
+  });
+}
+FE.jumpToUsage = jumpToUsage;
+
+/* 事件小工具：整行可点击时，行内按钮不能被连带触发 */
+function stopEv(e) {
+  if (!e) return;
+  if (e.preventDefault) e.preventDefault();
+  if (e.stopPropagation) e.stopPropagation();
+}
+
+/* 就地刷新「使用 N」按钮上的数字。
+ * 场景：静默写回（改某个动作/宏的内容）可能让**别的**名字的引用数变化，
+ * 例如「把动作 X 改成引用动作 Y」→ Y 的使用数应 +1。
+ * 这里不重建列表（重建会打断正在操作的控件、丢焦点），只改按钮文字。
+ * 索引先作废再重算——mutate 多为就地改属性，缓存的对象引用不会变。 */
+function refreshUsageLabels() {
+  invalidateRefIndex();
+  var idx = currentRefIndex();
+  ['keys-list', 'actions-list', 'macros-list'].forEach(function (hostId) {
+    var host = $(hostId);
+    if (!host) return;
+    host.querySelectorAll('.def-usage-btn').forEach(function (btn) {
+      /* 读 dataset 而非 getAttribute：h() 的 dataset 选项走 Object.assign(el.dataset,…)，
+       * 真实浏览器里它等价于写 data-* 属性，但 DOM 桩的 dataset 是普通对象、
+       * 不反射成属性 —— 两处都读 dataset 才在浏览器与测试里行为一致。 */
+      var kind = btn.dataset && btn.dataset.usageKind;
+      var name = btn.dataset && btn.dataset.usageName;
+      if (!kind || !name) return;
+      btn.textContent = '使用 ' + usageOf(idx, kind, name).count;
+    });
+  });
+}
+FE.refreshUsageLabels = refreshUsageLabels;
+/* 该事件的落点是否在交互控件上（按钮/输入等）——是则不应当作"点了整行"。
+ * 真实浏览器里 click 会冒泡到行容器，故必须判断；DOM 桩不冒泡、恒为 false。 */
+function clickedInteractive(e, root) {
+  var n = e && e.target;
+  while (n && n !== root) {
+    var t = n.tagName;
+    if (t === 'BUTTON' || t === 'A' || t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA') return true;
+    n = n.parentNode;
+  }
+  return false;
+}
 
 /* ================================================================
  * 动作与宏 Tab
@@ -3136,6 +3485,10 @@ FE.renderActionsTab = renderActionsTab;
  * 卡片上的徽标由调用方就地更新。结构性改动（增删/换形状）才走 mutate()。 */
 function commitActionEdits() {
   state.validation = FE.validateProfile(state.profile);
+  /* 引用结构可能变了（如把动作改成引用另一个动作），「使用 N」数字要跟着更新。
+   * 这里只改按钮文字、不重建列表——重建会打断正在操作的控件。
+   * 只监听 change（非 input），所以每次用户操作最多多走一遍扫描，可接受。 */
+  refreshUsageLabels();
   autosave();
   renderJsonTab();
   updateUndoButtons();
@@ -3201,12 +3554,30 @@ function collapsibleDefItem(name, badge, openSet, opts) {
     }
   });
 
-  var delBtn = h('button', {
+  /* 使用数按钮：与按键定义页同款，点开内建弹窗列出被哪些布局使用、可跳转。
+   * opts.usage 由调用方传入（复用同一份 refIdx，避免每个条目重扫配置）。
+   * 挂 def-usage-btn 与 data-* ：静默写回后由 refreshUsageLabels() 就地更新数字
+   * （改某个动作可能影响别的名字的计数，但整列表重渲染会打断正在操作的控件）。 */
+  var tools = h('span', { class: 'def-tools' });
+  if (opts.usage) {
+    var kind = opts.section === 'macros' ? 'macro' : 'action';
+    tools.appendChild(h('button', {
+      type: 'button', class: 'mini-button def-usage-btn',
+      dataset: { usageKind: kind, usageName: name },
+      title: '查看被哪些布局使用',
+      onclick: function (e) {
+        stopEv(e);   /* 在 <summary> 内：不阻止会连带展开/收起 */
+        /* 点击时重算：静默写回只更新按钮文字，弹窗内容要保证是最新的 */
+        var fresh = usageOf(currentRefIndex(), kind, name);
+        showUsageDialog((kind === 'macro' ? '宏 “' : '动作 “') + name + '” 的使用情况', fresh);
+      }
+    }, '使用 ' + opts.usage.count));
+  }
+  tools.appendChild(h('button', {
     type: 'button', class: 'danger mini-button',
     onclick: function (e) {
       /* 删除按钮在 <summary> 内：必须阻止默认行为，否则点删除会连带展开/收起 */
-      if (e && e.preventDefault) e.preventDefault();
-      if (e && e.stopPropagation) e.stopPropagation();
+      stopEv(e);
       if (!confirm(opts.confirmDelete)) return;
       /* 实时读取：撤销 / 导入会整块替换 profile，闭包快照不能当事实来源 */
       var live = isPlainObject(state.profile[opts.section]) ? state.profile[opts.section] : {};
@@ -3215,13 +3586,13 @@ function collapsibleDefItem(name, badge, openSet, opts) {
         delete openSet[name];
       });
     }
-  }, '删除');
+  }, '删除'));
 
   det.appendChild(h('summary', { class: 'def-summary' },
     h('span', { class: 'def-summary-caret', 'aria-hidden': 'true' }, '▸'),
     h('code', { class: 'def-name' }, name),
     badge,
-    h('span', { class: 'def-tools' }, delBtn)));
+    tools));
 
   /* 渲染时就处于展开态（如刚新建、或上次就是展开的）：立即构建 */
   if (isOpen) buildBody();
@@ -3252,13 +3623,15 @@ function renderActionsList() {
   /* 默认全部折叠：条目多了才能一眼扫过去、快速定位。
    * 展开状态记在 state.openActions 里，重渲染后保持用户当前的视图。 */
   var openSet = ensureOpenSet('openActions');
+  /* 使用数复用同一份引用索引（同 renderKeysTab，别逐条重扫配置） */
+  var refIdx = currentRefIndex();
 
   names.forEach(function (n) {
     var badge = h('span', { class: 'def-badges' }, FE.actionDisplay(actions[n]));
     var item = collapsibleDefItem(n, badge, openSet, {
       section: 'actions',
       confirmDelete: '删除动作 “' + n + '”？引用它的地方会变成未解析引用。',
-      /* 懒建：只有真的展开这一条才构建编辑器（详见 collapsibleDefItem 注释） */
+      usage: usageOf(refIdx, 'action', n),
       build: function (body) {
         var ed = FE.buildActionDefEditor(n, actions[n], {
           commit: function (spec) {
@@ -3324,12 +3697,14 @@ function renderMacrosList() {
 
   /* 同动作列表：默认全部折叠，展开状态记在 state.openMacros */
   var openSet = ensureOpenSet('openMacros');
+  var refIdx = currentRefIndex();
 
   names.forEach(function (n) {
     var badge = h('span', { class: 'def-badges' }, FE.describeMacroSteps(macros[n]));
     var item = collapsibleDefItem(n, badge, openSet, {
       section: 'macros',
       confirmDelete: '删除宏 “' + n + '”？引用它的地方会变成未解析引用。',
+      usage: usageOf(refIdx, 'macro', n),
       /* 懒建：宏的每一步都是一个内联动作编辑器，预先全建代价最大（详见 collapsibleDefItem） */
       build: function (body) {
         var ed = FE.buildMacroStepEditor(macros[n], {

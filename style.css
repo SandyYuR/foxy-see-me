@@ -527,6 +527,35 @@ label.check { cursor: pointer; white-space: nowrap; }
 .def-badges { font-size: 12px; color: var(--text-dim); }
 .def-tools { display: flex; gap: 6px; }
 
+/* 整行可点即进入编辑（按键定义页）。行内按钮会 stopPropagation 排除。
+ * 键盘可达性由行内「编辑」按钮承担 —— 刻意**不**在行上加角色/键盘处理：
+ * 交互元素里嵌交互元素是非法 ARIA，且焦点在子按钮上按空格会误触发整行。 */
+.def-item.def-row-click { cursor: pointer; }
+.def-item.def-row-click:hover { border-color: #4a4f58; background: #24272e; }
+.def-item.def-row-click .def-tools { cursor: default; }
+
+/* ---------------- 使用情况对话框 ---------------- */
+.usage-summary {
+  font-size: 13px; font-weight: 600; margin-bottom: 8px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.usage-list { display: flex; flex-direction: column; gap: 4px; max-height: 52vh; overflow-y: auto; }
+.usage-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; font-family: var(--mono); text-align: left;
+  color: var(--text-dim); background: #1b1e23;
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px; word-break: break-all;
+}
+/* 可跳转的条目做成按钮外观，鼠标悬停明确提示可点 */
+.usage-item.usage-jump {
+  cursor: pointer; color: var(--text);
+  background: var(--card-inner);
+}
+.usage-item.usage-jump:hover { border-color: var(--accent); background: #2a3140; }
+.usage-item.usage-jump:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.usage-jump-mark { margin-left: auto; flex: 0 0 auto; font-size: 11.5px; color: var(--accent); }
+
 /* ---------------- 动作与宏：图形化编辑 ---------------- */
 .def-item.def-gui { gap: 8px; }
 .action-def-editor { display: flex; flex-direction: column; gap: 4px; }

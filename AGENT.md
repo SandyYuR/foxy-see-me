@@ -4,7 +4,7 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 373 / UI 522 / 真实文件体检 18 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 396 / UI 557 / 真实文件体检 18 个示例 0 错误。
 
 ### ⚠️ 本文件有两份，必须保持一致
 
@@ -126,7 +126,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **373 core + 522 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **396 core + 557 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -641,6 +641,47 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
   这批码与 `skills/SKILL.md` 的 `## Low-Level KeyCode Names` 列表**逐一对得上**
   （143 个，含 `F1 ... F12` / `KP_0 ... KP_9` 的省略展开），改表时对照该节。
 
+### 4.11 引用索引与「使用数」弹窗（app.js 纯逻辑段）⭐ 必须单遍扫描
+
+**用途**：按键定义页与「动作与宏」页每个条目都有「使用 N」按钮，点开**网页内建弹窗**
+列出被哪些布局使用，且**点击条目可跳到对应布局并选中该按键**（不再用 `alert`）。
+
+- **纯逻辑**（**在 app.js 的纯逻辑段**，非 UI 段 —— Node 下 UI 段会提前 `return`，
+  core 测试就取不到了。搬移时别放回去）：
+  - `FE.buildRefIndex(profile, popupProfile)` → `{ key, action, macro }`，每名 → 条目数组。
+    每条目 `{ label, loc, via?, indirect? }`：
+    - `loc = { layout, isSplit, sectionIndex, rowIndex, keyIndex, group }` → 跳布局按键
+    - `loc = { popupKey }` → 跳弹出菜单页
+    - `loc = null` → 只读展示（引用发生在按键/动作/宏定义内部，没有布局坐标）
+  - `FE.usageOf(index, kind, name)` → `{ count, places, items }`
+  - `FE.currentRefIndex()` 带缓存；`FE.invalidateRefIndex()` 作废缓存
+  - `FE.countKeyUsage(name)` 单次查询（旧 API，保持兼容）
+- ⚠️ **必须单遍扫描**：`buildRefIndex` 一次走完配置、把所有名字的引用一起收集。
+  若给每个条目各扫一遍，代价是 O(条目数 × 配置大小)——真实布局包有 200+ 按键定义，
+  那样点开页面就会明显卡顿（与 §4.10 的懒建是同一类性能陷阱）。
+- ⭐ **穿透解析（别删）**：布局 → 宏 → 动作 → 动作 这类多层引用很常见。
+  只记「相邻一层」的话，**只被宏用到的动作会显示「被引用 0 处」，是错的**。
+  所以末尾有一遍迭代到不动点的传播，把带布局坐标的使用处沿引用链传到被引用者，
+  并附 `via`（经由链，如 `宏 m1`）。有引用环也安全（按 `label+loc` 去重、迭代上限 8 轮），
+  单名条目上限 200 条防病态配置撑爆弹窗。
+- ⚠️ **缓存失效要点**：`mutate` 多为**就地改属性**（对象引用不变），
+  只按引用比对会让「使用数」停在旧值。所以 `afterChange` 与 `commitActionEdits`
+  都要调 `invalidateRefIndex()`；静默写回路径另调 `FE.refreshUsageLabels()`
+  就地改按钮文字（**不重建列表**——重建会打断正在操作的控件）。
+- ⚠️ **读 dataset 而非 getAttribute**：按钮用 `h(..., { dataset: {...} })` 挂
+  `data-usage-kind/name`，`h()` 走的是 `Object.assign(el.dataset, …)`。
+  真实浏览器里它等价于写属性，但 **DOM 桩的 `dataset` 是普通对象、不反射成属性**——
+  两处都读 `el.dataset.xxx` 才在浏览器与测试里行为一致。
+- **整行可点**（按键定义页）：`def-row-click` + `clickedInteractive(e, root)` 排除行内按钮。
+  该行**没有「编辑」按钮**（用户明确要求去掉，整行点击就是编辑入口，别再加回来）：
+  - 行自带 `tabindex="0"` + `keydown`（Enter/空格）保证键盘可达；
+  - **不要**加 `role="button"`：行内含按钮，`role=button` 里嵌交互元素是非法 ARIA，
+    靠 `tabindex` + `keydown` 即可聚焦与触发；
+  - `keydown` 里先判 `e.target !== row` 直接返回，否则焦点在子按钮上按回车会
+    同时触发按钮与整行。
+- **摘要行内的按钮**（动作/宏条目）：都在 `<summary>` 里，**必须 `stopEv(e)`**
+  （`preventDefault` + `stopPropagation`），否则点按钮会连带展开/收起。
+
 ---
 
 ## 5. 已知的坑（都踩过，别重蹈）
@@ -742,8 +783,8 @@ cd foxy-editor
 node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
-node test/test-core.js       # 期望：373 通过, 0 失败
-node test/test-ui.js         # 期望：522 通过, 0 失败
+node test/test-core.js       # 期望：396 通过, 0 失败
+node test/test-ui.js         # 期望：557 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
 node test/check-real-files.js   # 期望：共 18 个文件，0 个存在错误
@@ -766,6 +807,6 @@ node tools/check-agent-sync.js --write
 
 ### 版本信息（改动可能影响这些对外说法）
 
-- 测试基线：core **373** / UI **522** / 示例 **18**（15 布局 + 3 弹出菜单）
+- 测试基线：core **396** / UI **557** / 示例 **18**（15 布局 + 3 弹出菜单）
 - 仓库 `README.md` 里的功能描述与 `index.html` 的图例，与实现同步维护；
   新增用户可见功能时一并更新，避免文档漂移。
