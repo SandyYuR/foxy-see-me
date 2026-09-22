@@ -185,6 +185,17 @@ class DOMNode {
   removeChild(n) {
     const i = this.children.indexOf(n);
     if (i >= 0) { this.children.splice(i, 1); n.parentNode = null; }
+    /* 照抄真实浏览器的一个关键副作用：**被移除的元素若正持有焦点**，
+     * 焦点会交回 body，浏览器随之把页面滚回顶部。
+     * 这正是「加/删一条动作或宏就被扔回分栏顶部」的成因，桩必须复现，
+     * 否则「重建列表时保持滚动位置」的修复无法被断言验证。
+     *
+     * 注意要检查**整棵被摘掉的子树**：clearEl 删的是列表的直接子元素，
+     * 而持有焦点的按钮往往是深层后代，只看 n 本身会漏掉。 */
+    if (documentStub.activeElement && containsNode(n, documentStub.activeElement)) {
+      documentStub.activeElement = null;
+      if (documentElement) { documentElement.scrollTop = 0; documentElement.scrollLeft = 0; }
+    }
     return n;
   }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
@@ -321,6 +332,27 @@ function findById(root, id) {
   walk(root);
   return found;
 }
+/* node 是否等于 root 或位于其子树内（用于判断「被摘掉的节点里是否含焦点元素」） */
+function containsNode(root, node) {
+  if (!root || !node) return false;
+  if (root === node) return true;
+  for (const c of root.children || []) {
+    if (c === node) return true;
+    if (c.nodeType === 1 && containsNode(c, node)) return true;
+  }
+  return false;
+}
+
+/* 页面滚动容器：app.js 的 pageScroller() 依次找
+ * document.scrollingElement / documentElement / body。
+ * 桩里给 documentElement 一份，并让 scrollingElement 指向它，
+ * 这样「保持滚动位置」的代码路径在测试里能真正跑到。 */
+const documentElement = {
+  nodeType: 1,
+  tagName: 'HTML',
+  scrollTop: 0,
+  scrollLeft: 0
+};
 
 const documentStub = {
   nodeType: 9,
@@ -329,6 +361,8 @@ const documentStub = {
   _body: null,
   activeElement: null,
   readyState: 'complete',
+  documentElement,
+  get scrollingElement() { return documentElement; },
   _openDialogs: [],
   createElement(tag) { return new DOMNode(tag); },
   createTextNode(t) { return new TextNode(t); },

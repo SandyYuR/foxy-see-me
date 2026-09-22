@@ -625,6 +625,90 @@ freshItem2.querySelectorAll('button').find(b => b.textContent === '删除').clic
 ok(!FE.state.profile.actions['test.fresh'], '摘要行内的删除按钮可用（未被折叠语义吞掉）');
 ok(!FE.state.openActions['test.fresh'], '删除后同时清掉展开状态');
 
+console.log('== 加/删动作与宏：不再跳回分栏顶部 ==');
+/* 真实成因：被点掉的按钮同时是焦点元素，它一被移除，浏览器交回焦点并滚回顶部。
+ * dom-stub 的 removeChild 已照抄这一副作用，所以这里验的是真问题而非自说自话。 */
+FE.renderAll();
+const scrollHost = documentStub.documentElement;
+const findActByName = (nm) => $('actions-list').querySelectorAll('.def-item.def-collapsible')
+  .find(it => it.querySelectorAll('.def-name')[0].textContent === nm);
+const findMacByName = (nm) => $('macros-list').querySelectorAll('.def-item.def-collapsible')
+  .find(it => it.querySelectorAll('.def-name')[0].textContent === nm);
+
+/* --- 删除动作 --- */
+const delBtnForScroll = findActByName('test.del')
+  .querySelectorAll('button').find(b => b.textContent === '删除');
+ok(!!delBtnForScroll, '找到待删除动作的删除按钮');
+scrollHost.scrollTop = 520;
+delBtnForScroll.focus();
+ok(documentStub.activeElement === delBtnForScroll, '（前置）删除按钮持有焦点，模拟用户刚点过');
+delBtnForScroll.click();
+ok(!FE.state.profile.actions['test.del'], '动作已删除');
+ok(scrollHost.scrollTop === 520, '删除动作后滚动位置保持原处（未跳回分栏顶部）');
+
+/* --- 新增动作 --- */
+const actAddInput2 = $('actions-list').querySelectorAll('input')
+  .find(i => String(i.getAttribute('placeholder') || '').indexOf('新动作名称') >= 0);
+const actAddBtn2 = $('actions-list').querySelectorAll('button').find(b => b.textContent === '+ 新增动作');
+actAddInput2.value = 'test.scrolladd';
+scrollHost.scrollTop = 640;
+actAddBtn2.focus();
+actAddBtn2.click();
+ok(!!FE.state.profile.actions['test.scrolladd'], '新增动作成功');
+ok(scrollHost.scrollTop === 640, '新增动作后滚动位置保持原处');
+
+/* --- 新增宏 --- */
+const macAddInput2 = $('macros-list').querySelectorAll('input')
+  .find(i => String(i.getAttribute('placeholder') || '').indexOf('新宏名称') >= 0);
+const macAddBtn2 = $('macros-list').querySelectorAll('button').find(b => b.textContent === '+ 新增宏');
+macAddInput2.value = 'test.scrollmacro';
+scrollHost.scrollTop = 780;
+macAddBtn2.focus();
+macAddBtn2.click();
+ok(!!FE.state.profile.macros['test.scrollmacro'], '新增宏成功');
+ok(scrollHost.scrollTop === 780, '新增宏后滚动位置保持原处');
+
+/* --- 删除宏 --- */
+FE.renderAll();
+const macDelBtn = findMacByName('test.scrollmacro')
+  .querySelectorAll('button').find(b => b.textContent === '删除');
+scrollHost.scrollTop = 410;
+macDelBtn.focus();
+macDelBtn.click();
+ok(!FE.state.profile.macros['test.scrollmacro'], '宏已删除');
+ok(scrollHost.scrollTop === 410, '删除宏后滚动位置保持原处');
+
+/* --- 反向保证：有意的滚动不能被"补帧恢复"拽回去 ---
+ * locateIssue 会主动滚到出错的按键；此时 afterChange 排下的那一帧恢复必须失效，
+ * 否则刚定位过去又被拽回原处。
+ * 桩默认的 rAF 是**同步**的，观察不到「待执行的一帧」，这里临时改成收集回调。 */
+ok(typeof FE.cancelScrollRestore === 'function', '暴露 cancelScrollRestore（供有意滚动作废待恢复快照）');
+const savedRaf = global.requestAnimationFrame;
+let pendingFrame = null;
+global.requestAnimationFrame = (fn) => { pendingFrame = fn; return 1; };
+
+scrollHost.scrollTop = 900;
+const snap900 = FE.captureScroll();
+eq(snap900.top, 900, 'captureScroll 记录当前滚动位置');
+FE.restoreScroll(snap900);
+eq(scrollHost.scrollTop, 900, 'restoreScroll 同步恢复位置');
+ok(typeof pendingFrame === 'function', '同时排下一帧做兜底（焦点归还引发的滚动是异步的）');
+scrollHost.scrollTop = 100;        // 有意滚动（模拟 locateIssue）
+FE.cancelScrollRestore();          // 作废那一帧
+pendingFrame();                    // 帧到了
+eq(scrollHost.scrollTop, 100, 'cancel 之后补帧不再把位置拽回');
+
+/* 对照：未 cancel 时补帧确实会恢复，证明上一条不是因为"补帧本身没生效" */
+scrollHost.scrollTop = 500;
+const snap500 = FE.captureScroll();
+FE.restoreScroll(snap500);
+scrollHost.scrollTop = 100;
+pendingFrame();
+eq(scrollHost.scrollTop, 500, '对照：未 cancel 时补帧会恢复位置');
+
+global.requestAnimationFrame = savedRaf;
+scrollHost.scrollTop = 0;
+
 console.log('== 按键下拉：显示名带中文备注，落盘值不变 ==');
 const kdEsc = FE.buildActionEditor({ type: 'key', key: 'ESCAPE' }, {});
 const kdEscSelects = kdEsc.el.querySelectorAll('select');

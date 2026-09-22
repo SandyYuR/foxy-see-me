@@ -1373,11 +1373,53 @@ function redo() {
 function afterChange() {
   state.validation = FE.validateProfile(state.profile);
   autosave();
+  /* 数据驱动的整体重渲染会重建列表（clearEl 再 append），而此刻被点掉的按钮
+   * 往往正是焦点元素：它一被移除，浏览器交回焦点并滚回文档顶部，
+   * 表现为「加/删一条动作或宏就被扔回该分栏顶部」。这里包一层记录/恢复。 */
+  var snap = captureScroll();
   renderAll();
+  restoreScroll(snap);
 }
 FE.mutate = mutate;
 FE.afterChange = afterChange;
 FE.renderAll = function () { renderAll(); };
+
+/* ---------------- 页面滚动位置保持 ----------------
+ * 重建列表时先 clearEl 再 append，中间那一刻文档变矮；再加上「焦点元素被移除」
+ * 引发的滚动是**推迟到本次任务之后**的，所以只做同步恢复不够，还要补一帧。
+ * 补帧会与「有意的滚动」打架（如 locateIssue 定位到某个键），
+ * 因此用序号做失效判断：期间发生任何有意滚动都会 cancel 掉待恢复的快照。 */
+var scrollRestoreSeq = 0;
+
+function pageScroller() {
+  if (typeof document === 'undefined') return null;
+  return document.scrollingElement || document.documentElement || document.body || null;
+}
+function captureScroll() {
+  var el = pageScroller();
+  if (!el) return null;
+  return { el: el, top: el.scrollTop || 0, left: el.scrollLeft || 0 };
+}
+function restoreScroll(snap) {
+  if (!snap || !snap.el) return;
+  snap.el.scrollTop = snap.top;
+  snap.el.scrollLeft = snap.left;
+  var seq = ++scrollRestoreSeq;
+  if (typeof requestAnimationFrame !== 'function') return;
+  requestAnimationFrame(function () {
+    /* 期间若发生过有意滚动（seq 变了），就不要再把位置拽回来 */
+    if (seq !== scrollRestoreSeq) return;
+    var el = pageScroller();
+    if (!el) return;
+    el.scrollTop = snap.top;
+    el.scrollLeft = snap.left;
+  });
+}
+/* 有意滚动前调用：作废尚未执行的那一帧恢复 */
+function cancelScrollRestore() { scrollRestoreSeq++; }
+FE.captureScroll = captureScroll;
+FE.restoreScroll = restoreScroll;
+FE.cancelScrollRestore = cancelScrollRestore;
 
 function autosave() {
   try {
@@ -2151,6 +2193,9 @@ function scrollToSelection() {
   if (!target) return;
   var card = (target.closest && target.closest('details.card')) || null;
   if (card) card.open = true;
+  /* 这是「有意的滚动」：作废 afterChange 里尚未执行的那一帧位置恢复，
+   * 否则刚定位到出错按键，又被拽回原来的滚动位置。 */
+  cancelScrollRestore();
   /* dom-stub 不实现 scrollIntoView，测试环境下静默跳过 */
   if (target.scrollIntoView) target.scrollIntoView({ block: 'center' });
   else if (card && card.scrollIntoView) card.scrollIntoView({ block: 'center' });

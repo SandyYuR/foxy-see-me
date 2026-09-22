@@ -4,7 +4,7 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 373 / UI 498 / 真实文件体检 18 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 373 / UI 514 / 真实文件体检 18 个示例 0 错误。
 
 ### ⚠️ 本文件有两份，必须保持一致
 
@@ -126,7 +126,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **373 core + 498 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **373 core + 514 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -683,6 +683,12 @@ var unit = state.portraitW / 10;          // 全链路单 unit：行高 / 字号
 - 用 `documentStub._openDialogs` 检查/清理对话框；`global.alert` 被改成 **throw**，
   所以代码里不要依赖 alert 静默通过。
 - `requestAnimationFrame` 是**同步桩**，所以补帧逻辑在测试里会立即生效。
+  要验证「排了但还没执行的一帧」，就在测试里临时把 `global.requestAnimationFrame`
+  换成收集回调的版本（见 test-ui.js 的滚动保持用例）。
+- **桩会复现两个真实的浏览器副作用**（缺了它们，对应的修复就无法被断言验证）：
+  - `removeChild` 摘掉的子树里若含 `activeElement`，会**清焦点并把页面滚回顶部**；
+  - `document.documentElement` / `document.scrollingElement` 提供 `scrollTop`，
+    供 `pageScroller()` 读写。
 
 ### 5.4 其他小坑
 
@@ -698,8 +704,19 @@ var unit = state.portraitW / 10;          // 全链路单 unit：行高 / 字号
   同样是 4 按钮 4 区块，两边要一致。
 - **手机竖屏**：`style.css` 的 `@media (max-width: 640px)` 两段（jscolor 色块尺寸段 +
   文末"竖屏手机优化"段）做单列 + 大触摸目标 + 近全屏弹窗；改布局时留意别把这两段覆盖掉。
+- **列表重建必须保持滚动位置**（`afterChange` 里的 `captureScroll` / `restoreScroll`）：
+  加/删动作或宏走 `mutate → afterChange → renderAll`，会 `clearEl` 清空整个列表再重建。
+  两个原因会让页面跳回分栏顶部：
+  1. 被点掉的按钮**往往正是焦点元素**，它一被移除，浏览器交回焦点并滚回顶部；
+  2. 清空那一刻文档变矮，`scrollTop` 被夹到临时上限。
+  第 1 点引发的滚动是**异步**的（推迟到本次任务之后），所以只同步恢复不够，还要补一帧。
+  补帧会与「有意的滚动」打架（如 `locateIssue` 定位到某个按键），
+  因此用 `scrollRestoreSeq` 作失效判断：**任何有意滚动前先调 `FE.cancelScrollRestore()`**。
+  > 改这块时注意：桩的 `rAF` 是同步的，要验证「排了但还没跑的一帧」得临时替换
+  > `global.requestAnimationFrame`（test-ui.js 的滚动保持用例是范例）。
 - 提交前 `git status` 应干净；远程是 SSH（`git@github.com:SandyYuR/foxy-see-me.git`），
   推送走 Pages 自动发布，无需额外步骤。
+  ⚠️ **不要自动 `git push`** —— 用户明确要求：改完只做本地提交，推送由用户自己决定。
 
 ---
 
@@ -714,7 +731,7 @@ node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
 node test/test-core.js       # 期望：373 通过, 0 失败
-node test/test-ui.js         # 期望：498 通过, 0 失败
+node test/test-ui.js         # 期望：514 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
 node test/check-real-files.js   # 期望：共 18 个文件，0 个存在错误
@@ -737,6 +754,6 @@ node tools/check-agent-sync.js --write
 
 ### 版本信息（改动可能影响这些对外说法）
 
-- 测试基线：core **373** / UI **498** / 示例 **18**（15 布局 + 3 弹出菜单）
+- 测试基线：core **373** / UI **514** / 示例 **18**（15 布局 + 3 弹出菜单）
 - 仓库 `README.md` 里的功能描述与 `index.html` 的图例，与实现同步维护；
   新增用户可见功能时一并更新，避免文档漂移。
