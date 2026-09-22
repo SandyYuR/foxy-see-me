@@ -4,7 +4,7 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 373 / UI 466 / 真实文件体检 18 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 373 / UI 498 / 真实文件体检 18 个示例 0 错误。
 
 ### ⚠️ 本文件有两份，必须保持一致
 
@@ -126,7 +126,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **373 core + 466 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **373 core + 498 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -613,6 +613,21 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
   **跨文件调用记得导出**：`FE.renderActionsTab` 就是为这个补渲染而导出的。
 - ⚠️ **DOM 桩不冒泡**，所以动作编辑器内部控件用 `opts.onChange` 回调（不靠事件委托），
   宏步骤行内也把 `change` 逐个绑到编辑器元素上。
+- **默认折叠**（`app.js` 的 `collapsibleDefItem`）：条目一多就翻找不到，所以两个列表都用
+  `<details>` 外壳，**默认全部折叠**，点摘要行才展开。
+  - 展开状态记在 `state.openActions` / `state.openMacros`（`ensureOpenSet()`），
+    用 `<details>` 的 `toggle` 事件同步 —— 展开/收起是**浏览器行为、不重渲染**，
+    否则会重建内部编辑器、正在填的字段全丢。
+  - **新建的条默认展开**：创建后主动写 `ensureOpenSet(...)[name] = true`，建完即配置。
+  - ⚠️ 删除按钮放在 `<summary>` 里，**必须 `preventDefault()`**，否则点删除会连带展开/收起。
+  - ⚠️ `.def-item` 是 `display:flex`，可折叠外壳要覆盖成 `display:block`，
+    否则 `<summary>` 作首子元素的折叠语义会与 flex 布局打架。
+- **按键显示名**（`data.js` 的 `FE.KEYCODE_LABELS` / `FE.keycodeDisplayName`）：
+  低层 KeyCode 下拉仿 f5a-see-me，英文码后加中文备注，如 `ESCAPE（Esc 退出）`、
+  `KP_5（小键盘 5）`。**只影响显示**：`option.value` 与 `getValue()` 始终是 code 本身，
+  落盘 JSON 不受影响。**不要**把显示名写进 value，那会导出非法键名。
+  这批码与 `skills/SKILL.md` 的 `## Low-Level KeyCode Names` 列表**逐一对得上**
+  （143 个，含 `F1 ... F12` / `KP_0 ... KP_9` 的省略展开），改表时对照该节。
 
 ---
 
@@ -699,7 +714,7 @@ node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
 node test/test-core.js       # 期望：373 通过, 0 失败
-node test/test-ui.js         # 期望：466 通过, 0 失败
+node test/test-ui.js         # 期望：498 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
 node test/check-real-files.js   # 期望：共 18 个文件，0 个存在错误
@@ -722,6 +737,6 @@ node tools/check-agent-sync.js --write
 
 ### 版本信息（改动可能影响这些对外说法）
 
-- 测试基线：core **337** / UI **437** / 示例 **18**（15 布局 + 3 弹出菜单）
+- 测试基线：core **373** / UI **498** / 示例 **18**（15 布局 + 3 弹出菜单）
 - 仓库 `README.md` 里的功能描述与 `index.html` 的图例，与实现同步维护；
   新增用户可见功能时一并更新，避免文档漂移。

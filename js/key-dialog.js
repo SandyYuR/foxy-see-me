@@ -456,7 +456,11 @@ FE.buildActionEditor = function (spec, opts) {
       keySel = h('select', { class: 'mini-select wide' });
       FE.KEYCODE_GROUPS.forEach(function (g) {
         var og = h('optgroup', { label: g.label });
-        g.names.forEach(function (n) { og.appendChild(h('option', { value: n, selected: spec && spec.key === n }, n)); });
+        /* 显示名仿 f5a-see-me：英文键名后加括号备注（如 ESCAPE（Esc 退出））。
+         * value 始终是 code 本身，所以写出的 JSON 不受显示名影响。 */
+        g.names.forEach(function (n) {
+          og.appendChild(h('option', { value: n, selected: spec && spec.key === n }, FE.keycodeDisplayName(n)));
+        });
         keySel.appendChild(og);
       });
       if (spec && spec.key && !FE.ALL_KEYCODES[spec.key]) {

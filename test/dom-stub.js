@@ -151,6 +151,9 @@ class DOMNode {
     /* title 在真实 DOM 里是反射属性（setAttribute('title',x) → el.title === x），
      * 代码与测试都习惯读 el.title，桩必须照抄，否则断言会拿到 undefined。 */
     if (k === 'title') this.title = String(v);
+    /* open 同理：<details open> 的布尔属性会反射到 el.open。
+     * h() 会跳过 null/false，所以这里出现即表示属性存在。 */
+    if (k === 'open') this.open = true;
     if (k.slice(0, 5) === 'data-') {
       const key = k.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
       this.dataset[key] = String(v);

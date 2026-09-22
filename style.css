@@ -532,6 +532,30 @@ label.check { cursor: pointer; white-space: nowrap; }
 .action-def-editor { display: flex; flex-direction: column; gap: 4px; }
 .action-def-editor .action-editor { background: #1b1e23; }
 
+/* 可折叠条目（动作与宏）：默认全部折叠，点摘要行展开。
+ * 注意 .def-item 是 display:flex，这里必须覆盖成默认流式 —— <details> 的
+ * 折叠靠 summary 作首个子元素，flex 容器下会与 .def-item 的布局规则打架。 */
+.def-item.def-collapsible { display: block; padding: 0; }
+.def-summary {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; cursor: pointer; min-width: 0;
+  border-radius: 8px; list-style: none;   /* 去掉默认三角，用自定义 caret */
+}
+.def-summary::-webkit-details-marker { display: none; }
+.def-summary:hover { background: #262a31; }
+.def-summary:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.def-summary-caret {
+  flex: 0 0 auto; color: var(--text-dim); font-size: 11px;
+  transition: transform 0.12s; display: inline-block;
+}
+details[open] > .def-summary > .def-summary-caret { transform: rotate(90deg); }
+/* 摘要行里名字可长、徽标可长：让徽标占满剩余空间并可截断，删除按钮钉在右侧 */
+.def-summary .def-name { flex: 1 1 auto; min-width: 0; }
+.def-summary .def-badges { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.def-summary .def-tools { flex: 0 0 auto; margin-left: auto; }
+/* 展开后的编辑器区域：左边缩进，与摘要行的 caret 对齐 */
+.def-item.def-collapsible > :not(.def-summary) { padding: 0 12px 10px 30px; }
+
 /* 宏步骤：每步一行；窄屏自动把工具栏折到下一行 */
 .macro-steps { display: flex; flex-direction: column; gap: 6px; }
 .macro-step {

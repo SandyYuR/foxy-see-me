@@ -57,7 +57,12 @@ var state = {
   popupFileName: 'popups.json',
   popupSchema: 'default', // 弹出菜单当前编辑的 schema
   popupSelKey: null,      // 弹出菜单预览选中的 popupKey
-  popupShifted: false     // 弹出菜单预览使用 shifted 候选
+  popupShifted: false,    // 弹出菜单预览使用 shifted 候选
+  /* 「动作与宏」页的展开状态：默认全部折叠，只记展开中的名字。
+   * 用对象（集合语义）而非数组，避免重复与顺序无谓地影响渲染。
+   * 新建的条目会自动加入这里，因此新建后默认展开、方便立即编辑。 */
+  openActions: null,
+  openMacros: null
 };
 FE.state = state;
 FE.NEUTRAL_STATUS = NEUTRAL_STATUS;
@@ -3098,6 +3103,56 @@ function commitIfChanged(getCurrent, next) {
   return true;
 }
 
+/* 展开状态集合（state.openActions / state.openMacros）：默认空 = 全部折叠 */
+function ensureOpenSet(key) {
+  if (!isPlainObject(state[key])) state[key] = {};
+  return state[key];
+}
+
+/* 「动作与宏」的条目外壳：默认折叠，只展开 openSet 里记着的名字。
+ *
+ * 为什么用 <details> 而不自己管显隐：原生语义自带键盘可达性与「摘要即定位信息」，
+ * 且展开/收起是浏览器行为、**不需要重渲染** —— 重渲染会重建内部编辑器，
+ * 正在填的字段会丢。这里只额外用 toggle 事件把展开状态同步回 state，
+ * 以便后续任何重渲染（增删、撤销、导入）都能保持用户当前的展开视图。
+ *
+ * 新条目默认展开：由调用方在创建后主动写 openSet[name] = true。 */
+function collapsibleDefItem(name, badge, openSet, opts) {
+  opts = opts || {};
+  var isOpen = !!openSet[name];
+  var det = h('details', {
+    class: 'def-item col def-gui def-collapsible',
+    open: isOpen ? 'open' : null
+  });
+  det.addEventListener('toggle', function () {
+    if (det.open) openSet[name] = true;
+    else delete openSet[name];
+  });
+
+  var delBtn = h('button', {
+    type: 'button', class: 'danger mini-button',
+    onclick: function (e) {
+      /* 删除按钮在 <summary> 内：必须阻止默认行为，否则点删除会连带展开/收起 */
+      if (e && e.preventDefault) e.preventDefault();
+      if (e && e.stopPropagation) e.stopPropagation();
+      if (!confirm(opts.confirmDelete)) return;
+      /* 实时读取：撤销 / 导入会整块替换 profile，闭包快照不能当事实来源 */
+      var live = isPlainObject(state.profile[opts.section]) ? state.profile[opts.section] : {};
+      mutate(function () {
+        delete live[name];
+        delete openSet[name];
+      });
+    }
+  }, '删除');
+
+  det.appendChild(h('summary', { class: 'def-summary' },
+    h('span', { class: 'def-summary-caret', 'aria-hidden': 'true' }, '▸'),
+    h('code', { class: 'def-name' }, name),
+    badge,
+    h('span', { class: 'def-tools' }, delBtn)));
+  return det;
+}
+
 function renderActionsList() {
   var host = $('actions-list');
   if (!host) return;
@@ -3119,19 +3174,16 @@ function renderActionsList() {
     return;
   }
 
+  /* 默认全部折叠：条目多了才能一眼扫过去、快速定位。
+   * 展开状态记在 state.openActions 里，重渲染后保持用户当前的视图。 */
+  var openSet = ensureOpenSet('openActions');
+
   names.forEach(function (n) {
     var badge = h('span', { class: 'def-badges' }, FE.actionDisplay(actions[n]));
-    var item = h('div', { class: 'def-item col def-gui' },
-      h('div', { class: 'def-main' },
-        h('code', { class: 'def-name' }, n),
-        badge,
-        h('button', {
-          class: 'danger mini-button',
-          onclick: function () {
-            if (!confirm('删除动作 “' + n + '”？引用它的地方会变成未解析引用。')) return;
-            mutate(function () { delete state.profile.actions[n]; });
-          }
-        }, '删除')));
+    var item = collapsibleDefItem(n, badge, openSet, {
+      section: 'actions',
+      confirmDelete: '删除动作 “' + n + '”？引用它的地方会变成未解析引用。'
+    });
 
     var ed = FE.buildActionDefEditor(n, actions[n], {
       commit: function (spec) {
@@ -3167,6 +3219,8 @@ function appendActionAddRow(host) {
         var n = addName.value.trim();
         if (!n) { alert('请输入动作名称'); return; }
         if (state.profile.actions[n]) { alert('动作已存在'); return; }
+        /* 新建后默认展开：用户刚建完就是要接着配置它 */
+        ensureOpenSet('openActions')[n] = true;
         mutate(function () { state.profile.actions[n] = { type: 'key', key: 'A' }; });
       }
     }, '+ 新增动作')
@@ -3191,19 +3245,15 @@ function renderMacrosList() {
     return;
   }
 
+  /* 同动作列表：默认全部折叠，展开状态记在 state.openMacros */
+  var openSet = ensureOpenSet('openMacros');
+
   names.forEach(function (n) {
     var badge = h('span', { class: 'def-badges' }, FE.describeMacroSteps(macros[n]));
-    var item = h('div', { class: 'def-item col def-gui' },
-      h('div', { class: 'def-main' },
-        h('code', { class: 'def-name' }, n),
-        badge,
-        h('button', {
-          class: 'danger mini-button',
-          onclick: function () {
-            if (!confirm('删除宏 “' + n + '”？引用它的地方会变成未解析引用。')) return;
-            mutate(function () { delete state.profile.macros[n]; });
-          }
-        }, '删除')));
+    var item = collapsibleDefItem(n, badge, openSet, {
+      section: 'macros',
+      confirmDelete: '删除宏 “' + n + '”？引用它的地方会变成未解析引用。'
+    });
 
     var ed = FE.buildMacroStepEditor(macros[n], {
       commit: function (steps) {
@@ -3233,6 +3283,8 @@ function appendMacroAddRow(host) {
         var n = addName.value.trim();
         if (!n) { alert('请输入宏名称'); return; }
         if (state.profile.macros[n]) { alert('宏已存在'); return; }
+        /* 新建后默认展开：用户刚建完就是要接着配置它 */
+        ensureOpenSet('openMacros')[n] = true;
         mutate(function () { state.profile.macros[n] = [{ action: { type: 'key', key: 'BACKSPACE' } }]; });
       }
     }, '+ 新增宏')

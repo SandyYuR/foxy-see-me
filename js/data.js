@@ -176,6 +176,58 @@ FE.ALL_KEYCODES = {};
 KEYCODE_GROUPS.forEach(function (g) { g.names.forEach(function (n) { FE.ALL_KEYCODES[n] = true; }); });
 
 /* ------------------------------------------------------------------ *
+ * 低层 KeyCode 的显示名（仿 f5a-see-me：英文键名后加括号备注）
+ * 仅用于下拉框显示，**不影响写出的 JSON**——落盘永远是 code 本身。
+ * 未列出的码走 keycodeDisplayName 的通用规则（数字 / F 键 / 字母）。
+ * ------------------------------------------------------------------ */
+var KEYCODE_LABELS = {
+  SPACE: '空格', COMMA: '逗号 ,', PERIOD: '句号 .', SLASH: '斜杠 /',
+  SEMICOLON: '分号 ;', APOSTROPHE: "撇号 '", GRAVE: '反引号 `', MINUS: '减号 -',
+  EQUAL: '等号 =', LEFT_BRACKET: '左方括号 [', RIGHT_BRACKET: '右方括号 ]',
+  BACKSLASH: '反斜杠 \\', NUMBERSIGN: '井号 #', ASTERISK: '星号 *',
+  PLUS: '加号 +', AT: 'at 符号 @',
+  ENTER: '回车', BACKSPACE: '退格', TAB: '制表 Tab', ESCAPE: 'Esc 退出',
+  LINEFEED: '换行', CLEAR: '清除', INSERT: '插入', DELETE: '删除',
+  HOME: '行首', END: '行尾', PAGE_UP: '上翻页', PAGE_DOWN: '下翻页',
+  UP: '方向键上 ↑', DOWN: '方向键下 ↓', LEFT: '方向键左 ←', RIGHT: '方向键右 →',
+  BEGIN: '起始', SELECT: '全选', PRINT: '打印', EXECUTE: '执行',
+  UNDO: '撤销', REDO: '重做', MENU: '菜单', FIND: '查找',
+  CANCEL: '取消', HELP: '帮助', BREAK: '中断', PAUSE: '暂停',
+  SCROLL_LOCK: '滚动锁定', SYS_REQ: '系统请求', NUM_LOCK: '数字小键盘锁定',
+  SHIFT_LEFT: '左 Shift', SHIFT_RIGHT: '右 Shift',
+  CONTROL_LEFT: '左 Ctrl', CONTROL_RIGHT: '右 Ctrl',
+  ALT_LEFT: '左 Alt', ALT_RIGHT: '右 Alt',
+  META_LEFT: '左 Meta（Win 键）', META_RIGHT: '右 Meta（Win 键）',
+  CAPS_LOCK: '大写锁定', EISU_TOGGLE: '英数切换', KANA_LOCK: '假名锁定',
+  HIRAGANA_KATAKANA: '平假名／片假名', ZENKAKU_HANKAKU: '全角／半角',
+  KP_DIVIDE: '小键盘 /', KP_MULTIPLY: '小键盘 *', KP_SUBTRACT: '小键盘 -',
+  KP_ADD: '小键盘 +', KP_DECIMAL: '小键盘 .', KP_SEPARATOR: '小键盘分隔符',
+  KP_EQUAL: '小键盘 =', KP_ENTER: '小键盘回车', KP_SPACE: '小键盘空格',
+  KP_TAB: '小键盘 Tab', KP_HOME: '小键盘行首', KP_LEFT: '小键盘 ←',
+  KP_UP: '小键盘 ↑', KP_RIGHT: '小键盘 →', KP_DOWN: '小键盘 ↓',
+  KP_PAGE_UP: '小键盘上翻页', KP_PAGE_DOWN: '小键盘下翻页',
+  KP_END: '小键盘行尾', KP_BEGIN: '小键盘起始', KP_INSERT: '小键盘插入',
+  KP_DELETE: '小键盘删除'
+};
+FE.KEYCODE_LABELS = KEYCODE_LABELS;
+
+/* code → 下拉显示文本。字母保持原样（组标题已标明是字母），其余附中文备注。 */
+FE.keycodeDisplayName = function (code) {
+  var c = String(code == null ? '' : code);
+  if (!c) return '';
+  if (KEYCODE_LABELS[c]) return c + '（' + KEYCODE_LABELS[c] + '）';
+  var m = c.match(/^DIGIT_(\d)$/);
+  if (m) return c + '（数字 ' + m[1] + '）';
+  m = c.match(/^KP_(\d)$/);
+  if (m) return c + '（小键盘 ' + m[1] + '）';
+  m = c.match(/^KP_F(\d+)$/);
+  if (m) return c + '（小键盘功能键 F' + m[1] + '）';
+  m = c.match(/^F(\d+)$/);
+  if (m) return c + '（功能键 F' + m[1] + '）';
+  return c;
+};
+
+/* ------------------------------------------------------------------ *
  * App 命令表（动作 {type:'app'} 的 command 字段取值）
  * ------------------------------------------------------------------ */
 FE.APP_COMMANDS = [

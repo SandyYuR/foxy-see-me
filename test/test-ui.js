@@ -563,6 +563,87 @@ inlineTypeSel.value = 'app';
 inlineTypeSel._fire('change');
 eq(FE.state.profile.macros['test.macro'][refIdx].type, 'app', '引用步骤切为 app 后写回 profile');
 
+console.log('== 动作与宏：默认折叠 / 可展开 / 新建自动展开 ==');
+/* 重置展开状态，验证默认值就是「全部折叠」 */
+FE.state.openActions = null;
+FE.state.openMacros = null;
+FE.mutate(() => {});
+const actItems = $('actions-list').querySelectorAll('.def-item.def-collapsible');
+const macItems0 = $('macros-list').querySelectorAll('.def-item.def-collapsible');
+ok(actItems.length >= 3, '动作条目使用可折叠外壳');
+ok(macItems0.length >= 1, '宏条目使用可折叠外壳');
+ok(actItems.every(it => !it.open), '动作条目默认全部折叠');
+ok(macItems0.every(it => !it.open), '宏条目默认全部折叠');
+ok(actItems.every(it => it.querySelectorAll('.def-summary').length === 1), '每条都有摘要行（可点击处）');
+ok(actItems.every(it => it.children[0].tagName === 'SUMMARY'), 'summary 是 details 的首个子元素（原生折叠语义）');
+ok(actItems.every(it => it.querySelectorAll('.def-summary-caret').length === 1), '摘要行带展开指示三角');
+/* 折叠时编辑器仍在 DOM 里（<details> 只影响渲染，不影响节点） */
+ok(actItems.every(it => it.querySelectorAll('.action-def-editor').length === 1), '折叠条目的编辑器已就绪，展开即用');
+
+/* 展开一条：桩不会自动切换 open，故手动置位后触发 toggle（模拟浏览器行为） */
+const firstAct = actItems[0];
+const firstName = firstAct.querySelectorAll('.def-name')[0].textContent;
+firstAct.open = true;
+firstAct._fire('toggle');
+ok(FE.state.openActions[firstName] === true, '展开后展开状态被记录');
+
+/* 任何重渲染（增删 / 撤销 / 导入）后都要保持用户当前的展开视图 */
+FE.renderAll();
+const afterRe = $('actions-list').querySelectorAll('.def-item.def-collapsible')
+  .find(it => it.querySelectorAll('.def-name')[0].textContent === firstName);
+ok(!!afterRe && afterRe.open === true, '重渲染后仍保持该条展开');
+
+afterRe.open = false;
+afterRe._fire('toggle');
+ok(!FE.state.openActions[firstName], '收起后展开状态被清除');
+
+/* 新建动作 / 宏：默认展开，方便建完立刻配置 */
+const actAddInput = $('actions-list').querySelectorAll('input')
+  .find(i => String(i.getAttribute('placeholder') || '').indexOf('新动作名称') >= 0);
+ok(!!actAddInput, '动作列表有新增输入框');
+actAddInput.value = 'test.fresh';
+$('actions-list').querySelectorAll('button').find(b => b.textContent === '+ 新增动作').click();
+ok(!!FE.state.profile.actions['test.fresh'], '新建动作已写入 profile');
+ok(FE.state.openActions['test.fresh'] === true, '新建动作默认展开');
+const freshItem = $('actions-list').querySelectorAll('.def-item.def-collapsible')
+  .find(it => it.querySelectorAll('.def-name')[0].textContent === 'test.fresh');
+ok(!!freshItem && freshItem.open === true, '新建条目在界面上确实展开');
+
+const macAddInput = $('macros-list').querySelectorAll('input')
+  .find(i => String(i.getAttribute('placeholder') || '').indexOf('新宏名称') >= 0);
+ok(!!macAddInput, '宏列表有新增输入框');
+macAddInput.value = 'test.freshmacro';
+$('macros-list').querySelectorAll('button').find(b => b.textContent === '+ 新增宏').click();
+ok(!!FE.state.profile.macros['test.freshmacro'], '新建宏已写入 profile');
+ok(FE.state.openMacros['test.freshmacro'] === true, '新建宏默认展开');
+
+/* 摘要行内的删除按钮：可用，且顺手清掉展开状态（不留脏记录） */
+FE.renderAll();
+const freshItem2 = $('actions-list').querySelectorAll('.def-item.def-collapsible')
+  .find(it => it.querySelectorAll('.def-name')[0].textContent === 'test.fresh');
+freshItem2.querySelectorAll('button').find(b => b.textContent === '删除').click();
+ok(!FE.state.profile.actions['test.fresh'], '摘要行内的删除按钮可用（未被折叠语义吞掉）');
+ok(!FE.state.openActions['test.fresh'], '删除后同时清掉展开状态');
+
+console.log('== 按键下拉：显示名带中文备注，落盘值不变 ==');
+const kdEsc = FE.buildActionEditor({ type: 'key', key: 'ESCAPE' }, {});
+const kdEscSelects = kdEsc.el.querySelectorAll('select');
+ok(kdEscSelects.length >= 2, '动作编辑器含类型下拉与键下拉');
+const keySelEl = kdEscSelects[kdEscSelects.length - 1];
+const escOpt = keySelEl.querySelectorAll('option').find(o => o.getAttribute('value') === 'ESCAPE');
+ok(!!escOpt, '键下拉里能选到 ESCAPE');
+ok(escOpt.textContent.indexOf('（') >= 0, '按键选项带括号中文备注');
+eq(escOpt.getAttribute('value'), 'ESCAPE', '选项 value 仍是 code 本身');
+eq(keySelEl.value, 'ESCAPE', '下拉当前选中值按 code 匹配');
+eq(kdEsc.getValue().key, 'ESCAPE', 'getValue 仍返回 code，不被显示名影响');
+ok(kdEsc.el.querySelectorAll('optgroup').length >= 5, '键下拉按分组（字母/标点/导航…）组织');
+/* 抽查几个有备注的码，确认备注确实可读 */
+[['BACKSPACE', '退格'], ['SPACE', '空格'], ['ENTER', '回车'], ['KP_5', '小键盘 5'], ['F1', '功能键 F1']]
+  .forEach(([code, note]) => {
+    const o = keySelEl.querySelectorAll('option').find(x => x.getAttribute('value') === code);
+    ok(!!o && o.textContent.indexOf(note) >= 0, code + ' 的备注含「' + note + '」');
+  });
+
 console.log('== 统一：按键对话框「原始 JSON」一键修复 ==');
 documentStub._openDialogs.length = 0;
 FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
