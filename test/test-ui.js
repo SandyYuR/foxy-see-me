@@ -1733,10 +1733,16 @@ await sleep(350);
   ok($('popup-validation').textContent.indexOf('校验通过') >= 0 || $('popup-validation').textContent.indexOf('✓') >= 0, '弹出菜单校验通过显示');
   const keyCards = q('#popup-keys .popup-key-card');
   ok(keyCards.length >= 26, '气泡示例渲染 26+ 个键卡片（实际 ' + keyCards.length + '）');
-  /* q 键的候选 chip */
-  const qCard = keyCards.find ? null : null;
-  const chips = q('#popup-keys .popup-cand');
-  ok(chips.length > 100, '候选 chip 大量渲染（实际 ' + chips.length + '）');
+  /* 与按键定义 / 动作宏三页同构：默认**全部折叠**，且编辑器正文懒建 ——
+   * 折叠状态下不构建候选 chip（否则 26 键 ×2 状态行会白烧 CPU）。 */
+  ok(keyCards.every(c => !c.open), '键卡片默认全部折叠');
+  ok(q('#popup-keys .popup-cand').length === 0, '折叠时不预先构建候选编辑器（懒建）');
+  /* 展开其中一个键卡片 → 懒建出该键的状态行与候选 chip */
+  const expandCard = keyCards.find(c => (c.querySelectorAll('.def-name')[0] || {}).textContent === 'q') || keyCards[0];
+  expandCard.open = true;
+  expandCard._fire('toggle');
+  ok(q('#popup-keys .popup-cand').length > 0, '展开后构建出候选 chip（实际 ' + q('#popup-keys .popup-cand').length + '）');
+  ok(q('#popup-keys .popup-state-row').length === 2, '展开后含常规/Shift 两行');
   /* 气泡预览 */
   ok(q('.pp-bubble').length === 1, '气泡预览渲染');
   ok(q('.pp-cand').length >= 1, '气泡候选渲染');
@@ -1755,10 +1761,15 @@ await sleep(350);
   shiftChk._fire('change');
   eq(q('.pp-key')[0].textContent, keyBefore, '取消 Shift 后模拟按键恢复');
 
-  /* 添加候选（文本类型）端到端 */
+  /* 添加候选（文本类型）端到端。
+   * 键卡片默认折叠且懒建，所以要**在已展开的卡片内**取添加按钮 ——
+   * 折叠卡片的正文（含 .chip-add）根本没构建出来。 */
   console.log('== 弹出菜单候选编辑 ==');
-  const addBtns = q('#popup-keys .chip-add');
-  ok(addBtns.length >= 26, '每个状态行都有添加按钮');
+  const openCard = q('#popup-keys .popup-key-card').find(c => c.open);
+  ok(!!openCard, '存在已展开的键卡片（前一段展开的那个）');
+  const openPk = openCard.querySelectorAll('.def-name')[0].textContent;
+  const addBtns = openCard.querySelectorAll('.chip-add');
+  eq(addBtns.length, 2, '展开的键两个状态行各有一个添加按钮');
   addBtns[0].click();
   let dlg = documentStub._openDialogs[documentStub._openDialogs.length - 1];
   ok(!!dlg, '候选编辑对话框打开');
@@ -1770,14 +1781,12 @@ await sleep(350);
   dlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
   ok(!dlg.open, '保存后对话框关闭');
   ok($('popup-status') != null, '状态区存在');
-  /* 验证写入了 profile（首个键的 normal 末尾） */
-  const firstKeyEl = q('#popup-keys .popup-key-card code')[0];
-  const firstPk = firstKeyEl.textContent;
-  const firstArr = FE.state.popupProfile.schemas.default[firstPk].normal;
+  /* 验证写入了 profile（展开键的 normal 末尾） */
+  const firstArr = FE.state.popupProfile.schemas.default[openPk].normal;
   ok(firstArr[firstArr.length - 1] === 'ẗ', '新候选写入 normal 末尾');
   /* 撤销 */
   $('op-undo').click();
-  ok(FE.state.popupProfile.schemas.default[firstPk].normal[firstArr.length - 1] !== 'ẗ' || FE.state.popupProfile.schemas.default[firstPk].normal.length === firstArr.length - 1, '撤销弹回候选');
+  ok(FE.state.popupProfile.schemas.default[openPk].normal[firstArr.length - 1] !== 'ẗ' || FE.state.popupProfile.schemas.default[openPk].normal.length === firstArr.length - 1, '撤销弹回候选');
 
   /* 布局联动：构造只含 z 键的弹出菜单 + 加载带 popupKey 的 split 布局 */
   console.log('== 弹出菜单与布局联动 ==');
@@ -2585,6 +2594,106 @@ await sleep(350);
     ok(clr.hidden, k + ' 页点 ✕ 后自身隐藏');
     ok(documentStub.activeElement === inp, k + ' 页点 ✕ 后焦点回到输入框（可直接重新输入）');
   });
+
+  /* ---- 弹出菜单页：搜索（名称 + 候选内容） ---- */
+  console.log('== 弹出菜单页搜索 ==');
+  FE.state.popupProfile = FE.normalizePopupProfile({
+    type: 'foxy.popup-profile',
+    schemas: { default: {
+      q: { normal: ['q', 'ɋ'] },
+      z: { normal: ['Z', 'ź'] },
+      ae: { normal: ['ā'] }
+    } }
+  });
+  tabs[3]._fire('click');
+  const ppCount = () => q('#popup-keys .popup-key-card').length;
+  eq(ppCount(), 3, '弹出菜单共 3 个键卡片');
+  $('popup-filter').value = 'z';
+  $('popup-search').click();
+  eq(ppCount(), 1, '弹出菜单按 popupKey 搜索命中');
+  ok(q('#popup-keys .def-match-hint')[0].textContent.indexOf('匹配 1 / 3') >= 0,
+    '弹出菜单显示匹配计数提示');
+  /* 按候选内容也能命中（不只看键名） */
+  $('popup-filter').value = 'ā';
+  $('popup-search').click();
+  eq(ppCount(), 1, '弹出菜单按候选内容搜索命中');
+  eq(q('#popup-keys .popup-key-card')[0].querySelectorAll('.def-name')[0].textContent, 'ae',
+    '命中的是含该候选的键');
+  $('popup-filter-clear')._fire('click');
+  eq(ppCount(), 3, '弹出菜单清空关键字恢复全部');
+  ok(!q('#popup-keys .def-match-hint').length, '清空后不再显示匹配提示');
+
+  /* ---- 弹出菜单页：被引用跳转按钮 ---- */
+  console.log('== 弹出菜单键的被引用跳转 ==');
+  /* ⚠️ 这里要连 actions/macros 一起写回去：本文件后面还有「悬停提示」等断言
+   * 依赖它们存在，只设 keys/layouts 会把那几页清空、让后面的断言挂掉。 */
+  FE.applyProfileText(JSON.stringify({
+    keys: { 'k.pop': { ref: 'rime.a', longPress: { popupKey: 'q' } } },
+    actions: {
+      'act.copy': { type: 'key', key: 'C', meta: ['CTRL'] },
+      'act.paste': { type: 'key', key: 'V', meta: ['CTRL'] },
+      'act.uniq': { type: 'app', command: 'settings' }
+    },
+    macros: {
+      'mac.home': [{ type: 'key', key: 'HOME' }],
+      'mac.word': [{ action: 'act.copy' }],
+      'mac.other': [{ type: 'text', text: 'zzz' }]
+    },
+    layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.pop' }]] }] } }
+  }), {});
+  FE.state.popupProfile = FE.normalizePopupProfile({
+    type: 'foxy.popup-profile', schemas: { default: { q: { normal: ['q'] } } }
+  });
+  tabs[3]._fire('click');
+  const popCard = q('#popup-keys .popup-key-card')[0];
+  const popUsageBtn = popCard.querySelectorAll('button').find(b => /^使用 \d+$/.test(b.textContent));
+  ok(!!popUsageBtn, '弹出菜单键有「使用 N」按钮：' + (popUsageBtn && popUsageBtn.textContent));
+  ok(popUsageBtn.getAttribute('title').indexOf('哪些布局') >= 0, '该按钮 tooltip 说明是「哪些布局用到」');
+  /* 数据源不是引用索引，所以不该挂 data-usage-*（否则会被 refreshUsageLabels 覆写） */
+  ok(!(popUsageBtn.dataset && popUsageBtn.dataset.usageKind),
+    '弹出菜单的「使用」按钮不挂 data-usage-kind（数据源不是引用索引）');
+  documentStub._openDialogs.length = 0;
+  popUsageBtn._fire('click');
+  const popUsageDlg = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  ok(!!popUsageDlg, '点「使用」打开内建弹窗');
+  ok(popUsageDlg.textContent.indexOf('共被引用 2 处') >= 0, '列出被引用总数（按键定义 + 布局按键）');
+  const popJumps = popUsageDlg.querySelectorAll('.usage-item.usage-jump');
+  ok(popJumps.length === 2, '两条都可跳转（实际 ' + popJumps.length + '）');
+  /* 布局坐标项 → 切布局并选中该键 */
+  const ppLayoutJump = popJumps.find(b => b.textContent.indexOf('按键定义') < 0);
+  ok(!!ppLayoutJump, '含布局坐标条目：' + (ppLayoutJump && ppLayoutJump.textContent));
+  ppLayoutJump._fire('click');
+  ok($('tab-layout').classList.contains('active'), '点布局条目切到布局编辑页');
+  eq(FE.state.sel, { s: 0, r: 0, k: 0 }, '选中了使用该 popupKey 的按键');
+  /* 定义坐标项 → 切按键定义页并高亮（与上一轮 jumpToDef 的能力对齐） */
+  tabs[3]._fire('click');
+  const popCard2 = q('#popup-keys .popup-key-card')[0];
+  documentStub._openDialogs.length = 0;
+  popCard2.querySelectorAll('button').find(b => /^使用 \d+$/.test(b.textContent))._fire('click');
+  const dlg2 = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  const ppDefJump = dlg2.querySelectorAll('.usage-item.usage-jump')
+    .find(b => b.textContent.indexOf('按键定义') >= 0);
+  ok(!!ppDefJump, '含按键定义坐标条目');
+  ppDefJump._fire('click');
+  ok($('tab-keys').classList.contains('active'), '点定义条目切到按键定义页');
+  const ppDefRow = $('keys-list').querySelectorAll('.def-item.def-row-click')
+    .find(r => r.querySelectorAll('.def-name')[0].textContent === 'k.pop');
+  ok(!!ppDefRow && ppDefRow.classList.contains('flash-hold'), '目标按键定义带持续高亮');
+  documentStub.dispatchEvent({ type: 'pointerdown' });
+
+  /* ---- 跳转到弹出菜单页时清过滤 + 展开目标（否则「点了没反应」） ---- */
+  console.log('== 跳转弹出菜单页：清过滤 + 展开目标 ==');
+  tabs[3]._fire('click');
+  $('popup-filter').value = 'no_such_xyz';
+  $('popup-search').click();
+  eq(ppCount(), 0, '过滤后目标键被筛掉（模拟用户跳转前的状态）');
+  FE.jumpToPopupEditor('q');
+  ok(!$('popup-filter').value, '跳转清掉了过滤条件');
+  ok($('popup-filter-clear').hidden, '清过滤后 ✕ 也同步隐藏（不靠 input 事件）');
+  const jumpedCard = q('#popup-keys .popup-key-card')[0];
+  ok(!!jumpedCard, '跳转后能看到目标卡片');
+  ok(jumpedCard.open === true, '目标卡片被自动展开（默认折叠也能立刻看到内容）');
+  ok(FE.state.popupSelKey === 'q', '预览选中该 popupKey');
 
   console.log('== 悬停提示：两页都有 ==');
   const hoverKeyRow = $('keys-list').querySelectorAll('.def-item.def-row-click')[0];

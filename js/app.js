@@ -63,6 +63,9 @@ var state = {
    * 新建的条目会自动加入这里，因此新建后默认展开、方便立即编辑。 */
   openActions: null,
   openMacros: null,
+  /* 弹出菜单页的键卡片展开态（与动作/宏同理：默认全部折叠，只记展开中的）。
+   * 由 popup-editor.js 通过 FE.ensureOpenSet('openPopupKeys') 使用。 */
+  openPopupKeys: null,
   /* 「校验详情」折叠块的展开态。renderMeta 每次重渲染都会重建这个 <details>，
    * 所以展开状态必须存在 state 里，否则点条目跳转（会触发 renderAll）
    * 就会把它收起。 */
@@ -4162,7 +4165,7 @@ function collapsibleDefItem(name, badge, openSet, opts) {
   opts = opts || {};
   var isOpen = !!openSet[name];
   var det = h('details', {
-    class: 'def-item col def-gui def-collapsible',
+    class: 'def-item col def-gui def-collapsible' + (opts.extraClass ? ' ' + opts.extraClass : ''),
     open: isOpen ? 'open' : null
   });
   var built = false;
@@ -4196,20 +4199,28 @@ function collapsibleDefItem(name, badge, openSet, opts) {
    * （改某个动作可能影响别的名字的计数，但整列表重渲染会打断正在操作的控件）。 */
   var tools = h('span', { class: 'def-tools' });
   if (opts.usage) {
-    var kind = opts.section === 'macros' ? 'macro' : 'action';
+    /* 默认按「动作 / 宏」的引用索引给按钮。弹出菜单页会传
+     * usageKind:null + onUsage —— 它的「被引用」是「哪些布局用了这个 popupKey」，
+     * 数据源不是 refIndex；usageKind 为 null 时不挂 data-*，
+     * refreshUsageLabels() 因此不会拿引用索引去覆写它的数字。 */
+    var kind = opts.usageKind === undefined
+      ? (opts.section === 'macros' ? 'macro' : 'action')
+      : opts.usageKind;
+    var onUsage = opts.onUsage || function () {
+      /* 点击时重算：静默写回只更新按钮文字，弹窗内容要保证是最新的。
+       * 动作没有外向引用（结构上没有指他字段），故只给宏传 outgoing。 */
+      var fresh = usageOf(currentRefIndex(), kind, name);
+      showUsageDialog((kind === 'macro' ? '宏 “' : '动作 “') + name + '” 的使用情况',
+        fresh, kind === 'macro' ? outgoingRefsOf(state.profile, 'macro', name) : undefined);
+    };
     tools.appendChild(h('button', {
       type: 'button', class: 'mini-button def-usage-btn',
-      dataset: { usageKind: kind, usageName: name },
-      /* 只有**宏**有外向引用（步骤里引用动作）。动作是最基础的条目：它只被引用、
-       * 不会引用别人（结构上没有指他字段），所以动作不传 outgoing —— 弹窗就不会
-       * 出现那句「它没有引用任何条目」的噪音（用户明确要求）。 */
-      title: kind === 'macro' ? '查看被谁引用、以及它引用了哪些动作' : '查看它被谁引用',
+      dataset: kind ? { usageKind: kind, usageName: name } : null,
+      title: opts.usageTitle
+        || (kind === 'macro' ? '查看被谁引用、以及它引用了哪些动作' : '查看它被谁引用'),
       onclick: function (e) {
         stopEv(e);   /* 在 <summary> 内：不阻止会连带展开/收起 */
-        /* 点击时重算：静默写回只更新按钮文字，弹窗内容要保证是最新的 */
-        var fresh = usageOf(currentRefIndex(), kind, name);
-        showUsageDialog((kind === 'macro' ? '宏 “' : '动作 “') + name + '” 的使用情况',
-          fresh, kind === 'macro' ? outgoingRefsOf(state.profile, 'macro', name) : undefined);
+        onUsage();
       }
     }, '使用 ' + opts.usage.count));
   }
@@ -4218,6 +4229,8 @@ function collapsibleDefItem(name, badge, openSet, opts) {
     onclick: async function (e) {
       /* 删除按钮在 <summary> 内：必须阻止默认行为，否则点删除会连带展开/收起 */
       stopEv(e);
+      /* 弹出菜单页传 onDelete：它的数据在 popupProfile 而非 state.profile[section] */
+      if (typeof opts.onDelete === 'function') { await opts.onDelete(); return; }
       var ok = await FE.uiConfirm(opts.confirmDelete, { title: '删除确认', danger: true, okLabel: '删除' });
       if (!ok) return;
       /* 实时读取：撤销 / 导入会整块替换 profile，闭包快照不能当事实来源 */
@@ -5131,6 +5144,17 @@ function walkAllActions(cb) {
 FE.h = h;
 FE.clearEl = clearEl;
 FE.$ = $;
+/* 以下三项 + collapsibleDefItem / ensureOpenSet 供 popup-editor.js 复用：
+ * 弹出菜单页要与按键定义/动作宏页**同构**（同样的搜索、同样的折叠条目外壳），
+ * 各写一份必然漂移，所以共用 app.js 这套。 */
+FE.defFilterValue = defFilterValue;
+FE.defMatch = defMatch;
+FE.appendMatchHint = appendMatchHint;
+FE.collapsibleDefItem = collapsibleDefItem;
+FE.ensureOpenSet = ensureOpenSet;
+FE.stopEv = stopEv;
+FE.showUsageDialog = showUsageDialog;
+FE.scrollToDefItem = scrollToDefItem;
 FE.curSections = curSections;
 FE.getRowKeys = function (section, ri) { return getRowKeys(section, ri); };
 

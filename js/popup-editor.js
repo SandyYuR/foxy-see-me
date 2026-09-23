@@ -193,12 +193,13 @@ function buildPopupKeyEditor(schemaName, pk, opts) {
   schemaName = FE.popupSchemaName(P, schemaName);
   var schema = P.schemas[schemaName];
   var host = h('div', { class: 'popup-key-editor' });
-  var used = collectLayoutPopupKeys()[pk];
+  var usedRefs = collectLayoutPopupKeys()[pk];
+  var usedLabels = FE.popupUsageLabels(usedRefs);
   /* 标题行：键名 + 布局使用处 + 预览跳转 */
   host.appendChild(h('div', { class: 'section-head' },
     h('span', { class: 'section-title' },
       h('code', null, pk),
-      used ? h('span', { class: 'def-badges', title: used.join('\n') }, ' · 布局使用 ' + used.length + ' 处') : null),
+      usedLabels.length ? h('span', { class: 'def-badges', title: usedLabels.join('\n') }, ' · 布局使用 ' + usedLabels.length + ' 处') : null),
     h('span', { class: 'section-tools' },
       h('button', {
         type: 'button', class: 'icon-button', title: '在弹出菜单页预览中查看',
@@ -241,39 +242,64 @@ function setPopupStatus(msg, kind) {
   el.append(msg || '');
 }
 
-/* ---------------- 布局联动：收集布局中使用的 popupKey ---------------- */
+/* ---------------- 布局联动：收集布局中使用的 popupKey ----------------
+ * 返回 `{ popupKey: [{ label, loc }] }`。
+ * loc 供「使用数」弹窗跳转：布局按键给布局坐标（locateIssue 用），
+ * 按键定义给 { defKind:'key', defName }（jumpToDef 用）。
+ * ⚠️ 值从「字符串数组」升级成「对象数组」是为了支持跳转；调用方要 labels
+ * 时用 FE.popupUsageLabels(used[pk])，别再直接 join。 */
+FE.popupUsageLabels = function (refs) {
+  return (Array.isArray(refs) ? refs : []).map(function (r) {
+    return r && r.label != null ? String(r.label) : String(r);
+  });
+};
+
 function collectLayoutPopupKeys() {
   var found = {};
   var profile = state.profile;
   if (!profile) return found;
-  function fromContainer(c, where) {
-    if (!FE.isPlainObject(c)) return;
-    var lp = FE.isPlainObject(c.longPress) ? c.longPress.popupKey : null;
-    if (lp == null || lp === '') return;
-    if (found[lp] === undefined) found[lp] = [];
-    found[lp].push(where);
+  function add(pk, label, loc) {
+    if (found[pk] === undefined) found[pk] = [];
+    found[pk].push({ label: label, loc: loc });
   }
-  Object.keys(profile.keys || {}).forEach(function (kn) { fromContainer(profile.keys[kn], '按键定义 ' + kn); });
-  function walkSections(sections, where0) {
+  function pkOf(c) {
+    if (!FE.isPlainObject(c)) return null;
+    var lp = FE.isPlainObject(c.longPress) ? c.longPress.popupKey : null;
+    return (lp == null || lp === '') ? null : lp;
+  }
+  /* 按键定义：挂在定义自身（含变体里写的 longPress） */
+  Object.keys(profile.keys || {}).forEach(function (kn) {
+    var kd = profile.keys[kn];
+    var lp = pkOf(kd);
+    if (lp) add(lp, '按键定义 ' + kn, { defKind: 'key', defName: kn });
+    if (FE.isPlainObject(kd) && Array.isArray(kd.variants)) {
+      kd.variants.forEach(function (v, vi) {
+        var vlp = pkOf(v);
+        if (vlp) add(vlp, '按键定义 ' + kn + ' 变体' + (vi + 1), { defKind: 'key', defName: kn });
+      });
+    }
+  });
+  function walkSections(sections, layoutName, isSplit) {
     (Array.isArray(sections) ? sections : []).forEach(function (s, si) {
       if (!FE.isPlainObject(s)) return;
+      function take(k, ki, rowIdx, group, where) {
+        var ev = FE.evalPlacement(k, FE.NEUTRAL_STATUS);
+        var lp = (ev.eff && FE.isPlainObject(ev.eff.longPress)) ? ev.eff.longPress.popupKey : null;
+        if (lp == null || lp === '') return;
+        add(lp, where, {
+          layout: layoutName, isSplit: !!isSplit,
+          sectionIndex: si, rowIndex: rowIdx, keyIndex: ki, group: group
+        });
+      }
       if (s.type === 'rows') {
         FE.rowsOfSection(s).forEach(function (row, ri) {
           row.keys.forEach(function (k, ki) {
-            var ev = FE.evalPlacement(k, FE.NEUTRAL_STATUS);
-            var lp = (ev.eff && FE.isPlainObject(ev.eff.longPress)) ? ev.eff.longPress.popupKey : null;
-            if (lp == null || lp === '') return;
-            if (found[lp] === undefined) found[lp] = [];
-            found[lp].push(where0 + ' 区段' + si + ' 行' + ri + ' 键' + ki);
+            take(k, ki, ri, 'rows', layoutName + ' 区段' + si + ' 行' + ri + ' 键' + ki);
           });
         });
       } else if (s.type === 'grid' && Array.isArray(s.keys)) {
         s.keys.forEach(function (k, ki) {
-          var ev = FE.evalPlacement(k, FE.NEUTRAL_STATUS);
-          var lp = (ev.eff && FE.isPlainObject(ev.eff.longPress)) ? ev.eff.longPress.popupKey : null;
-          if (lp == null || lp === '') return;
-          if (found[lp] === undefined) found[lp] = [];
-          found[lp].push(where0 + ' 区段' + si + ' 网格键' + ki);
+          take(k, ki, null, 'grid', layoutName + ' 区段' + si + ' 网格键' + ki);
         });
       }
     });
@@ -281,8 +307,8 @@ function collectLayoutPopupKeys() {
   Object.keys(profile.layouts || {}).forEach(function (ln) {
     var L = profile.layouts[ln];
     if (!FE.isPlainObject(L)) return;
-    walkSections(L.sections, ln);
-    if (FE.isPlainObject(L.split)) walkSections(L.split.sections, ln + ' 分体');
+    walkSections(L.sections, ln, false);
+    if (FE.isPlainObject(L.split)) walkSections(L.split.sections, ln, true);
   });
   return found;
 }
@@ -311,6 +337,32 @@ function renderPopupToolbar() {
   sel.value = state.popupSchema;
 }
 
+/* 搜索匹配文本 = popupKey + 各候选的显示标签。
+ * 所以「搜 q」能命中键名，「搜 ā」能命中把它作为候选的那个键。 */
+function popupMatchText(pk, entry) {
+  var parts = [pk];
+  function take(list) {
+    (Array.isArray(list) ? list : []).forEach(function (c) {
+      parts.push(FE.popupCandidateLabel(c));
+      parts.push(FE.popupCandidateSummary(c));
+    });
+  }
+  if (Array.isArray(entry)) take(entry);
+  else if (FE.isPlainObject(entry)) { take(entry.normal); take(entry.shifted); }
+  return parts.join(' ');
+}
+
+/* 「使用数」的数据源：哪些布局/按键定义用了这个 popupKey。
+ * 与 buildRefIndex 无关（popupKey 不是 ref），所以直接由 collectLayoutPopupKeys
+ * 的 refs 拼出弹窗要的形状，并给 collapsibleDefItem 传 usageKind:null +
+ * onUsage —— 见 app.js 里那段注释。 */
+function popupUsageOf(refs) {
+  var items = (Array.isArray(refs) ? refs : []).map(function (r) {
+    return { label: r.label, loc: r.loc };
+  });
+  return { count: items.length, items: items };
+}
+
 function renderPopupKeys() {
   var host = $('popup-keys');
   if (!host) return;
@@ -319,16 +371,26 @@ function renderPopupKeys() {
   var schema = P.schemas[state.popupSchema];
   if (!schema) { state.popupSchema = FE.popupSchemaName(P, state.popupSchema); schema = P.schemas[state.popupSchema] || {}; }
   var used = collectLayoutPopupKeys();
-  var names = Object.keys(schema).sort();
-  if (!names.length) {
+  var all = Object.keys(schema).sort();
+  var filter = FE.defFilterValue('popup-filter');
+  var names = FE.defMatch(all, filter, function (pk) { return popupMatchText(pk, schema[pk]); });
+  FE.appendMatchHint(host, names.length, all.length, filter, 'popupKey');
+
+  /* 与按键定义 / 动作宏三页同构：默认**全部折叠**，展开态记在
+   * state.openPopupKeys，重渲染后保持用户当前的视图。
+   * 懒建由 collapsibleDefItem 负责 —— 气泡示例有 26+ 个键、每键两个状态行，
+   * 全量建出来会白烧 CPU（同 §动作与宏 的性能陷阱）。 */
+  var openSet = FE.ensureOpenSet('openPopupKeys');
+  names.forEach(function (pk) {
+    var refs = used[pk];
+    host.appendChild(popupKeyCard(P, state.popupSchema, pk, refs, openSet));
+  });
+  if (!names.length && !filter) {
     host.appendChild(h('div', { class: 'status' }, '该 schema 还没有按键。用下方添加，或从布局的 longPress.popupKey 联动生成。'));
   }
-  names.forEach(function (pk) {
-    var entry = schema[pk];
-    host.appendChild(popupKeyCard(P, state.popupSchema, pk, entry, used[pk]));
-  });
-  /* 从布局使用处一键补齐缺失的键 */
-  var missing = Object.keys(used).filter(function (k) { return !schema[k]; });
+
+  /* 从布局使用处一键补齐缺失的键（过滤时不显示，避免与筛选结果混淆） */
+  var missing = filter ? [] : Object.keys(used).filter(function (k) { return !schema[k]; });
   if (missing.length) {
     host.appendChild(h('div', { class: 'popup-missing' },
       h('div', { class: 'status warn' }, '布局中使用了 ' + missing.length + ' 个此 schema 未定义的 popupKey：' + missing.join('、')),
@@ -348,28 +410,37 @@ function renderPopupKeys() {
         var k = addInp.value.trim();
         if (!k) { FE.uiAlert('请输入 popupKey'); return; }
         if (schema[k]) { FE.uiAlert('该键已存在: ' + k); return; }
+        /* 新建后展开，方便立刻配置（与动作/宏页一致） */
+        FE.ensureOpenSet('openPopupKeys')[k] = true;
         pmutate(function () { schema[k] = { normal: [] }; });
       }
     }, '+ 添加按键')));
 }
 
-function popupKeyCard(P, schemaName, pk, entry, usedAt) {
-  var card = h('details', { class: 'card section-card popup-key-card', open: true });
-  card.appendChild(h('summary', null, '按键 ' + pk));
-  var body = h('div', { class: 'section-body' });
-  body.appendChild(buildPopupKeyEditor(schemaName, pk, {}).host);
-  /* 卡片级删除（编辑器主体共用 buildPopupKeyEditor，此处只保留删除） */
-  body.appendChild(h('div', { class: 'toolbar' },
-    h('button', {
-      type: 'button', class: 'mini-button danger',
-      onclick: async function () {
-        var ok = await FE.uiConfirm('删除 popupKey “' + pk + '”？', { title: '删除按键', danger: true, okLabel: '删除' });
-        if (!ok) return;
-        pmutate(function () { delete pp().schemas[schemaName][pk]; });
-      }
-    }, '删除此键')));
-  card.appendChild(body);
-  return card;
+function popupKeyCard(P, schemaName, pk, refs, openSet) {
+  var usage = popupUsageOf(refs);
+  var badge = h('span', { class: 'def-badges' },
+    usage.count ? ('布局使用 ' + usage.count + ' 处') : '布局未使用');
+  return FE.collapsibleDefItem(pk, badge, openSet, {
+    extraClass: 'popup-key-card',
+    section: 'popupKeys',
+    summaryTitle: '展开并配置弹出菜单键「' + pk + '」',
+    usageKind: null,          /* 数据源不是 refIndex，别挂 data-* */
+    usageTitle: '查看哪些布局用到了这个 popupKey',
+    usage: usage,
+    onUsage: function () {
+      FE.showUsageDialog('弹出菜单键 “' + pk + '” 的使用情况', popupUsageOf(refs));
+    },
+    confirmDelete: '删除 popupKey “' + pk + '”？',
+    onDelete: async function () {
+      var ok = await FE.uiConfirm('删除 popupKey “' + pk + '”？', { title: '删除按键', danger: true, okLabel: '删除' });
+      if (!ok) return;
+      pmutate(function () { delete pp().schemas[schemaName][pk]; });
+    },
+    build: function (body) {
+      body.appendChild(buildPopupKeyEditor(schemaName, pk, {}).host);
+    }
+  });
 }
 
 function stateRow(P, schemaName, pk, st) {
@@ -892,11 +963,20 @@ function initPopupTab() {
 }
 FE.renderPopupTab = renderPopupTab;
 
-/* 供布局编辑器跳转：选中某 popupKey 并切到弹出菜单页 */
+/* 供布局编辑器跳转：选中某 popupKey 并切到弹出菜单页。
+ * 与 jumpToDef 同理，必须**清掉该页的过滤**并**展开目标卡片** ——
+ * 键列表现在默认折叠、且可能正被搜索过滤，不清不展的话跳过来只看得到
+ * 一排收起的摘要行（甚至连目标都被筛掉了），用户会以为「点了没反应」。 */
 FE.jumpToPopupEditor = function (popupKey) {
   state.popupSelKey = popupKey || state.popupSelKey;
+  if (popupKey) {
+    var fi = $('popup-filter');
+    if (fi && fi.value) { fi.value = ''; if (FE.syncSearchClear) FE.syncSearchClear('popup-filter'); }
+    FE.ensureOpenSet('openPopupKeys')[popupKey] = true;
+  }
   FE.activateTab('tab-popup');
   renderPopupTab();
+  if (popupKey) FE.scrollToDefItem(popupKey, 'popup-keys', { hold: true });
 };
 
 function formatIssueListLocal(issues) {
