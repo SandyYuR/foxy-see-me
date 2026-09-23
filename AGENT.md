@@ -4,7 +4,7 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 421 / UI 693 / 真实文件体检 18 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 461 / UI 829 / 真实文件体检 20 个示例 0 错误。
 
 ### ⚠️ 本文件有两份，必须保持一致
 
@@ -124,9 +124,17 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 所以：**删/改示例要跑全量测试 + 重打包**；`test-core.js` 有直接读这些文件的断言，
 删了会连带红（历史上删 `弹出菜单.json` / `split2.json` 时就得同步改断言）。
 
+**示例的来源是工作区 `布局/` 文件夹**（20 个入库文件 = 16 布局 + 4 弹出菜单）。
+按用户要求做过一次整体替换，映射关系与**不能入库的文件**见 §4.8。
+
+> ⚠️ `布局/` 里有 3 个文件**不是键盘布局**，别当成示例丢进 `examples/`：
+> `符号.json` / `表情.json` / `颜文字.json` 的顶层是 `{multiLine, groups}`（符号面板数据），
+> 入库会让 `build-examples.js` 直接抛「无法判断示例类型」，体检器则报
+> 「layouts 必须是非空对象」。
+
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **421 core + 693 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **462 core + 824 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -177,7 +185,7 @@ foxy-editor/
 │   ├── macro-editor.js 「动作与宏」页的图形化编辑（纯逻辑 + UI；**依赖 key-dialog.js，须排其后**）
 │   ├── popup-editor.js 弹出菜单编辑（纯逻辑 + 该标签页 UI）
 │   └── jscolor/jscolor.js  vendor 取色器（GPLv3，**不要改**）
-├── examples/          示例源文件（18 个：15 布局 + 3 弹出菜单）
+├── examples/          示例源文件（20 个：16 布局 + 4 弹出菜单；源自工作区 `布局/`）
 ├── skills/            格式规范（随仓库分发的 skill 文档副本，**只读参考，别改**）
 │   ├── SKILL.md                       完整格式规范（面向 AI；含 Quick Start 与常见错误表）
 │   ├── foxy-keyboard-layout.schema.json  布局 profile 的 JSON Schema
@@ -378,6 +386,13 @@ UI 侧：`appendValidationDetails` 把可定位条目渲染成可点击项，
 `FE.issueLocatable(it)` 判断能否定位，`FE.locateIssue(it)` 切布局 / 切分体 → 选中目标键 →
 滚动到它（`scrollToSelection` 靠 `__chipLoc` / `__gridKey` 找节点，并展开所在卡片）。
 新增校验规则时**顺手带上 `code` 与坐标**，定位能力才覆盖得到。
+
+⚠️ **「校验详情」折叠块的展开态要存进 `state.metaDetailsOpen`**：
+`renderMeta()` 每次都 `clearEl` 重建整个 meta（含这个 `<details>`），
+而点条目定位走的是 `locateIssue → renderAll → renderMeta` —— 不记住展开态的话，
+用户每点一条错误详情就被收起，想连着看下一条得反复展开（用户报告的缺陷）。
+所以重建时按 `state.metaDetailsOpen` 回填 `open`，并挂 `toggle` 同步回 state。
+同理：**任何被 `clearEl` 重建的折叠块都要这样处理**，别只在 DOM 上留着 `open`。
 
 ### 4.3 预览渲染（app.js 的 `displayLabel` → `renderMeta` 一段）
 
@@ -589,6 +604,29 @@ var name = await FE.uiPrompt({ title, message, value, placeholder, required }); 
   改候选编辑 UI 只改这一处即可。
 - 布局联动：`collectLayoutPopupKeys()` 收集布局（含 split 片段）里用到的所有 popupKey，
   支持"一键补齐"当前 schema 缺失的键。
+  - ⚠️ 返回值是 `{ popupKey: [{ label, loc }] }`（**对象数组**，不是字符串数组）：
+    这样才能给「使用数」弹窗提供跳转坐标 —— 布局按键给布局坐标（`locateIssue` 用），
+    按键定义给 `{ defKind:'key', defName }`（`jumpToDef` 用）。
+    只要标签时用 `FE.popupUsageLabels(refs)`，**别再直接 `join`**。
+- ⭐ **键卡片与另三张列表同构**（用户要求）：默认**全部折叠**、带「使用 N」跳转按钮、
+  支持搜索。用 `FE.collapsibleDefItem`（app.js 导出）而不是自己写 `<details class="card">`：
+  - 折叠 + **懒建**是必须的：气泡示例 26+ 个键、每键两个状态行，全量建出来会白烧 CPU
+    （同 §4.10 的性能陷阱）。收起时正文被销毁。
+  - 展开态记在 `state.openPopupKeys`（`FE.ensureOpenSet('openPopupKeys')`）。
+  - 该组件对弹出菜单要传这几个**专用 opts**（都已支持，别再各写一份 DOM）：
+    - `extraClass: 'popup-key-card'` —— 测试与样式靠它挑出这类卡片；
+    - `usageKind: null` —— **不挂 `data-usage-kind`**。它的「被引用」数据源是
+      `collectLayoutPopupKeys`（哪些布局用了这个 popupKey），**不是**引用索引；
+      挂了 `data-*` 会被 `refreshUsageLabels()` 拿引用索引覆写成错数字。
+    - `onUsage` —— 自己拼 `popupUsageOf(refs)` 并调 `FE.showUsageDialog`；
+    - `onDelete` —— 删除的是 `popupProfile.schemas[...]`，不是 `state.profile[section]`。
+- 搜索（`#popup-filter`）：匹配文本 = popupKey + 各候选的 `popupCandidateLabel` /
+  `popupCandidateSummary`，所以「搜 q」命中键名、「搜 ā」命中把它当候选的键。
+  接线复用 `FE.wireSearch`（见 §4.12）。
+- ⚠️ **`FE.jumpToPopupEditor(popupKey)` 必须清过滤 + 展开目标卡片**：
+  键列表现在默认折叠、且可能正被搜索过滤，不清不展的话跳过来只看得到一排收起的
+  摘要行（甚至目标被筛掉），用户会以为「点了没反应」。与 `jumpToDef` 同一套路，
+  清过滤后同样要 `FE.syncSearchClear('popup-filter')`。
 - 预览模拟按键的标签：`findMockEff` 拿布局里第一个用该 popupKey 的按键的 eff，
   **按 `state.popupShifted` 套 `shiftedLabel` / 单字母转大写**（与键盘预览同规则）；
   候选气泡用的是 `popupCandidates(..., shifted)`。两者是独立逻辑，别混。
@@ -619,6 +657,32 @@ var name = await FE.uiPrompt({ title, message, value, placeholder, required }); 
   ```
   否则页面加载的还是旧内容。
 - `examples-bundle.js` 是生成物，**不要手改**（会与 `examples/` 失同步）。
+- 默认布局也由本脚本顺带产出：`examples/layout-variant.json` → `js/default-profile.js`。
+  **换掉 `layout-variant.json` 等于换掉编辑器的内置默认布局**，别无意中动它。
+
+#### 示例源 = 工作区 `布局/`（映射与排除项）
+
+`examples/` 是工作区 `布局/` 的镜像（按用户要求做过整体替换）。映射规则与注意点：
+
+| 工作区 `布局/` | → `examples/` |
+|---|---|
+| 顶层 `*.json` | 同名保留 |
+| `思无邪@foxy/layouts/X.json` | `X.json`（如 `思无邪.json`）|
+| `思无邪@foxy/popups/X.json` | `X-popup.json`（如 `气泡.json` → `气泡-popup.json`）|
+
+**排除项（不要入库）**：
+
+- `符号.json` / `表情.json` / `颜文字.json` —— 顶层 `{multiLine, groups}`，是符号面板数据，
+  **不是** keyboard-layout（入库会让本脚本与体检器双双报错）。
+- `简易/`（`definitions.json` + `layouts/*.json` + `popups/*.json`）—— **分包**，
+  薄布局单独校验有 1.6 万个「ref 无法解析」，必须与 `definitions.json` 合并才有效。
+  它保留在工作区里作为「多文件包导入」的实测语料（见 §4.9 / test-core 的 `布局/简易` 用例），
+  **不要**拆成单文件塞进 `examples/`。
+
+> 历史：`examples/split.json` 已被 `布局/split2.json` 取代（split2 是超集：
+> 多 `cangjie5` 的 split 片段与 `text_editor` 布局，布局数 3 → 4）。
+> 同步时 `test-core.js` / `test-ui.js` 里对 `split.json` 的硬引用、
+> 以及「布局 pill 数 = 3」的断言都已改为 4 —— 这类计数断言会被示例替换连带打破，**要一起改**。
 
 ### 4.9 多文件布局包导入（folder-import.js）⭐ 单入口，别退回单文件假设
 
@@ -764,8 +828,76 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
     每条目 `{ label, loc, via?, indirect? }`：
     - `loc = { layout, isSplit, sectionIndex, rowIndex, keyIndex, group }` → 跳布局按键
     - `loc = { popupKey }` → 跳弹出菜单页
-    - `loc = null` → 只读展示（引用发生在按键/动作/宏定义内部，没有布局坐标）
+    - `loc = { defKind: 'key'|'action'|'macro', defName }` → 跳定义列表里的那条定义
+    - `loc = null` → 只读展示（保留给确实无处可跳的来源）
+  - ⭐ **定义内部的引用必须带定义坐标**（别改回 `null`）：早期
+    `specRefs(profile.actions[an], …, null, 0)` / `nodeRefs(profile.keys[kn], …, null, 0)`
+    把「按键定义 / 动作定义 / 宏步骤」内部产生的引用标成无坐标，弹窗对无 `loc`
+    的条目**只渲染纯文本、不给跳转按钮**，于是「按键定义 k.chain」这类条目在
+    **动作与宏页**点不动（用户报告的缺陷）。现在三类都传
+    `{ defKind, defName }`，`showUsageDialog` 为它们渲染可点条目，
+    `jumpToUsage` 分派给 `FE.jumpToDef(kind, name)`：切到对应标签页、把该名字
+    写进展开集（动作/宏默认折叠）、清空该页搜索过滤（否则条目被筛掉、
+    `scrollToDefItem` 静默失败 = 点了没反应）、再滚动高亮。
+  - ⭐ **定位高亮是「持续」的，不是一闪而过**（用户明确要求）：
+    `FE.holdFlash(el, variant)` 加 `.flash-hold` 基类，
+    **一直亮到用户下一次点击或按键**才由 `FE.releaseFlashHold()` 撤掉。
+    - 为什么不用加长 `animation`：CSS 动画**表达不了**「持续到用户操作」——
+      时长写死就无从知道用户何时看到，1.2s 在高亮还没被扫到时就淡出了。
+    - 释放靠 `document` 上的 **capture** `pointerdown` / `keydown` 一次性监听。
+      用 capture 且不监听 `click`：跳转本身就是 click（或按钮上的 Enter）触发的，
+      那两个事件此刻已经发生过，所以不会刚亮就被自己解除。
+    - **同一时刻只保留一处高亮**：`holdFlash` 先撤上一处，否则连翻几页会亮一排。
+    - **三处定位统一走持续高亮**（跳转引用 / 新建条目 / 校验条目定位），
+      不再有「闪一下」的旧路径：`.def-flash` / `.issue-flash` 已删除，别再新加
+       （新建的条目虽在眼前，列表长了同样会被错过，统一持续更省心）。
+      ⭐ **颜色有三档，且布局按键按「来源」分**（详见 §4.12 的表）：
+      `.flash-hold` 蓝（新建 / 定义列表里的引用跳转目标）；
+      `.flash-hold.flash-hold-err` 红（**出错**：列表条目、以及校验详情跳到的布局按键）；
+      `.flash-hold.flash-hold-sel` 黄（布局按键，但只用于**非出错**跳转，
+      即从「使用数」弹窗跳过来）。
+      ⚠️ **别把布局按键写死成一个颜色**：两种来源落到的是同一个 `.chip-sel`，
+      只有调用方知道自己是哪一种，所以颜色必须由 `variant` 传进来。
+    - ⚠️ **红必须压过按键自带的黄框**：`.chip-sel` / `.gedit-key.chip-sel` 自带
+      `outline: 2px solid var(--sel)`，所以红要**改 outline 的颜色**（而不是再加一层）——
+      outline 只有一份、改色即替换，不会出现两条框套在一起的重复观感。
+      选择器必须 **3 个类**才压得过既有的 2 个类：
+
+      ```css
+      .chip.chip-sel.flash-hold-err,
+      .gedit-key.chip-sel.flash-hold-err { outline-color: var(--err); }
+      ```
+
+      写成 2 个类会被后者按同权重、后出现顺序覆盖掉。
+    - 黄则**不需要** outline 覆盖：没有两色相争，光晕叠在黄框外圈即可。
+    - 两者点击后都被 `releaseFlashHold` 摘掉 → 光晕/红框消失，
+      按键保持选中黄框（`state.sel` 没动）—— 与「点击后闪烁消失」的语义正好吻合。
+    - 历史：布局按键曾经一度**完全不加**（理由是"与黄框重复"）→ 改成红色 →
+      短暂改成黄色（"不突兀"）→ **最终定为按来源分**（校验红 / 引用黄）。
+    - ⚠️ `test/dom-stub.js` 的 **`document` 桩必须提供 `removeEventListener`**：
+      真实 document 有它，桩早期只做了 `DOMNode` 那份，于是任何「挂监听后解绑」
+      的代码在测试里直接 `TypeError`（持续高亮就是第一例）。
   - `FE.usageOf(index, kind, name)` → `{ count, places, items }`
+  - `FE.outgoingRefsOf(profile, kind, name)` → `[{ kind: 'action'|'macro', name, where }]`
+    —— **反向查询**：这条定义**自己用到了**哪些动作与宏。用户要求补上，
+    因为按键定义的 `tap: "my.action"` / `{ macro: "m" }` 这类引用以前在界面上
+    完全看不到，只能自己翻 JSON。`where` 是出现位置（`tap` / `swipe.down` /
+    `hold · start` / `步骤2` / `变体1 · tap`…），同一目标只留首次出现。
+    - ⭐ **只支持 `kind` = `'key'` 与 `'macro'`；`'action'` 恒返回 `[]`，别为它加分支**。
+      动作对象是**单一直接动作**（`type`/`key`/`modifier`/`text`/`switch_layout`/`app`），
+      结构上就没有 `action`/`actions`/`macro` 这类"指他"字段 ——
+      动作是最基础的条目，**只被引用、不会引用别人**（用户明确指出的领域规则）。
+      硬给它跑一遍只会得到空数组，让弹窗对动作冒出「它没有引用任何条目」的噪音。
+    - ⚠️ **基础 `ref` 不计入**：它在条目上已有 `ref: xxx` badge，且常指向
+      `rime.*` / `foxy.*` 内置键（不是「动作与宏」页的条目），收进来只会重复。
+    - 悬空引用**照样列出**（由调用方标「不存在」），不能因目标缺失而丢掉 ——
+      否则用户看不到「这个键引用了一个已被删的动作」。
+  - `FE.showUsageDialog(title, usage, outgoing)`：`outgoing` 是数组（含空数组）
+    时渲染第二节「引用（它用到的动作与宏）」，**不传（`undefined`）则只显示
+    「被谁引用」**，兼容旧调用。两节都在时列表加 `.usage-list-compact` 各矮一半。
+    - 调用侧因此要**按 kind 区分**：只有宏（与按键定义页）传 `outgoing`，
+      动作传 `undefined` —— 否则动作弹窗会多出一节「它没有引用…」的空噪音。
+      动作条目的按钮 tooltip 也相应是「查看它被谁引用」。
   - `FE.currentRefIndex()` 带缓存；`FE.invalidateRefIndex()` 作废缓存
   - `FE.countKeyUsage(name)` 单次查询（旧 API，保持兼容）
 - ⚠️ **必须单遍扫描**：`buildRefIndex` 一次走完配置、把所有名字的引用一起收集。
@@ -794,25 +926,49 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
 - **摘要行内的按钮**（动作/宏条目）：都在 `<summary>` 里，**必须 `stopEv(e)`**
   （`preventDefault` + `stopPropagation`），否则点按钮会连带展开/收起。
 
-### 4.12 定义列表的工具条（搜索 + 新建）⭐ 三页必须同构
+### 4.12 定义列表的工具条（搜索 + 新建）⭐ 四张列表必须同构
 
-按键定义 / 动作 / 宏 三张列表共用同一套工具条，**外观与行为完全一致**（用户明确要求同步）：
+按键定义 / 动作 / 宏 / **弹出菜单键** 四张列表共用同一套工具条，
+**外观与行为完全一致**（用户明确要求同步；弹出菜单键是后补的第四张列表）。
+
+⚠️ **「列表」与「页签」不是一回事**（措辞别混，曾把「四张列表」写成「四个页签」）：
+四张列表落在**三个页签**里 —— 按键定义 1 张、**动作与宏 2 张**（动作 + 宏）、
+弹出菜单 1 张。而顶部共 4 个页签（多一个「布局编辑」，它不是列表页、没有搜索框）。
+搜索框因此也是 **3 个页签里的 4 个**：`keys-` / `actions-` / `macros-` / `popup-filter`。
 
 ```
 .def-toolbar                  ← 一行，可换行
-  ├── .def-tool-group         ← 搜索组：输入框 + 「搜索」按钮
-  └── .def-tool-group         ← 新建组：输入框 + 「+ 新建…」按钮
+  ├── .def-tool-group         ← 搜索组：.search-wrap（输入框 + ✕）+ 「搜索」按钮
+  └── .def-tool-group         ← 新建组：输入框 + 「+ 新建…」按钮（仅前三张列表有）
 ```
 
-- **结构写在 `index.html` 的静态 HTML 里**（不在 JS 里现渲染），三个列表各一份，
-  id 规律：`<前缀>-filter` / `<前缀>-search` / `<前缀>-new` / `<前缀>-add`，
-  前缀分别是 `keys` / `actions` / `macros`。
+- **结构写在 `index.html` 的静态 HTML 里**（不在 JS 里现渲染），各列表一份，
+  id 规律：`<前缀>-filter` / `<前缀>-search` / `<前缀>-filter-clear`
+  （+ 前三张列表另有 `<前缀>-new` / `<prefix>-add`），
+  前缀分别是 `keys` / `actions` / `macros` / `popup`。
   ⚠️ 改这里必须同步 `test/dom-stub.js` 的 `buildSkeleton()`，否则 UI 测试全崩。
-- **接线统一在 `initToolbar()` 的 `wireSearch()` / `wireAdd()`**：
-  - `wireSearch`：`input` 即时过滤 **+** 按钮显式触发 **+** 回车触发。
-    为什么两者都要：手机输入法有时不派发 `input`，按钮是兜底；桌面则习惯边打边筛。
+- **接线统一走 `FE.wireSearch()`（app.js 模块作用域）+ `initToolbar()` 的 `wireAdd()`**：
+  - `wireSearch(inputId, btnId, render, clearId)`：`input` 即时过滤 **+** 按钮显式触发
+    **+** 回车触发。为什么两者都要：手机输入法有时不派发 `input`，按钮是兜底；
+    桌面则习惯边打边筛。
+    - 它是 **`FE.*` 导出的**，因为 `popup-editor.js` 也要接（各写一份必然漂移）。
+      ⚠️ 不要再在 `initToolbar()` 里定义同名内部函数 —— 会遮蔽导出那份，
+      而那份不认识 ✕ 清空按钮。
   - `wireAdd`：输入框 + 按钮（不再用 `prompt`）。`opts.openKey` 传给可折叠列表，
     新建后写进 `openSet` 从而**默认展开**；按键定义不是折叠条目，不传该字段。
+- ⭐ **搜索框内的 ✕ 清空按钮**（`clearId`，用户要求三页签里的四个搜索框都加）：
+  - **空框时隐藏**（`hidden`）：空框上留个 ✕ 是干扰。显隐由 `syncClear()` 维护。
+  - 点击后：清空 → 重渲染 → **把焦点还给输入框**。用户点 ✕ 的意图是「重新输入」，
+    焦点跑掉还得再点一次输入框。
+  - 结构是 `.search-wrap > .mini-input + .search-clear`（wrap 相对定位，✕ 绝对定位
+    在框内右内侧，并给 input 留 `padding-right`）。
+    ⚠️ **CSS 尺寸规则要同时覆盖直接子元素与 wrap 内的 input**：
+    只写 `.def-tool-group > .mini-input` 的话，包起来之后那条规则失效
+    （input 不再是 group 的直接子元素），输入框会缩成默认宽度。
+  - ⚠️ **程序化改过滤值时必须显式 `FE.syncSearchClear(inputId)`**：
+    直接写 `input.value` **不派发 `input` 事件**，✕ 的显隐会停在旧状态
+    （框已空却还挂着 ✕）。已知调用点：`jumpToDef`（切页前清过滤）、
+    `FE.jumpToPopupEditor`（同）。这条是实测抓出来的，不是推测。
 - **过滤文本**：按键定义 = 名字 + `ref`；动作 = 名字 + `actionDisplay` 摘要；
   宏 = 名字 + `describeMacroSteps` 摘要。所以「搜 CTRL」「搜 HOME」都能命中，
   不只是按名字（`defMatch()` + `defFilterValue()`）。
@@ -1013,11 +1169,11 @@ cd foxy-editor
 node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
-node test/test-core.js       # 期望：421 通过, 0 失败
-node test/test-ui.js         # 期望：693 通过, 0 失败
+node test/test-core.js       # 期望：462 通过, 0 失败
+node test/test-ui.js         # 期望：824 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
-node test/check-real-files.js   # 期望：共 18 个文件，0 个存在错误
+node test/check-real-files.js   # 期望：共 20 个文件，0 个存在错误
 
 # 5) 改过本文件（AGENT.md）就同步两处副本（见开头「本文件有两份」）
 node tools/check-agent-sync.js --write
@@ -1037,6 +1193,6 @@ node tools/check-agent-sync.js --write
 
 ### 版本信息（改动可能影响这些对外说法）
 
-- 测试基线：core **421** / UI **693** / 示例 **18**（15 布局 + 3 弹出菜单）
+- 测试基线：core **461** / UI **829** / 示例 **20**（16 布局 + 4 弹出菜单）
 - 仓库 `README.md` 里的功能描述与 `index.html` 的图例，与实现同步维护；
   新增用户可见功能时一并更新，避免文档漂移。
