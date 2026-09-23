@@ -1,0 +1,34 @@
+{
+  "type": "foxy.popup-profile",
+  "author": "Simplified: pinyin tones + uppercase A-Z + swipe.up symbols",
+  "schemas": {
+    "default": {
+      "a": { "normal": ["A", "@", "ā", "á", "ǎ", "à"] },
+      "b": { "normal": ["B", "%"] },
+      "c": { "normal": ["C", "'"] },
+      "d": { "normal": ["D", "#"] },
+      "e": { "normal": ["E", "3", "ē", "é", "ě", "è", "ê", "ê̄", "ế", "ê̌", "ề"] },
+      "f": { "normal": ["F", "*"] },
+      "g": { "normal": ["G", "+"] },
+      "h": { "normal": ["H", "-"] },
+      "i": { "normal": ["I", "8", "ī", "í", "ǐ", "ì"] },
+      "j": { "normal": ["J", "\\"] },
+      "k": { "normal": ["K", "("] },
+      "l": { "normal": ["L", ")"] },
+      "m": { "normal": ["M", "/", "m̄", "ḿ", "m̌", "m̀"] },
+      "n": { "normal": ["N", ":", "n̄", "ń", "ň", "ǹ"] },
+      "o": { "normal": ["O", "9", "ō", "ó", "ǒ", "ò"] },
+      "p": { "normal": ["P", "0"] },
+      "q": { "normal": ["Q", "1"] },
+      "r": { "normal": ["R", "4"] },
+      "s": { "normal": ["S", "^"] },
+      "t": { "normal": ["T", "5"] },
+      "u": { "normal": ["U", "7", "ū", "ú", "ǔ", "ù"] },
+      "v": { "normal": ["V", ";", "ü", "ǖ", "ǘ", "ǚ", "ǜ"] },
+      "w": { "normal": ["W", "2"] },
+      "x": { "normal": ["X", "\""] },
+      "y": { "normal": ["Y", "6"] },
+      "z": { "normal": ["Z", "`"] }
+    }
+  }
+}

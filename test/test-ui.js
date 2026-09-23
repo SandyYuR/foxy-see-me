@@ -1574,11 +1574,11 @@ await sleep(350);
 
   /* ==================== 分体布局（split） ==================== */
   console.log('== 分体布局（split）==');
-  $('op-example').value = 'split.json';
+  $('op-example').value = 'split2.json';
   $('op-load-example').click();
-  ok(!!FE.state.profile.layouts.default && FE.state.profile.layouts.default.split, 'split.json 示例加载且含 split 片段');
+  ok(!!FE.state.profile.layouts.default && FE.state.profile.layouts.default.split, 'split2.json 示例加载且含 split 片段');
   ok(q('.split-banner').length === 1, '区段编辑器渲染分体横幅');
-  ok(q('#layout-tabs .pill').length === 3, '布局 pill 数不变');
+  eq(q('#layout-tabs .pill').length, 4, '布局 pill 数 = 4（split2 比旧 split.json 多 text_editor）');
 
   /* 分体横屏只加宽：行高、字号都不动；切回竖屏行高恢复（回退 W/2 反推） */
   $('preview-kb').clientWidth = 380;
@@ -1607,11 +1607,11 @@ await sleep(350);
   eq(q('.kb-label', q('.kb-key')[0])[0].style.fontSize, portraitLabelFs, '切回竖屏后字号恢复');
   ok(q('.kb-key.kb-spacer').length === 0, '常规预览无 Spacer（此布局）');
 
-  /* split.json 的 default 常规无 Spacer，分体有 → 数量应不同 */
+  /* split2.json 的 default 常规无 Spacer，分体有 → 数量应不同 */
   $('pt-split').checked = true;
   $('pt-split')._fire('change');
   const spacerCount = q('.kb-key.kb-spacer').length;
-  ok(spacerCount >= 3, 'split.json 分体至少 3 个 Spacer（每行一个）');
+  ok(spacerCount >= 3, 'split2.json 分体至少 3 个 Spacer（每行一个）');
   $('pt-split').checked = false;
   $('pt-split')._fire('change');
 
@@ -1721,7 +1721,7 @@ await sleep(350);
   $('popup-json-apply').click();
   ok(!!FE.state.popupProfile.schemas.default.z, '载入最小弹出菜单');
   ok(Object.keys(FE.state.popupProfile.schemas.default).length === 1, '当前弹出菜单只有 z 键');
-  $('op-example').value = 'split.json';
+  $('op-example').value = 'split2.json';
   $('op-load-example').click();
   tabs[3]._fire('click');
   ok($('popup-validation').textContent.indexOf('布局使用') >= 0, '校验行显示布局使用 popupKey 统计');
@@ -1754,7 +1754,7 @@ await sleep(350);
    * 注意此前小节把 popupProfile 换成了只含 z 的集合，这里先补齐缺失键，
    * 保证 q 有候选可渲染（与真实使用流程一致）。 */
   console.log('== 主对话框弹出菜单 section（有 popupKey） ==');
-  $('op-example').value = 'split.json';
+  $('op-example').value = 'split2.json';
   $('op-load-example').click();
   tabs[3]._fire('click');
   const missBtn2 = q('.popup-missing .mini-button')[0];
@@ -1767,7 +1767,7 @@ await sleep(350);
     '恢复气泡示例后 q 有 normal 候选');
   tabs[0]._fire('click');
   documentStub._openDialogs.length = 0;
-  q('.kb-key')[0].click(); /* split.json 首键 qwerty.q 自带 popupKey=q */
+  q('.kb-key')[0].click(); /* split2.json 首键 qwerty.q 自带 popupKey=q */
   const pdlg = documentStub._openDialogs[0];
   ok(pdlg.querySelectorAll('.popup-section').length === 1, '有 popupKey 时 section 存在');
   const pSubs = pdlg.querySelectorAll('.popup-section .popup-cand');

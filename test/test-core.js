@@ -326,12 +326,16 @@ FE.state.profile = profile;
 
 /* ---------------- 分体布局（split） ---------------- */
 console.log('== 分体布局（split） ==');
-const splitRaw = fs.readFileSync(path.join(exDir, 'split.json'), 'utf8');
+/* 示例源已换成工作区 布局/split2.json（旧 examples/split.json 已移除）：
+ * split2 = split.json 的超集，多出 cangjie5 的 split 片段与 text_editor 布局。 */
+const splitRaw = fs.readFileSync(path.join(exDir, 'split2.json'), 'utf8');
 const splitP = FE.normalizeProfile(JSON.parse(FE.sanitizeJsonText(splitRaw)));
-ok(splitP.layouts.default && splitP.layouts.default.split, 'split.json 的 default 含 split 片段');
+ok(splitP.layouts.default && splitP.layouts.default.split, 'split2.json 的 default 含 split 片段');
 ok(Array.isArray(splitP.layouts.default.split.sections), 'split 片段含 sections 数组');
+eq(Object.keys(splitP.layouts), ['default', 'cangjie5', 'numpad', 'text_editor'], 'split2.json 含 4 个布局（比旧 split.json 多 text_editor）');
+ok(!!(splitP.layouts.cangjie5 && splitP.layouts.cangjie5.split), 'cangjie5 也含 split 片段');
 FE.state.profile = splitP;
-eq(FE.validateProfile(splitP).errors, [], 'split.json 校验无错误');
+eq(FE.validateProfile(splitP).errors, [], 'split2.json 校验无错误');
 /* split 片段非法时被拒绝 */
 const badSplit = FE.normalizeProfile(JSON.parse(FE.sanitizeJsonText(splitRaw)));
 badSplit.layouts.default.split = { sections: [{ type: 'rows', rows: [[{ ref: 'no.such.key' }]] }] };

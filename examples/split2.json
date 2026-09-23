@@ -7,6 +7,12 @@
       "weight": 1.5,
       "keyType": "FUNCTION",
       "icon": "shift",
+      "swipe": {
+        "down": {
+          "action": { "type": "app", "command": "text_editor" },
+          "label": "编辑"
+        }
+      },
       "longPress": {
         "label": "⇪",
         "action": []
@@ -379,7 +385,7 @@
                 {"ref": "qwerty.h"}, {"ref": "qwerty.j"}, {"ref": "qwerty.k"}, {"ref": "qwerty.l"}, {"ref": "qwerty.semicolon"}
               ],
               [
-                {"ref": "qwerty.shift", "weight": 1, "override": {"swipe": {"up": {"ref": "foxy.Redo", "label": "重做"}}}},
+                {"ref": "qwerty.shift", "weight": 1, "override": {"swipe": {"up": {"ref": "foxy.Redo", "label": "重做"}, "down": {"action": {"type": "app", "command": "text_editor"}, "label": "Edit"}}}},
                 {"ref": "qwerty.z"}, {"ref": "qwerty.x"}, {"ref": "qwerty.c"}, {"ref": "qwerty.v"},
                 {"ref": "foxy.Spacer", "weight": 4},
                 {"ref": "qwerty.v"}, {"ref": "qwerty.b"}, {"ref": "qwerty.n"}, {"ref": "qwerty.m"}, {"ref": "qwerty.backspace", "weight": 1}
@@ -400,6 +406,73 @@
       "variants": [
         { "when": { "rime": { "ascii_mode": true } }, "layout": "default" }
       ],
+      "split": {
+        "sections": [
+          {
+            "type": "rows",
+            "rows": [
+              {
+                "totalWeight": 14,
+                "keys": [
+                  {"ref": "qwerty.q", "override": {"label": "手", "shiftedLabel": "Q"}},
+                  {"ref": "qwerty.w", "override": {"label": "田", "shiftedLabel": "W"}},
+                  {"ref": "qwerty.e", "override": {"label": "水", "shiftedLabel": "E"}},
+                  {"ref": "qwerty.r", "override": {"label": "口", "shiftedLabel": "R"}},
+                  {"ref": "qwerty.t", "override": {"label": "廿", "shiftedLabel": "T"}},
+                  {"ref": "foxy.Spacer", "weight": "auto"},
+                  {"ref": "qwerty.y", "override": {"label": "卜", "shiftedLabel": "Y"}},
+                  {"ref": "qwerty.u", "override": {"label": "山", "shiftedLabel": "U"}},
+                  {"ref": "qwerty.i", "override": {"label": "戈", "shiftedLabel": "I"}},
+                  {"ref": "qwerty.o", "override": {"label": "人", "shiftedLabel": "O"}},
+                  {"ref": "qwerty.p", "override": {"label": "心", "shiftedLabel": "P"}}
+                ]
+              },
+              {
+                "totalWeight": 14,
+                "keys": [
+                  {"ref": "qwerty.a", "override": {"label": "日", "shiftedLabel": "A"}},
+                  {"ref": "qwerty.s", "override": {"label": "尸", "shiftedLabel": "S"}},
+                  {"ref": "qwerty.d", "override": {"label": "木", "shiftedLabel": "D"}},
+                  {"ref": "qwerty.f", "override": {"label": "火", "shiftedLabel": "F"}},
+                  {"ref": "qwerty.g", "override": {"label": "土", "shiftedLabel": "G"}},
+                  {"ref": "foxy.Spacer", "weight": "auto"},
+                  {"ref": "qwerty.g", "override": {"label": "土", "shiftedLabel": "G"}},
+                  {"ref": "qwerty.h", "override": {"label": "竹", "shiftedLabel": "H"}},
+                  {"ref": "qwerty.j", "override": {"label": "十", "shiftedLabel": "J"}},
+                  {"ref": "qwerty.k", "override": {"label": "大", "shiftedLabel": "K"}},
+                  {"ref": "qwerty.l", "override": {"label": "中", "shiftedLabel": "L"}}
+                ]
+              },
+              {
+                "totalWeight": 14,
+                "keys": [
+                  {"ref": "qwerty.shift", "weight": 1, "override": {"swipe": {"up": {"ref": "foxy.Redo", "label": "重做"}, "down": {"action": {"type": "app", "command": "text_editor"}, "label": "Edit"}}}},
+                  {"ref": "qwerty.z", "override": {"label": "符", "shiftedLabel": "Z"}},
+                  {"ref": "qwerty.x", "override": {"label": "難", "shiftedLabel": "X"}},
+                  {"ref": "qwerty.c", "override": {"label": "金", "shiftedLabel": "C"}},
+                  {"ref": "qwerty.v", "override": {"label": "女", "shiftedLabel": "V"}},
+                  {"ref": "foxy.Spacer", "weight": "auto"},
+                  {"ref": "qwerty.v", "override": {"label": "女", "shiftedLabel": "V"}},
+                  {"ref": "qwerty.b", "override": {"label": "月", "shiftedLabel": "B"}},
+                  {"ref": "qwerty.n", "override": {"label": "弓", "shiftedLabel": "N"}},
+                  {"ref": "qwerty.m", "override": {"label": "一", "shiftedLabel": "M"}},
+                  {"ref": "qwerty.backspace", "weight": 1 }
+                ]
+              },
+              {
+                "totalWeight": 14,
+                "keys": [
+                  {"ref": "qwerty.layout", "weight": 1},
+                  {"ref": "qwerty.comma"},
+                  {"ref": "qwerty.space", "weight": "auto"},
+                  {"ref": "qwerty.period"},
+                  {"ref": "qwerty.enter", "weight": 1}
+                ]
+              }
+            ]
+          }
+        ]
+      },
       "sections": [
         {
           "type": "rows",
@@ -523,6 +596,23 @@
               "ref": "rime.KP_Enter",
               "override": { "keyType": "ACTION", "icon": "enter" }
             }
+          ]
+        }
+      ]
+    },
+    "text_editor": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              { "ref": "foxy.LayoutDefault" },
+              { "ref": "foxy.SelectAll", "override": { "label": "全选", "keyType": "FUNCTION" } },
+              { "ref": "foxy.Cut", "override": { "label": "剪切", "keyType": "FUNCTION" } },
+              { "ref": "foxy.Copy", "override": { "label": "复制", "keyType": "FUNCTION" } },
+              { "ref": "foxy.Paste", "override": { "label": "粘贴", "keyType": "FUNCTION" } },
+              { "ref": "qwerty.backspace", "weight": 1, "override": { "label": "退格" } }
+            ]
           ]
         }
       ]

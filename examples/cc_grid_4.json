@@ -1,0 +1,423 @@
+{
+   "author": "全鍵盤(一鍵變3*4鍵 grid 48*15)",
+    "keys": {},
+    "layouts": {
+        "default": {
+            "sections": [
+                {
+                    "type": "grid",
+                    "columns": 48,
+                    "rows": 15,
+                    "keys": [
+
+                        { "column":  0, "row": 0,"columnSpan": 3,"rowSpan": 3, "ref": "rime.1", "label": "ㄅ", "swipe": { "up": { "ref": "rime.exclam", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "1", "tap": { "type": "commit", "text": "1" }, "swipe": { "up": { "type": "commit", "text": "!", "label": "!" } } }] },
+                        { "column":  4, "row": 0,"columnSpan": 3,"rowSpan": 3, "ref": "rime.2", "label": "ㄉ", "swipe": { "up": { "ref": "rime.at", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "2", "tap": { "type": "commit", "text": "2" }, "swipe": { "up": { "type": "commit", "text": "@", "label": "@" } } }] },
+                        { "column":  8, "row": 0,"columnSpan": 3,"rowSpan": 3, "ref": "rime.3", "label": "ˇ", "swipe": { "up": { "ref": "rime.numbersign", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "3", "tap": { "type": "commit", "text": "3" }, "swipe": { "up": { "type": "commit", "text": "#", "label": "#" } } }] },
+                        { "column": 12, "row": 0,"columnSpan": 3,"rowSpan": 3, "ref": "rime.4", "label": "ˋ", "swipe": { "up": { "ref": "rime.dollar", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "4", "tap": { "type": "commit", "text": "4" }, "swipe": { "up": { "type": "commit", "text": "$", "label": "$" } } }] },
+                        { "column": 16, "row": 0,"columnSpan": 3,"rowSpan": 3, "ref": "rime.5", "label": "ㄓ", "swipe": { "up": { "ref": "rime.percent", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "5", "tap": { "type": "commit", "text": "5" }, "swipe": { "up": { "type": "commit", "text": "%", "label": "%" } } }] },
+                        { "column": 20, "row": 0,"columnSpan": 3,"rowSpan": 3, "ref": "rime.6", "label": "ˊ", "swipe": { "up": { "ref": "rime.asciicircum", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "6", "tap": { "type": "commit", "text": "6" }, "swipe": { "up": { "type": "commit", "text": "^", "label": "^" } } }] },
+                        { "column": 24, "row": 0,"columnSpan": 3,"rowSpan": 3, "ref": "rime.7", "label": "˙", "swipe": { "up": { "ref": "rime.ampersand", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "7", "tap": { "type": "commit", "text": "7" }, "swipe": { "up": { "type": "commit", "text": "&", "label": "&" } } }] },
+                        { "column": 28, "row": 0,"columnSpan": 3,"rowSpan": 3, "ref": "rime.8", "label": "ㄚ", "swipe": { "up": { "ref": "rime.asterisk", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "8", "tap": { "type": "commit", "text": "8" }, "swipe": { "up": { "type": "commit", "text": "*", "label": "*" } } }] },
+                        { "column": 32, "row": 0,"columnSpan": 3,"rowSpan": 3, "ref": "rime.9", "label": "ㄞ", "swipe": { "up": { "ref": "rime.parenleft", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "9", "tap": { "type": "commit", "text": "9" }, "swipe": { "up": { "type": "commit", "text": "(", "label": "(" } } }] },
+                        { "column": 36, "row": 0,"columnSpan": 3,"rowSpan": 3, "ref": "rime.0", "label": "ㄢ", "swipe": { "up": { "ref": "rime.parenright", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "0", "tap": { "type": "commit", "text": "0" }, "swipe": { "up": { "type": "commit", "text": ")", "label": ")" } } }] },
+                        { "column": 40, "row": 0,"columnSpan": 3,"rowSpan": 3, "ref": "rime.minus", "label": "ㄦ", "swipe": { "up": { "type": "key", "key": "MINUS", "meta": ["SHIFT"], "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "-", "tap": { "type": "commit", "text": "-" }, "swipe": { "up": { "type": "commit", "text": "_", "label": "_" } } }] },
+                        { "column": 44, "row": 0,"columnSpan": 3,"rowSpan": 3, "ref": "rime.equal", "label": "=", "swipe": { "up": { "type": "key", "key": "PLUS" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "=", "tap": { "type": "commit", "text": "=" }, "swipe": { "up": { "type": "commit", "text": "+", "label": "+" } } }] },
+
+                        { "column":  3, "row": 0,"columnSpan": 1,"rowSpan": 1, "ref": "rime.1", "label": "!", "swipe": { "up": { "ref": "rime.exclam", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "!", "tap": { "type": "commit", "text": "1" }, "swipe": { "up": { "type": "commit", "text": "!", "label": "!" } } }] },
+                        { "column":  7, "row": 0,"columnSpan": 1,"rowSpan": 1, "ref": "rime.2", "label": "@", "swipe": { "up": { "ref": "rime.at", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "@", "tap": { "type": "commit", "text": "2" }, "swipe": { "up": { "type": "commit", "text": "@", "label": "@" } } }] },
+                        { "column": 11, "row": 0,"columnSpan": 1,"rowSpan": 1, "ref": "rime.3", "label": "#", "swipe": { "up": { "ref": "rime.numbersign", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "#", "tap": { "type": "commit", "text": "3" }, "swipe": { "up": { "type": "commit", "text": "#", "label": "#" } } }] },
+                        { "column": 15, "row": 0,"columnSpan": 1,"rowSpan": 1, "ref": "rime.4", "label": "$", "swipe": { "up": { "ref": "rime.dollar", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "$", "tap": { "type": "commit", "text": "4" }, "swipe": { "up": { "type": "commit", "text": "$", "label": "$" } } }] },
+                        { "column": 19, "row": 0,"columnSpan": 1,"rowSpan": 1, "ref": "rime.5", "label": "%", "swipe": { "up": { "ref": "rime.percent", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "%", "tap": { "type": "commit", "text": "5" }, "swipe": { "up": { "type": "commit", "text": "%", "label": "%" } } }] },
+                        { "column": 23, "row": 0,"columnSpan": 1,"rowSpan": 1, "ref": "rime.6", "label": "^", "swipe": { "up": { "ref": "rime.asciicircum", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "^", "tap": { "type": "commit", "text": "6" }, "swipe": { "up": { "type": "commit", "text": "^", "label": "^" } } }] },
+                        { "column": 27, "row": 0,"columnSpan": 1,"rowSpan": 1, "ref": "rime.7", "label": "&", "swipe": { "up": { "ref": "rime.ampersand", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "&", "tap": { "type": "commit", "text": "7" }, "swipe": { "up": { "type": "commit", "text": "&", "label": "&" } } }] },
+                        { "column": 31, "row": 0,"columnSpan": 1,"rowSpan": 1, "ref": "rime.8", "label": "*", "swipe": { "up": { "ref": "rime.asterisk", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "*", "tap": { "type": "commit", "text": "8" }, "swipe": { "up": { "type": "commit", "text": "*", "label": "*" } } }] },
+                        { "column": 35, "row": 0,"columnSpan": 1,"rowSpan": 1, "ref": "rime.9", "label": "(", "swipe": { "up": { "ref": "rime.parenleft", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "(", "tap": { "type": "commit", "text": "9" }, "swipe": { "up": { "type": "commit", "text": "(", "label": "(" } } }] },
+                        { "column": 39, "row": 0,"columnSpan": 1,"rowSpan": 1, "ref": "rime.0", "label": ")", "swipe": { "up": { "ref": "rime.parenright", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": ")", "tap": { "type": "commit", "text": "0" }, "swipe": { "up": { "type": "commit", "text": ")", "label": ")" } } }] },
+                        { "column": 43, "row": 0,"columnSpan": 1,"rowSpan": 1, "ref": "rime.minus", "label": "_", "swipe": { "up": { "type": "key", "key": "MINUS", "meta": ["SHIFT"], "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "_", "tap": { "type": "commit", "text": "-" }, "swipe": { "up": { "type": "commit", "text": "_", "label": "_" } } }] },
+                        { "column": 47, "row": 0,"columnSpan": 1,"rowSpan": 1, "ref": "rime.equal", "label": "+", "swipe": { "up": { "type": "key", "key": "PLUS" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "+", "tap": { "type": "commit", "text": "=" }, "swipe": { "up": { "type": "commit", "text": "+", "label": "+" } } }] },
+
+                        { "column":  3, "row": 1,"columnSpan": 1,"rowSpan": 1, "ref": "rime.1", "label": "1", "swipe": { "up": { "ref": "rime.exclam", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "1" }, "swipe": { "up": { "type": "commit", "text": "!", "label": "!" } } }] },
+                        { "column":  7, "row": 1,"columnSpan": 1,"rowSpan": 1, "ref": "rime.2", "label": "2", "swipe": { "up": { "ref": "rime.at", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "2" }, "swipe": { "up": { "type": "commit", "text": "@", "label": "@" } } }] },
+                        { "column": 11, "row": 1,"columnSpan": 1,"rowSpan": 1, "ref": "rime.3", "label": "3", "swipe": { "up": { "ref": "rime.numbersign", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "3" }, "swipe": { "up": { "type": "commit", "text": "#", "label": "#" } } }] },
+                        { "column": 15, "row": 1,"columnSpan": 1,"rowSpan": 1, "ref": "rime.4", "label": "4", "swipe": { "up": { "ref": "rime.dollar", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "4" }, "swipe": { "up": { "type": "commit", "text": "$", "label": "$" } } }] },
+                        { "column": 19, "row": 1,"columnSpan": 1,"rowSpan": 1, "ref": "rime.5", "label": "5", "swipe": { "up": { "ref": "rime.percent", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "5" }, "swipe": { "up": { "type": "commit", "text": "%", "label": "%" } } }] },
+                        { "column": 23, "row": 1,"columnSpan": 1,"rowSpan": 1, "ref": "rime.6", "label": "6", "swipe": { "up": { "ref": "rime.asciicircum", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "6" }, "swipe": { "up": { "type": "commit", "text": "^", "label": "^" } } }] },
+                        { "column": 27, "row": 1,"columnSpan": 1,"rowSpan": 1, "ref": "rime.7", "label": "7", "swipe": { "up": { "ref": "rime.ampersand", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "7" }, "swipe": { "up": { "type": "commit", "text": "&", "label": "&" } } }] },
+                        { "column": 31, "row": 1,"columnSpan": 1,"rowSpan": 1, "ref": "rime.8", "label": "8", "swipe": { "up": { "ref": "rime.asterisk", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "8" }, "swipe": { "up": { "type": "commit", "text": "*", "label": "*" } } }] },
+                        { "column": 35, "row": 1,"columnSpan": 1,"rowSpan": 1, "ref": "rime.9", "label": "9", "swipe": { "up": { "ref": "rime.parenleft", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "9" }, "swipe": { "up": { "type": "commit", "text": "(", "label": "(" } } }] },
+                        { "column": 39, "row": 1,"columnSpan": 1,"rowSpan": 1, "ref": "rime.0", "label": "0", "swipe": { "up": { "ref": "rime.parenright", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "0" }, "swipe": { "up": { "type": "commit", "text": ")", "label": ")" } } }] },
+                        { "column": 43, "row": 1,"columnSpan": 1,"rowSpan": 1, "ref": "rime.minus", "label": "-", "swipe": { "up": { "type": "key", "key": "MINUS", "meta": ["SHIFT"], "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "-" }, "swipe": { "up": { "type": "commit", "text": "_", "label": "_" } } }] },
+                        { "column": 47, "row": 1,"columnSpan": 1,"rowSpan": 1, "ref": "rime.equal", "label": "", "swipe": { "up": { "type": "key", "key": "PLUS" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "=" }, "swipe": { "up": { "type": "commit", "text": "+", "label": "+" } } }] },
+
+                        { "column":  3, "row": 2,"columnSpan": 1,"rowSpan": 1, "ref": "rime.1", "label": "", "swipe": { "up": { "ref": "rime.exclam", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "1" }, "swipe": { "up": { "type": "commit", "text": "!", "label": "!" } } }] },
+                        { "column":  7, "row": 2,"columnSpan": 1,"rowSpan": 1, "ref": "rime.2", "label": "", "swipe": { "up": { "ref": "rime.at", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "2" }, "swipe": { "up": { "type": "commit", "text": "@", "label": "@" } } }] },
+                        { "column": 11, "row": 2,"columnSpan": 1,"rowSpan": 1, "ref": "rime.3", "label": "", "swipe": { "up": { "ref": "rime.numbersign", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "3" }, "swipe": { "up": { "type": "commit", "text": "#", "label": "#" } } }] },
+                        { "column": 15, "row": 2,"columnSpan": 1,"rowSpan": 1, "ref": "rime.4", "label": "", "swipe": { "up": { "ref": "rime.dollar", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "4" }, "swipe": { "up": { "type": "commit", "text": "$", "label": "$" } } }] },
+                        { "column": 19, "row": 2,"columnSpan": 1,"rowSpan": 1, "ref": "rime.5", "label": "", "swipe": { "up": { "ref": "rime.percent", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "5" }, "swipe": { "up": { "type": "commit", "text": "%", "label": "%" } } }] },
+                        { "column": 23, "row": 2,"columnSpan": 1,"rowSpan": 1, "ref": "rime.6", "label": "", "swipe": { "up": { "ref": "rime.asciicircum", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "6" }, "swipe": { "up": { "type": "commit", "text": "^", "label": "^" } } }] },
+                        { "column": 27, "row": 2,"columnSpan": 1,"rowSpan": 1, "ref": "rime.7", "label": "", "swipe": { "up": { "ref": "rime.ampersand", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "7" }, "swipe": { "up": { "type": "commit", "text": "&", "label": "&" } } }] },
+                        { "column": 31, "row": 2,"columnSpan": 1,"rowSpan": 1, "ref": "rime.8", "label": "", "swipe": { "up": { "ref": "rime.asterisk", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "8" }, "swipe": { "up": { "type": "commit", "text": "*", "label": "*" } } }] },
+                        { "column": 35, "row": 2,"columnSpan": 1,"rowSpan": 1, "ref": "rime.9", "label": "", "swipe": { "up": { "ref": "rime.parenleft", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "9" }, "swipe": { "up": { "type": "commit", "text": "(", "label": "(" } } }] },
+                        { "column": 39, "row": 2,"columnSpan": 1,"rowSpan": 1, "ref": "rime.0", "label": "", "swipe": { "up": { "ref": "rime.parenright", "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "0" }, "swipe": { "up": { "type": "commit", "text": ")", "label": ")" } } }] },
+                        { "column": 43, "row": 2,"columnSpan": 1,"rowSpan": 1, "ref": "rime.minus", "label": "", "swipe": { "up": { "type": "key", "key": "MINUS", "meta": ["SHIFT"], "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "-" }, "swipe": { "up": { "type": "commit", "text": "_", "label": "_" } } }] },
+                        { "column": 47, "row": 2,"columnSpan": 1,"rowSpan": 1, "ref": "rime.equal", "label": "", "swipe": { "up": { "type": "key", "key": "PLUS" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "=" }, "swipe": { "up": { "type": "commit", "text": "+", "label": "+" } } }] },
+
+
+
+
+
+                        { "column":  0, "row": 3,"columnSpan": 3,"rowSpan": 3,  "ref": "rime.q", "label": "ㄆ", "swipe": { "up": { "type": "key", "key": "Q", "meta": ["SHIFT"], "label": "Q" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "Q" }] },
+                        { "column":  4, "row": 3,"columnSpan": 3,"rowSpan": 3,  "ref": "rime.w", "label": "ㄊ", "swipe": { "up": { "type": "key", "key": "W", "meta": ["SHIFT"], "label": "W" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "W" }] },
+                        { "column":  8, "row": 3,"columnSpan": 3,"rowSpan": 3, "ref": "rime.e", "label": "ㄍ", "swipe": { "up": { "type": "key", "key": "E", "meta": ["SHIFT"], "label": "E" } , "down": { "type": "app", "command": "text_editor" ,"label": "Edit"} }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "E" }] },
+                        { "column": 12, "row": 3,"columnSpan": 3,"rowSpan": 3,  "ref": "rime.r", "label": "ㄐ", "swipe": { "up": { "type": "key", "key": "R", "meta": ["SHIFT"], "label": "R" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "R" }] },
+                        { "column": 16, "row": 3,"columnSpan": 3,"rowSpan": 3, "ref": "rime.t", "label": "ㄔ", "swipe": { "up": { "type": "key", "key": "T", "meta": ["SHIFT"], "label": "T" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "T" }] },
+                        { "column": 20, "row": 3,"columnSpan": 3,"rowSpan": 3,  "ref": "rime.y", "label": "ㄗ", "swipe": { "up": { "type": "key", "key": "Y", "meta": ["SHIFT"], "label": "Y" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "Y" }] },
+                        { "column": 24, "row": 3,"columnSpan": 3,"rowSpan": 3, "ref": "rime.u", "label": "ㄧ", "swipe": { "up": { "type": "key", "key": "U", "meta": ["SHIFT"], "label": "U" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "U" }] },
+                        { "column": 28, "row": 3,"columnSpan": 3,"rowSpan": 3,  "ref": "rime.i", "label": "ㄛ", "swipe": { "up": { "type": "key", "key": "I", "meta": ["SHIFT"], "label": "I" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "I" }] },
+                        { "column": 32, "row": 3,"columnSpan": 3,"rowSpan": 3, "ref": "rime.o", "label": "ㄟ", "swipe": { "up": { "type": "key", "key": "O", "meta": ["SHIFT"], "label": "O" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "O" }] },
+                        { "column": 36, "row": 3,"columnSpan": 3,"rowSpan": 3,  "ref": "rime.p", "label": "ㄣ", "swipe": { "up": { "type": "key", "key": "P", "meta": ["SHIFT"], "label": "P" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "P" }] },
+                        { "column": 40, "row": 3,"columnSpan": 3,"rowSpan": 3, "label": "[", "tap": { "type": "key", "key": "LEFT_BRACKET" }, "swipe": { "up": { "type": "key", "key": "LEFT_BRACKET", "meta": ["SHIFT"], "label": "{" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "[", "tap": { "type": "commit", "text": "[" }, "swipe": { "up": { "type": "commit", "text": "{", "label": "{" } } }] },
+                        { "column": 44, "row": 3,"columnSpan": 3,"rowSpan": 3,  "label": "]", "tap": { "type": "key", "key": "RIGHT_BRACKET" }, "swipe": { "up": { "type": "key", "key": "RIGHT_BRACKET", "meta": ["SHIFT"], "label": "}" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "]", "tap": { "type": "commit", "text": "]" }, "swipe": { "up": { "type": "commit", "text": "}", "label": "}" } } }] },
+
+
+                        { "column":  3, "row": 3,"columnSpan": 1,"rowSpan": 1, "ref": "rime.q", "label": "Q", "swipe": { "up": { "type": "key", "key": "Q", "meta": ["SHIFT"], "label": "Q" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column":  7, "row": 3,"columnSpan": 1,"rowSpan": 1, "ref": "rime.w", "label": "W", "swipe": { "up": { "type": "key", "key": "W", "meta": ["SHIFT"], "label": "W" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 11, "row": 3,"columnSpan": 1,"rowSpan": 1, "ref": "rime.e", "label": "E", "swipe": { "up": { "type": "key", "key": "E", "meta": ["SHIFT"], "label": "E" } , "down": { "type": "app", "command": "text_editor" ,"label": "Edit"} }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 15, "row": 3,"columnSpan": 1,"rowSpan": 1, "ref": "rime.r", "label": "R", "swipe": { "up": { "type": "key", "key": "R", "meta": ["SHIFT"], "label": "R" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 19, "row": 3,"columnSpan": 1,"rowSpan": 1, "ref": "rime.t", "label": "T", "swipe": { "up": { "type": "key", "key": "T", "meta": ["SHIFT"], "label": "T" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 23, "row": 3,"columnSpan": 1,"rowSpan": 1, "ref": "rime.y", "label": "Y", "swipe": { "up": { "type": "key", "key": "Y", "meta": ["SHIFT"], "label": "Y" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 27, "row": 3,"columnSpan": 1,"rowSpan": 1, "ref": "rime.u", "label": "U", "swipe": { "up": { "type": "key", "key": "U", "meta": ["SHIFT"], "label": "U" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 31, "row": 3,"columnSpan": 1,"rowSpan": 1, "ref": "rime.i", "label": "I", "swipe": { "up": { "type": "key", "key": "I", "meta": ["SHIFT"], "label": "I" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 35, "row": 3,"columnSpan": 1,"rowSpan": 1, "ref": "rime.o", "label": "O", "swipe": { "up": { "type": "key", "key": "O", "meta": ["SHIFT"], "label": "O" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 39, "row": 3,"columnSpan": 1,"rowSpan": 1, "ref": "rime.p", "label": "P", "swipe": { "up": { "type": "key", "key": "P", "meta": ["SHIFT"], "label": "P" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 43, "row": 3,"columnSpan": 1,"rowSpan": 1, "label": "{", "tap": { "type": "key", "key": "LEFT_BRACKET" }, "swipe": { "up": { "type": "key", "key": "LEFT_BRACKET", "meta": ["SHIFT"], "label": "{" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "{", "tap": { "type": "commit", "text": "[" }, "swipe": { "up": { "type": "commit", "text": "{", "label": "{" } } }] },
+                        { "column": 47, "row": 3,"columnSpan": 1,"rowSpan": 1, "label": "}", "tap": { "type": "key", "key": "RIGHT_BRACKET" }, "swipe": { "up": { "type": "key", "key": "RIGHT_BRACKET", "meta": ["SHIFT"], "label": "}" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "}", "tap": { "type": "commit", "text": "]" }, "swipe": { "up": { "type": "commit", "text": "}", "label": "}" } } }] },
+
+                        { "column":  3, "row": 4,"columnSpan": 1,"rowSpan": 1, "ref": "rime.q", "label": "", "swipe": { "up": { "type": "key", "key": "Q", "meta": ["SHIFT"], "label": "Q" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column":  7, "row": 4,"columnSpan": 1,"rowSpan": 1, "ref": "rime.w", "label": "", "swipe": { "up": { "type": "key", "key": "W", "meta": ["SHIFT"], "label": "W" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 11, "row": 4,"columnSpan": 1,"rowSpan": 1, "ref": "rime.e", "label": "", "swipe": { "up": { "type": "key", "key": "E", "meta": ["SHIFT"], "label": "E" } , "down": { "type": "app", "command": "text_editor" ,"label": "Edit"} }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 15, "row": 4,"columnSpan": 1,"rowSpan": 1, "ref": "rime.r", "label": "", "swipe": { "up": { "type": "key", "key": "R", "meta": ["SHIFT"], "label": "R" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 19, "row": 4,"columnSpan": 1,"rowSpan": 1, "ref": "rime.t", "label": "", "swipe": { "up": { "type": "key", "key": "T", "meta": ["SHIFT"], "label": "T" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 23, "row": 4,"columnSpan": 1,"rowSpan": 1, "ref": "rime.y", "label": "", "swipe": { "up": { "type": "key", "key": "Y", "meta": ["SHIFT"], "label": "Y" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 27, "row": 4,"columnSpan": 1,"rowSpan": 1, "ref": "rime.u", "label": "", "swipe": { "up": { "type": "key", "key": "U", "meta": ["SHIFT"], "label": "U" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 31, "row": 4,"columnSpan": 1,"rowSpan": 1, "ref": "rime.i", "label": "", "swipe": { "up": { "type": "key", "key": "I", "meta": ["SHIFT"], "label": "I" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 35, "row": 4,"columnSpan": 1,"rowSpan": 1, "ref": "rime.o", "label": "", "swipe": { "up": { "type": "key", "key": "O", "meta": ["SHIFT"], "label": "O" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 39, "row": 4,"columnSpan": 1,"rowSpan": 1, "ref": "rime.p", "label": "", "swipe": { "up": { "type": "key", "key": "P", "meta": ["SHIFT"], "label": "P" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 43, "row": 4,"columnSpan": 1,"rowSpan": 1, "label": "", "tap": { "type": "key", "key": "LEFT_BRACKET" }, "swipe": { "up": { "type": "key", "key": "LEFT_BRACKET", "meta": ["SHIFT"], "label": "{" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "[" }, "swipe": { "up": { "type": "commit", "text": "{", "label": "{" } } }] },
+                        { "column": 47, "row": 4,"columnSpan": 1,"rowSpan": 1, "label": "", "tap": { "type": "key", "key": "RIGHT_BRACKET" }, "swipe": { "up": { "type": "key", "key": "RIGHT_BRACKET", "meta": ["SHIFT"], "label": "}" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "]" }, "swipe": { "up": { "type": "commit", "text": "}", "label": "}" } } }] },
+
+                        { "column":  3, "row": 5,"columnSpan": 1,"rowSpan": 1, "ref": "rime.q", "label": "", "swipe": { "up": { "type": "key", "key": "Q", "meta": ["SHIFT"], "label": "Q" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column":  7, "row": 5,"columnSpan": 1,"rowSpan": 1, "ref": "rime.w", "label": "", "swipe": { "up": { "type": "key", "key": "W", "meta": ["SHIFT"], "label": "W" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 11, "row": 5,"columnSpan": 1,"rowSpan": 1, "ref": "rime.e", "label": "", "swipe": { "up": { "type": "key", "key": "E", "meta": ["SHIFT"], "label": "E" } , "down": { "type": "app", "command": "text_editor" ,"label": "Edit"} }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 15, "row": 5,"columnSpan": 1,"rowSpan": 1, "ref": "rime.r", "label": "", "swipe": { "up": { "type": "key", "key": "R", "meta": ["SHIFT"], "label": "R" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 19, "row": 5,"columnSpan": 1,"rowSpan": 1, "ref": "rime.t", "label": "", "swipe": { "up": { "type": "key", "key": "T", "meta": ["SHIFT"], "label": "T" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 23, "row": 5,"columnSpan": 1,"rowSpan": 1, "ref": "rime.y", "label": "", "swipe": { "up": { "type": "key", "key": "Y", "meta": ["SHIFT"], "label": "Y" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 27, "row": 5,"columnSpan": 1,"rowSpan": 1, "ref": "rime.u", "label": "", "swipe": { "up": { "type": "key", "key": "U", "meta": ["SHIFT"], "label": "U" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 31, "row": 5,"columnSpan": 1,"rowSpan": 1, "ref": "rime.i", "label": "", "swipe": { "up": { "type": "key", "key": "I", "meta": ["SHIFT"], "label": "I" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 35, "row": 5,"columnSpan": 1,"rowSpan": 1, "ref": "rime.o", "label": "", "swipe": { "up": { "type": "key", "key": "O", "meta": ["SHIFT"], "label": "O" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 39, "row": 5,"columnSpan": 1,"rowSpan": 1, "ref": "rime.p", "label": "", "swipe": { "up": { "type": "key", "key": "P", "meta": ["SHIFT"], "label": "P" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 43, "row": 5,"columnSpan": 1,"rowSpan": 1, "label": "", "tap": { "type": "key", "key": "LEFT_BRACKET" }, "swipe": { "up": { "type": "key", "key": "LEFT_BRACKET", "meta": ["SHIFT"], "label": "{" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "[" }, "swipe": { "up": { "type": "commit", "text": "{", "label": "{" } } }] },
+                        { "column": 47, "row": 5,"columnSpan": 1,"rowSpan": 1, "label": "", "tap": { "type": "key", "key": "RIGHT_BRACKET" }, "swipe": { "up": { "type": "key", "key": "RIGHT_BRACKET", "meta": ["SHIFT"], "label": "}" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "]" }, "swipe": { "up": { "type": "commit", "text": "}", "label": "}" } } }] },
+
+
+
+
+
+                        { "column":  0, "row": 6,"columnSpan": 3,"rowSpan": 3, "ref": "rime.a", "label": "ㄇ", "swipe": { "up": { "type": "key", "key": "A", "meta": ["SHIFT"], "label": "A" } ,"down": { "ref": "foxy.SelectAll"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "A" }] },
+                        { "column":  4, "row": 6,"columnSpan": 3,"rowSpan": 3, "ref": "rime.s", "label": "ㄋ", "swipe": { "up": { "type": "key", "key": "S", "meta": ["SHIFT"], "label": "S" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "S" }] },
+                        { "column":  8, "row": 6,"columnSpan": 3,"rowSpan": 3, "ref": "rime.d", "label": "ㄎ", "swipe": { "up": { "type": "key", "key": "D", "meta": ["SHIFT"], "label": "D" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "D" }] },
+                        { "column": 12, "row": 6,"columnSpan": 3,"rowSpan": 3, "ref": "rime.f", "label": "ㄑ", "swipe": { "up": { "type": "key", "key": "F", "meta": ["SHIFT"], "label": "F" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "F" }] },
+                        { "column": 16, "row": 6,"columnSpan": 3,"rowSpan": 3, "ref": "rime.g", "label": "ㄕ", "swipe": { "up": { "type": "key", "key": "G", "meta": ["SHIFT"], "label": "G" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "G" }] },
+                        { "column": 20, "row": 6,"columnSpan": 3,"rowSpan": 3, "ref": "rime.h", "label": "ㄘ", "swipe": { "up": { "type": "key", "key": "H", "meta": ["SHIFT"], "label": "H" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "H" }] },
+                        { "column": 24, "row": 6,"columnSpan": 3,"rowSpan": 3, "ref": "rime.j", "label": "ㄨ", "swipe": { "up": { "type": "key", "key": "J", "meta": ["SHIFT"], "label": "J" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "J" }] },
+                        { "column": 28, "row": 6,"columnSpan": 3,"rowSpan": 3, "ref": "rime.k", "label": "ㄜ", "swipe": { "up": { "type": "key", "key": "K", "meta": ["SHIFT"], "label": "K" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "K" }] },
+                        { "column": 32, "row": 6,"columnSpan": 3,"rowSpan": 3, "ref": "rime.l", "label": "ㄠ", "swipe": { "up": { "type": "key", "key": "L", "meta": ["SHIFT"], "label": "L" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "L" }] },
+                        { "column": 36, "row": 6,"columnSpan": 3,"rowSpan": 3, "ref": "rime.semicolon", "label": "ㄤ", "swipe": { "up": { "ref": "rime.colon", "label": ";    :" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": ";", "tap": { "type": "commit", "text": ";" }, "swipe": { "up": { "type": "commit", "text": ":", "label": ":" } } }] },
+                        { "column": 40, "row": 6,"columnSpan": 3,"rowSpan": 3, "ref": "rime.apostrophe", "label": "'", "swipe": { "up": { "type": "key", "key": "APOSTROPHE", "meta": ["SHIFT"], "label": "\"" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "'", "tap": { "type": "commit", "text": "'" }, "swipe": { "up": { "type": "commit", "text": "\"", "label": "\"" } } }] },
+                        { "column": 44, "row": 6,"columnSpan": 3,"rowSpan": 3, "ref": "rime.backslash", "label": "\\", "swipe": { "up": { "type": "key", "key": "BACKSLASH", "meta": ["SHIFT"], "label": "|" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "\\", "tap": { "type": "commit", "text": "\\" }, "swipe": { "up": { "type": "commit", "text": "|", "label": "|" } } }] },
+
+
+                        { "column":  3, "row": 6,"columnSpan": 1,"rowSpan": 1, "ref": "rime.a", "label": "A", "swipe": { "up": { "type": "key", "key": "A", "meta": ["SHIFT"], "label": "A" } ,"down": { "ref": "foxy.SelectAll"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column":  7, "row": 6,"columnSpan": 1,"rowSpan": 1, "ref": "rime.s", "label": "S", "swipe": { "up": { "type": "key", "key": "S", "meta": ["SHIFT"], "label": "S" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 11, "row": 6,"columnSpan": 1,"rowSpan": 1, "ref": "rime.d", "label": "D", "swipe": { "up": { "type": "key", "key": "D", "meta": ["SHIFT"], "label": "D" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 15, "row": 6,"columnSpan": 1,"rowSpan": 1, "ref": "rime.f", "label": "F", "swipe": { "up": { "type": "key", "key": "F", "meta": ["SHIFT"], "label": "F" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 19, "row": 6,"columnSpan": 1,"rowSpan": 1, "ref": "rime.g", "label": "G", "swipe": { "up": { "type": "key", "key": "G", "meta": ["SHIFT"], "label": "G" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 23, "row": 6,"columnSpan": 1,"rowSpan": 1, "ref": "rime.h", "label": "H", "swipe": { "up": { "type": "key", "key": "H", "meta": ["SHIFT"], "label": "H" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 27, "row": 6,"columnSpan": 1,"rowSpan": 1, "ref": "rime.j", "label": "J", "swipe": { "up": { "type": "key", "key": "J", "meta": ["SHIFT"], "label": "J" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 31, "row": 6,"columnSpan": 1,"rowSpan": 1, "ref": "rime.k", "label": "K", "swipe": { "up": { "type": "key", "key": "K", "meta": ["SHIFT"], "label": "K" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 35, "row": 6,"columnSpan": 1,"rowSpan": 1, "ref": "rime.l", "label": "L", "swipe": { "up": { "type": "key", "key": "L", "meta": ["SHIFT"], "label": "L" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 39, "row": 6,"columnSpan": 1,"rowSpan": 1, "ref": "rime.semicolon", "label": ";", "swipe": { "up": { "ref": "rime.colon", "label": ";    :" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": ":", "tap": { "type": "commit", "text": ";" }, "swipe": { "up": { "type": "commit", "text": ":", "label": ":" } } }] },
+                        { "column": 43, "row": 6,"columnSpan": 1,"rowSpan": 1, "ref": "rime.apostrophe", "label": "\"", "swipe": { "up": { "type": "key", "key": "APOSTROPHE", "meta": ["SHIFT"], "label": "\"" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "\"", "tap": { "type": "commit", "text": "'" }, "swipe": { "up": { "type": "commit", "text": "\"", "label": "\"" } } }] },
+                        { "column": 47, "row": 6,"columnSpan": 1,"rowSpan": 1, "ref": "rime.backslash", "label": "|", "swipe": { "up": { "type": "key", "key": "BACKSLASH", "meta": ["SHIFT"], "label": "|" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "|", "tap": { "type": "commit", "text": "\\" }, "swipe": { "up": { "type": "commit", "text": "|", "label": "|" } } }] },
+
+                        { "column":  3, "row": 7,"columnSpan": 1,"rowSpan": 1, "ref": "rime.a", "label": "", "swipe": { "up": { "type": "key", "key": "A", "meta": ["SHIFT"], "label": "A" } ,"down": { "ref": "foxy.SelectAll"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column":  7, "row": 7,"columnSpan": 1,"rowSpan": 1, "ref": "rime.s", "label": "", "swipe": { "up": { "type": "key", "key": "S", "meta": ["SHIFT"], "label": "S" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 11, "row": 7,"columnSpan": 1,"rowSpan": 1, "ref": "rime.d", "label": "", "swipe": { "up": { "type": "key", "key": "D", "meta": ["SHIFT"], "label": "D" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 15, "row": 7,"columnSpan": 1,"rowSpan": 1, "ref": "rime.f", "label": "", "swipe": { "up": { "type": "key", "key": "F", "meta": ["SHIFT"], "label": "F" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 19, "row": 7,"columnSpan": 1,"rowSpan": 1, "ref": "rime.g", "label": "", "swipe": { "up": { "type": "key", "key": "G", "meta": ["SHIFT"], "label": "G" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 23, "row": 7,"columnSpan": 1,"rowSpan": 1, "ref": "rime.h", "label": "", "swipe": { "up": { "type": "key", "key": "H", "meta": ["SHIFT"], "label": "H" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 27, "row": 7,"columnSpan": 1,"rowSpan": 1, "ref": "rime.j", "label": "", "swipe": { "up": { "type": "key", "key": "J", "meta": ["SHIFT"], "label": "J" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 31, "row": 7,"columnSpan": 1,"rowSpan": 1, "ref": "rime.k", "label": "", "swipe": { "up": { "type": "key", "key": "K", "meta": ["SHIFT"], "label": "K" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 35, "row": 7,"columnSpan": 1,"rowSpan": 1, "ref": "rime.l", "label": "", "swipe": { "up": { "type": "key", "key": "L", "meta": ["SHIFT"], "label": "L" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 39, "row": 7,"columnSpan": 1,"rowSpan": 1, "ref": "rime.semicolon", "label": ":", "swipe": { "up": { "ref": "rime.colon", "label": ";    :" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": ";" }, "swipe": { "up": { "type": "commit", "text": ":", "label": ":" } } }] },
+                        { "column": 43, "row": 7,"columnSpan": 1,"rowSpan": 1, "ref": "rime.apostrophe", "label": "", "swipe": { "up": { "type": "key", "key": "APOSTROPHE", "meta": ["SHIFT"], "label": "\"" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "'" }, "swipe": { "up": { "type": "commit", "text": "\"", "label": "\"" } } }] },
+                        { "column": 47, "row": 7,"columnSpan": 1,"rowSpan": 1, "ref": "rime.backslash", "label": "", "swipe": { "up": { "type": "key", "key": "BACKSLASH", "meta": ["SHIFT"], "label": "|" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "\\" }, "swipe": { "up": { "type": "commit", "text": "|", "label": "|" } } }] },
+
+                        { "column":  3, "row": 8,"columnSpan": 1,"rowSpan": 1, "ref": "rime.a", "label": "", "swipe": { "up": { "type": "key", "key": "A", "meta": ["SHIFT"], "label": "A" } ,"down": { "ref": "foxy.SelectAll"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column":  7, "row": 8,"columnSpan": 1,"rowSpan": 1, "ref": "rime.s", "label": "", "swipe": { "up": { "type": "key", "key": "S", "meta": ["SHIFT"], "label": "S" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 11, "row": 8,"columnSpan": 1,"rowSpan": 1, "ref": "rime.d", "label": "", "swipe": { "up": { "type": "key", "key": "D", "meta": ["SHIFT"], "label": "D" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 15, "row": 8,"columnSpan": 1,"rowSpan": 1, "ref": "rime.f", "label": "", "swipe": { "up": { "type": "key", "key": "F", "meta": ["SHIFT"], "label": "F" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 19, "row": 8,"columnSpan": 1,"rowSpan": 1, "ref": "rime.g", "label": "", "swipe": { "up": { "type": "key", "key": "G", "meta": ["SHIFT"], "label": "G" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 23, "row": 8,"columnSpan": 1,"rowSpan": 1, "ref": "rime.h", "label": "", "swipe": { "up": { "type": "key", "key": "H", "meta": ["SHIFT"], "label": "H" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 27, "row": 8,"columnSpan": 1,"rowSpan": 1, "ref": "rime.j", "label": "", "swipe": { "up": { "type": "key", "key": "J", "meta": ["SHIFT"], "label": "J" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 31, "row": 8,"columnSpan": 1,"rowSpan": 1, "ref": "rime.k", "label": "", "swipe": { "up": { "type": "key", "key": "K", "meta": ["SHIFT"], "label": "K" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 35, "row": 8,"columnSpan": 1,"rowSpan": 1, "ref": "rime.l", "label": "", "swipe": { "up": { "type": "key", "key": "L", "meta": ["SHIFT"], "label": "L" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 39, "row": 8,"columnSpan": 1,"rowSpan": 1, "ref": "rime.semicolon", "label": "", "swipe": { "up": { "ref": "rime.colon", "label": ";    :" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": ";" }, "swipe": { "up": { "type": "commit", "text": ":", "label": ":" } } }] },
+                        { "column": 43, "row": 8,"columnSpan": 1,"rowSpan": 1, "ref": "rime.apostrophe", "label": "", "swipe": { "up": { "type": "key", "key": "APOSTROPHE", "meta": ["SHIFT"], "label": "\"" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "'" }, "swipe": { "up": { "type": "commit", "text": "\"", "label": "\"" } } }] },
+                        { "column": 47, "row": 8,"columnSpan": 1,"rowSpan": 1, "ref": "rime.backslash", "label": "", "swipe": { "up": { "type": "key", "key": "BACKSLASH", "meta": ["SHIFT"], "label": "|" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "\\" }, "swipe": { "up": { "type": "commit", "text": "|", "label": "|" } } }] },
+
+
+
+                        { "column":  0, "row": 9,"columnSpan": 3,"rowSpan": 3, "ref": "rime.z", "label": "ㄈ", "swipe": { "up": { "type": "key", "key": "Z", "meta": ["SHIFT"], "label": "Z" } ,"down": { "ref": "foxy.Undo"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "Z" }] },
+                        { "column":  4, "row": 9,"columnSpan": 3,"rowSpan": 3, "ref": "rime.x", "label": "ㄌ", "swipe": { "up": { "type": "key", "key": "X", "meta": ["SHIFT"], "label": "X" } ,"down": { "ref": "foxy.Cut"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "X" }] },
+                        { "column":  8, "row": 9,"columnSpan": 3,"rowSpan": 3, "ref": "rime.c", "label": "ㄏ", "swipe": { "up": { "type": "key", "key": "C", "meta": ["SHIFT"], "label": "C" } ,"down": { "ref": "foxy.Copy"} }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "C" }] },
+                        { "column": 12, "row": 9,"columnSpan": 3,"rowSpan": 3, "ref": "rime.v", "label": "ㄒ", "swipe": { "up": { "type": "key", "key": "V", "meta": ["SHIFT"], "label": "V" } ,"down": { "ref": "foxy.Paste"} }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "V" }] },
+                        { "column": 16, "row": 9,"columnSpan": 3,"rowSpan": 3, "ref": "rime.b", "label": "ㄖ", "swipe": { "up": { "type": "key", "key": "B", "meta": ["SHIFT"], "label": "B" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "B" }] },
+                        { "column": 20, "row": 9,"columnSpan": 3,"rowSpan": 3, "ref": "rime.n", "label": "ㄙ", "swipe": { "up": { "type": "key", "key": "N", "meta": ["SHIFT"], "label": "N" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "N" }] },
+                        { "column": 24, "row": 9,"columnSpan": 3,"rowSpan": 3, "ref": "rime.m", "label": "ㄩ", "swipe": { "up": { "type": "key", "key": "M", "meta": ["SHIFT"], "label": "M" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "M" }] },
+                        { "column": 28, "row": 9,"columnSpan": 3,"rowSpan": 3, "ref": "rime.comma", "label": "ㄝ", "swipe": { "up": { "type": "key", "key": "COMMA", "meta": ["SHIFT"], "label": ",    <" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": ",", "tap": { "type": "commit", "text": "," }, "swipe": { "up": { "type": "commit", "text": "<", "label": "<" } } }] },
+                        { "column": 32, "row": 9,"columnSpan": 3,"rowSpan": 3, "ref": "rime.period", "label": "ㄡ", "swipe": { "up": { "type": "key", "key": "PERIOD", "meta": ["SHIFT"], "label": ".    >" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": ".", "tap": { "type": "commit", "text": "." }, "swipe": { "up": { "type": "commit", "text": ">", "label": ">" } } }] },
+                        { "column": 36, "row": 9,"columnSpan": 3,"rowSpan": 3, "ref": "rime.slash", "label": "ㄥ", "swipe": { "up": { "type": "key", "key": "SLASH", "meta": ["SHIFT"], "label": "/    ?" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "/", "tap": { "type": "commit", "text": "/" }, "swipe": { "up": { "type": "commit", "text": "?", "label": "?" } } }] },
+                        { "column": 40, "row": 9,"columnSpan": 3,"rowSpan": 3, "ref": "rime.grave", "label": "`", "swipe": { "up": { "type": "key", "key": "GRAVE", "meta": ["SHIFT"] } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "`", "tap": { "type": "commit", "text": "`" }, "swipe": { "up": { "type": "commit", "text": "~", "label": "~" } } }] },
+                                 
+						{ "column": 44, "row": 9,"columnSpan": 4,"rowSpan": 3, "ref": "rime.BackSpace","keyType": "FUNCTION","icon": "backspace", "override": { "label": "" }, "longPress": { "repeat": true, "action": { "type": "key", "key": "BACKSPACE" } } },
+
+
+                        { "column":  3, "row": 9,"columnSpan": 1,"rowSpan": 1, "ref": "rime.z", "label": "Z", "swipe": { "up": { "type": "key", "key": "Z", "meta": ["SHIFT"], "label": "Z" } ,"down": { "ref": "foxy.Undo"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column":  7, "row": 9,"columnSpan": 1,"rowSpan": 1, "ref": "rime.x", "label": "X", "swipe": { "up": { "type": "key", "key": "X", "meta": ["SHIFT"], "label": "X" } ,"down": { "ref": "foxy.Cut"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 11, "row": 9,"columnSpan": 1,"rowSpan": 1, "ref": "rime.c", "label": "C", "swipe": { "up": { "type": "key", "key": "C", "meta": ["SHIFT"], "label": "C" } ,"down": { "ref": "foxy.Copy"} }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 15, "row": 9,"columnSpan": 1,"rowSpan": 1, "ref": "rime.v", "label": "V", "swipe": { "up": { "type": "key", "key": "V", "meta": ["SHIFT"], "label": "V" } ,"down": { "ref": "foxy.Paste"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 19, "row": 9,"columnSpan": 1,"rowSpan": 1, "ref": "rime.b", "label": "B", "swipe": { "up": { "type": "key", "key": "B", "meta": ["SHIFT"], "label": "B" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 23, "row": 9,"columnSpan": 1,"rowSpan": 1, "ref": "rime.n", "label": "N", "swipe": { "up": { "type": "key", "key": "N", "meta": ["SHIFT"], "label": "N" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 27, "row": 9,"columnSpan": 1,"rowSpan": 1, "ref": "rime.m", "label": "M", "swipe": { "up": { "type": "key", "key": "M", "meta": ["SHIFT"], "label": "M" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 31, "row": 9,"columnSpan": 1,"rowSpan": 1, "ref": "rime.comma", "label": "<", "swipe": { "up": { "type": "key", "key": "COMMA", "meta": ["SHIFT"], "label": ",    <" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "<", "tap": { "type": "commit", "text": "," }, "swipe": { "up": { "type": "commit", "text": "<", "label": "<" } } }] },
+                        { "column": 35, "row": 9,"columnSpan": 1,"rowSpan": 1, "ref": "rime.period", "label": ">", "swipe": { "up": { "type": "key", "key": "PERIOD", "meta": ["SHIFT"], "label": ".    >" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": ">", "tap": { "type": "commit", "text": "." }, "swipe": { "up": { "type": "commit", "text": ">", "label": ">" } } }] },
+                        { "column": 39, "row": 9,"columnSpan": 1,"rowSpan": 1, "ref": "rime.slash", "label": "?", "swipe": { "up": { "type": "key", "key": "SLASH", "meta": ["SHIFT"], "label": "/    ?" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "?", "tap": { "type": "commit", "text": "/" }, "swipe": { "up": { "type": "commit", "text": "?", "label": "?" } } }] },
+                        { "column": 43, "row": 9,"columnSpan": 1,"rowSpan": 1, "ref": "rime.grave", "label": "~", "swipe": { "up": { "type": "key", "key": "GRAVE", "meta": ["SHIFT"] } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "~", "tap": { "type": "commit", "text": "`" }, "swipe": { "up": { "type": "commit", "text": "~", "label": "~" } } }] },
+                                 
+                        { "column":  3, "row": 10,"columnSpan": 1,"rowSpan": 1, "ref": "rime.z", "label": "", "swipe": { "up": { "type": "key", "key": "Z", "meta": ["SHIFT"], "label": "Z" } ,"down": { "ref": "foxy.Undo"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column":  7, "row": 10,"columnSpan": 1,"rowSpan": 1, "ref": "rime.x", "label": "", "swipe": { "up": { "type": "key", "key": "X", "meta": ["SHIFT"], "label": "X" } ,"down": { "ref": "foxy.Cut"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 11, "row": 10,"columnSpan": 1,"rowSpan": 1, "ref": "rime.c", "label": "", "swipe": { "up": { "type": "key", "key": "C", "meta": ["SHIFT"], "label": "C" } ,"down": { "ref": "foxy.Copy"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 15, "row": 10,"columnSpan": 1,"rowSpan": 1, "ref": "rime.v", "label": "", "swipe": { "up": { "type": "key", "key": "V", "meta": ["SHIFT"], "label": "V" } ,"down": { "ref": "foxy.Paste"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 19, "row": 10,"columnSpan": 1,"rowSpan": 1, "ref": "rime.b", "label": "", "swipe": { "up": { "type": "key", "key": "B", "meta": ["SHIFT"], "label": "B" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 23, "row": 10,"columnSpan": 1,"rowSpan": 1, "ref": "rime.n", "label": "", "swipe": { "up": { "type": "key", "key": "N", "meta": ["SHIFT"], "label": "N" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 27, "row": 10,"columnSpan": 1,"rowSpan": 1, "ref": "rime.m", "label": "", "swipe": { "up": { "type": "key", "key": "M", "meta": ["SHIFT"], "label": "M" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 31, "row": 10,"columnSpan": 1,"rowSpan": 1, "ref": "rime.comma", "label": ",", "swipe": { "up": { "type": "key", "key": "COMMA", "meta": ["SHIFT"], "label": ",    <" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "," }, "swipe": { "up": { "type": "commit", "text": "<", "label": "<" } } }] },
+                        { "column": 35, "row": 10,"columnSpan": 1,"rowSpan": 1, "ref": "rime.period", "label": ".", "swipe": { "up": { "type": "key", "key": "PERIOD", "meta": ["SHIFT"], "label": ".    >" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "." }, "swipe": { "up": { "type": "commit", "text": ">", "label": ">" } } }] },
+                        { "column": 39, "row": 10,"columnSpan": 1,"rowSpan": 1, "ref": "rime.slash", "label": "/", "swipe": { "up": { "type": "key", "key": "SLASH", "meta": ["SHIFT"], "label": "/    ?" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "/" }, "swipe": { "up": { "type": "commit", "text": "?", "label": "?" } } }] },
+                        { "column": 43, "row": 10,"columnSpan": 1,"rowSpan": 1, "ref": "rime.grave", "label": "", "swipe": { "up": { "type": "key", "key": "GRAVE", "meta": ["SHIFT"] } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "`" }, "swipe": { "up": { "type": "commit", "text": "~", "label": "~" } } }] },
+                                    
+
+                        { "column":  3, "row": 11,"columnSpan": 1,"rowSpan": 1, "ref": "rime.z", "label": "", "swipe": { "up": { "type": "key", "key": "Z", "meta": ["SHIFT"], "label": "Z" } ,"down": { "ref": "foxy.Undo"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column":  7, "row": 11,"columnSpan": 1,"rowSpan": 1, "ref": "rime.x", "label": "", "swipe": { "up": { "type": "key", "key": "X", "meta": ["SHIFT"], "label": "X" } ,"down": { "ref": "foxy.Cut"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 11, "row": 11,"columnSpan": 1,"rowSpan": 1, "ref": "rime.c", "label": "", "swipe": { "up": { "type": "key", "key": "C", "meta": ["SHIFT"], "label": "C" } ,"down": { "ref": "foxy.Copy"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 15, "row": 11,"columnSpan": 1,"rowSpan": 1, "ref": "rime.v", "label": "", "swipe": { "up": { "type": "key", "key": "V", "meta": ["SHIFT"], "label": "V" } ,"down": { "ref": "foxy.Paste"}}, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 19, "row": 11,"columnSpan": 1,"rowSpan": 1, "ref": "rime.b", "label": "", "swipe": { "up": { "type": "key", "key": "B", "meta": ["SHIFT"], "label": "B" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 23, "row": 11,"columnSpan": 1,"rowSpan": 1, "ref": "rime.n", "label": "", "swipe": { "up": { "type": "key", "key": "N", "meta": ["SHIFT"], "label": "N" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 27, "row": 11,"columnSpan": 1,"rowSpan": 1, "ref": "rime.m", "label": "", "swipe": { "up": { "type": "key", "key": "M", "meta": ["SHIFT"], "label": "M" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "" }] },
+                        { "column": 31, "row": 11,"columnSpan": 1,"rowSpan": 1, "ref": "rime.comma", "label": "", "swipe": { "up": { "type": "key", "key": "COMMA", "meta": ["SHIFT"], "label": ",    <" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "," }, "swipe": { "up": { "type": "commit", "text": "<", "label": "<" } } }] },
+                        { "column": 35, "row": 11,"columnSpan": 1,"rowSpan": 1, "ref": "rime.period", "label": "", "swipe": { "up": { "type": "key", "key": "PERIOD", "meta": ["SHIFT"], "label": ".    >" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "." }, "swipe": { "up": { "type": "commit", "text": ">", "label": ">" } } }] },
+                        { "column": 39, "row": 11,"columnSpan": 1,"rowSpan": 1, "ref": "rime.slash", "label": "", "swipe": { "up": { "type": "key", "key": "SLASH", "meta": ["SHIFT"], "label": "/    ?" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "/" }, "swipe": { "up": { "type": "commit", "text": "?", "label": "?" } } }] },
+                        { "column": 43, "row": 11,"columnSpan": 1,"rowSpan": 1, "ref": "rime.grave", "label": "", "swipe": { "up": { "type": "key", "key": "GRAVE", "meta": ["SHIFT"] } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "", "tap": { "type": "commit", "text": "`" }, "swipe": { "up": { "type": "commit", "text": "~", "label": "~" } } }] },
+                                    
+
+
+
+                        { "column":  0, "row": 12,"columnSpan":  4,"rowSpan": 3, "label": "⌵", "keyType": "FUNCTION","textSize": 16, "tap": { "type": "app", "command": "hide_keyboard" } },
+                        { "column":  4, "row": 12,"columnSpan":  8,"rowSpan": 3, "label": "中","keyType": "ACTION","textSize": 16, "tap": { "type": "key", "key": "DIGIT_2", "meta": ["CTRL", "SHIFT"] }, "swipe": { "up": { "type": "key", "key": "DIGIT_2", "meta": ["CTRL", "SHIFT"], "label": "" } }, "variants": [{ "when": { "rime": { "ascii_mode": true } }, "label": "Ａ" }] },
+                        { "column": 12, "row": 12,"columnSpan": 24,"rowSpan": 3, "ref": "rime.space", "label": "" ,"swipe": {"up": {"ref": "rime.Up"},"down": {"ref": "rime.Down"},"left": {"ref": "rime.Left"},"right": {"ref": "rime.Right"}}},
+                        { "column": 36, "row": 12,"columnSpan":  8,"rowSpan": 3, "ref": "rime.Return","keyType": "ACTION","icon": "enter", "swipe": { "up": { "type": "key", "key": "LINEFEED", "label": "" } } },
+						{ "column": 44, "row": 12,"columnSpan":  4,"rowSpan": 3, "label": "小狐狸","textSize": 16, "ref": "rime.grave", "hold": {"start": { "type": "key", "key": "END" },"end": { "type": "key", "key": "HOME", "meta": ["SHIFT"] }} }
+
+
+                        
+                     ]
+                }
+            ]
+        },
+        "numpad": {
+            "sections": [
+                {
+                    "type": "grid",
+                    "columns": 5,
+                    "rows": 4,
+                    "keys": [
+                        {
+                            "column": 0,
+                            "row": 0,
+                            "label": "+",
+                            "tap": {"type": "commit","text": "+"},
+                            "override": {
+                                "keyType": "FUNCTION"
+                            }
+                        },
+                        {
+                            "column": 1,
+                            "row": 0,
+                            "label": "1",
+                            "tap": {"type": "commit","text": "1"}
+                        },
+                        {
+                            "column": 2,
+                            "row": 0,
+                            "label": "2",
+                            "tap": {"type": "commit","text": "2"}
+                        },
+                        {
+                            "column": 3,
+                            "row": 0,
+                            "label": "3",
+                            "tap": {"type": "commit","text": "3"}
+                        },
+                        {
+                            "column": 4,
+                            "row": 0,
+                            "label": "/",
+                            "tap": {"type": "commit","text": "/"},
+                            "override": {
+                                "keyType": "FUNCTION"
+                            }
+                        },
+                        {
+                            "column": 0,
+                            "row": 1,
+                            "label": "-",
+                            "tap": {"type": "commit","text": "-"},
+                            "override": {
+                                "keyType": "FUNCTION"
+                            }
+                        },
+                        {
+                            "column": 1,
+                            "row": 1,
+                            "label": "4",
+                            "tap": {"type": "commit","text": "4"}
+                        },
+                        {
+                            "column": 2,
+                            "row": 1,
+                            "label": "5",
+                            "tap": {"type": "commit","text": "5"}
+                        },
+                        {
+                            "column": 3,
+                            "row": 1,
+                            "label": "6",
+                            "tap": {"type": "commit","text": "6"}
+                        },
+                        {
+                            "column": 4,
+                            "row": 1,
+                            "ref": "rime.BackSpace",
+                            "override": {
+                                "keyType": "FUNCTION",
+                                "icon": "backspace",
+                                "swipe": null,
+                                "longPress": {
+                                    "label": "⌫",
+                                    "repeat": true,
+                                    "action": {
+                                        "type": "key",
+                                        "key": "BACKSPACE"
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            "column": 0,
+                            "row": 2,
+                            "label": "* ",
+                            "tap": {"type": "commit","text": "*"},
+                            "override": {
+                                "keyType": "FUNCTION"
+                            }
+                        },
+                        {
+                            "column": 1,
+                            "row": 2,
+                            "label": "7",
+                            "tap": {"type": "commit","text": "7"}
+                        },
+                        {
+                            "column": 2,
+                            "row": 2,
+                            "label": "8",
+                            "tap": {"type": "commit","text": "8"}
+                        },
+                        {
+                            "column": 3,
+                            "row": 2,
+                            "label": "9",
+                            "tap": {"type": "commit","text": "9"}
+                        },
+                        {
+                            "column": 0,
+                            "row": 3,
+                            "ref": "foxy.LayoutDefault",
+                            "override": {
+                                "keyType": "FUNCTION"
+                            }
+                        },
+                        {
+                            "column": 1,
+                            "row": 3,
+                            "label": "=",
+                            "tap": {"type": "commit","text": "="}
+                        },
+                        {
+                            "column": 2,
+                            "row": 3,
+                            "label": "0",
+                            "tap": {"type": "commit","text": "0"}
+                        },
+                        {
+                            "column": 3,
+                            "row": 3,
+                            "label": ".",
+                            "tap": {"type": "commit","text": "."}
+                        },
+                        {
+                            "column": 4,
+                            "row": 2,
+                            "rowSpan": 2,
+                            "ref": "rime.KP_Enter",
+                            "override": {
+                                "keyType": "ACTION",
+                                "icon": "enter"
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+    "text_editor": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              { "ref": "foxy.LayoutDefault" , "override": { "label": "Exit" } },
+			  { "ref": "foxy.Spacer" },
+              { "ref": "foxy.SelectAll", "override": { "label": "SelAll ","keyType": "LETTER"} },
+              { "ref": "foxy.Cut", "override": { "label": "Cut","keyType": "LETTER"} },
+              { "ref": "foxy.Copy", "override": { "label": "Copy" ,"keyType": "LETTER"} },
+              { "ref": "foxy.Paste", "override": { "label": "Paste" ,"keyType": "LETTER"} },
+              { "ref": "rime.Escape", "weight": 1, "override": { "label": "Backspace" } }
+            ]
+          ]
+        }
+      ]
+    }
+    },
+    "type": "foxy.keyboard-layout"
+}
