@@ -779,6 +779,30 @@ ok(overlapIssue.rowIndex == null, '网格问题不带行索引');
 const holeIssue = gv.issues.find(i => i.code === 'grid-holes');
 ok(holeIssue && holeIssue.level === 'warn', '空格子警告也带 code 且为 warn 级');
 
+/* ---- 定义内部的问题带定义坐标（按键定义 / 动作 / 宏） ----
+ * 这些位置**没有**布局坐标，早期不传 defKind/defName → UI 的 issueLocatable
+ * 判 false → 校验详情里渲染成不可点的纯文本行（用户报告的缺陷）。 */
+const dv = FE.validateProfile(FE.normalizeProfile({
+  keys: { 'k.bad': { ref: 'nope.ref' }, 'k.hold': { ref: 'rime.a', hold: {}, longPress: {} } },
+  actions: { badact: { type: 'nope' } },
+  macros: { badstep: [{ action: 'no_such_action' }] },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.bad' }]] }] } }
+}));
+const keyDefIssue = dv.issues.find(i => i.defKind === 'key' && i.defName === 'k.bad');
+ok(!!keyDefIssue, '按键定义内部的问题带 defKind/defName');
+eq(keyDefIssue.defName, 'k.bad', 'defName 是出错的按键定义名');
+eq([keyDefIssue.layout, keyDefIssue.sectionIndex], [undefined, undefined],
+  '按键定义问题没有布局坐标（只能靠定义坐标定位）');
+ok(dv.issues.some(i => i.defKind === 'key' && i.defName === 'k.hold' && i.message.indexOf('hold') >= 0),
+  '同一按键定义的多类问题都带该定义坐标');
+ok(dv.issues.some(i => i.defKind === 'action' && i.defName === 'badact'),
+  '动作定义内部的问题带 defKind/defName');
+ok(dv.issues.some(i => i.defKind === 'macro' && i.defName === 'badstep'),
+  '宏步骤的问题带所属宏的坐标');
+/* 布局问题仍走布局坐标，不该被定义坐标覆盖 */
+ok(dv.issues.some(i => i.layout === 'default' && i.sectionIndex === 0 && !i.defKind),
+  '布局按键的问题仍带布局坐标（不误加定义坐标）');
+
 /* ---------------- 校验器作用域（不污染全局 state） ---------------- */
 console.log('== 校验器作用域化 ==');
 const keepProfile = FE.state.profile;
@@ -1113,8 +1137,13 @@ const useKa = FE.usageOf(riIdx, 'key', 'k.a');
 eq(useKa.count, 6, 'k.a 共 6 处（4 直接 + 2 由 k.chain 穿透）');
 const kaLocated = useKa.items.filter(i => i.loc);
 ok(kaLocated.length >= 3, '多数引用带可跳转坐标（' + kaLocated.length + ' 处）');
-ok(useKa.items.some(i => !i.loc && i.label.indexOf('按键定义') >= 0),
-  '按键定义内部的引用没有布局坐标（只读展示）');
+/* 定义内部的引用必须**带定义坐标**，弹窗才能给它「跳转」按钮。
+ * 早期传 null 让「按键定义 k.chain」退化成不可点的只读行（用户点不动 = 缺陷），
+ * 别改回 null。 */
+eq(useKa.items.filter(i => !i.loc).length, 0, 'k.a 的引用全部可跳转（无只读条目）');
+const kaDefItem = useKa.items.find(i => i.loc && i.loc.defKind === 'key' && i.loc.defName === 'k.chain');
+ok(!!kaDefItem, '按键定义内部的引用带定义坐标（defKind/defName）');
+eq(kaDefItem.label.indexOf('按键定义'), 0, '该条目文案仍标明来自按键定义');
 eq(kaLocated.filter(i => i.loc.layout === 'numpad').length, 1, '含 numpad 网格键引用');
 const kaRow = kaLocated.find(i => i.loc.layout === 'default' && i.loc.rowIndex != null);
 eq(kaRow.loc.rowIndex, 0, '行内按键坐标含 rowIndex');
@@ -1131,14 +1160,16 @@ ok(!popItem.loc.layout, '弹出菜单引用没有布局坐标');
 /* ---- 穿透解析：动作被宏用、宏被布局用 → 动作也应追到布局 ---- */
 const useA1 = FE.usageOf(riIdx, 'action', 'a1');
 ok(useA1.count >= 2, 'a1 既被宏步骤直接引用，也穿透到布局按键');
-ok(useA1.items.some(i => !i.loc), '含无坐标的直接引用（宏步骤）');
+const a1MacroStep = useA1.items.find(i => i.loc && i.loc.defKind === 'macro' && i.loc.defName === 'm1');
+ok(!!a1MacroStep, '宏步骤引用带定义坐标（可跳到该宏）');
 const indirect = useA1.items.find(i => i.loc && i.loc.layout === 'default');
 ok(!!indirect, 'a1 穿透到布局按键（可跳转）');
 ok(indirect.via && indirect.via.join('').indexOf('宏 m1') >= 0, '穿透项标出经由链「宏 m1」');
 
 /* ---- 穿透解析：按键定义链 ---- */
 const useRimeA = FE.usageOf(riIdx, 'key', 'rime.a');
-ok(useRimeA.items.some(i => !i.loc && i.label.indexOf('按键定义 k.a') >= 0), 'rime.a 被按键定义直接引用');
+ok(useRimeA.items.some(i => i.loc && i.loc.defKind === 'key' && i.loc.defName === 'k.a'
+  && i.label.indexOf('按键定义 k.a') >= 0), 'rime.a 被按键定义直接引用（带定义坐标）');
 ok(useRimeA.items.some(i => i.loc && i.loc.layout === 'default'),
   'rime.a 穿透按键定义链追到布局按键');
 ok(useRimeA.count < 60, '穿透有上限，条目数不会爆炸（实际 ' + useRimeA.count + '）');

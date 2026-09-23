@@ -639,6 +639,11 @@ FE.validateProfile = function (profile) {
       if (src.row != null) it.rowIndex = src.row;
       if (src.key != null) it.keyIndex = src.key;
       if (src.group) it.group = src.group;
+      /* 定义坐标：按键定义 / 动作 / 宏内部的问题**没有**布局坐标，
+       * 只能靠这两个字段让校验条目也可点击跳到定义列表。
+       * 早期不传它们 → issueLocatable 判 false → 渲染成不可点的纯文本行，
+       * 用户在「校验详情」里点了没反应（用户报告的缺陷），别把这行删掉。 */
+      if (src.defKind && src.defName) { it.defKind = src.defKind; it.defName = src.defName; }
     }
     issues.push(it);
   }
@@ -679,8 +684,12 @@ FE.validateProfile = function (profile) {
     }
     for (var kn in keys) {
       if (!Object.prototype.hasOwnProperty.call(keys, kn)) continue;
+      /* 每条按键定义都在**自己的定位上下文**里检查：条目内部的问题于是自动带上
+       * defKind/defName，校验详情里的条目才能点击跳到该定义（见 addIssue）。
+       * inCtx 是同步执行的，所以闭包读到的 kn 就是当前这一轮的键名。 */
+      inCtx({ path: '按键定义 “' + kn + '”', defKind: 'key', defName: kn }, function () {
       var kd = keys[kn];
-      if (!isPlainObject(kd)) { err('按键定义 “' + kn + '” 不是对象'); continue; }
+      if (!isPlainObject(kd)) { err('按键定义 “' + kn + '” 不是对象'); return; }
       if (kd.ref != null && typeof kd.ref !== 'string') err('按键定义 “' + kn + '” 的 ref 必须是字符串');
       else if (typeof kd.ref === 'string' && !lookupDef(kd.ref, scope)) err('按键定义 “' + kn + '” 的 ref 无法解析: ' + kd.ref);
       if (kd.ref === kn) err('按键定义 “' + kn + '” 引用了自身');
@@ -693,7 +702,12 @@ FE.validateProfile = function (profile) {
           checkGestureRefs(v, '按键定义 “' + kn + '” 变体 ' + vi, err, profile, scope);
         });
       }
-    for (var kn2 in keys) if (Object.prototype.hasOwnProperty.call(keys, kn2)) visitKeyRef(kn2, []);
+      });
+    }
+    /* 引用链循环：错误挂在**起点键**的定义上，至少能跳到参与循环的某个定义
+     * （循环往往横跨多条定义，没有唯一的"出错键"）。 */
+    for (var kn2 in keys) if (Object.prototype.hasOwnProperty.call(keys, kn2)) {
+      inCtx({ path: '按键定义 “' + kn2 + '”', defKind: 'key', defName: kn2 }, function () { visitKeyRef(kn2, []); });
     }
 
     /* ---- 命名布局 ---- */
@@ -879,9 +893,13 @@ FE.validateProfile = function (profile) {
       });
     }
 
-    /* ---- 顶层动作 ---- */
+    /* ---- 顶层动作（同样带定义坐标，让条目可点击跳到该动作） ---- */
     var topActions = isPlainObject(profile.actions) ? profile.actions : {};
-    Object.keys(topActions).forEach(function (an) { validateAction(topActions[an], '动作 “' + an + '”', err, profile); });
+    Object.keys(topActions).forEach(function (an) {
+      inCtx({ path: '动作 “' + an + '”', defKind: 'action', defName: an }, function () {
+        validateAction(topActions[an], '动作 “' + an + '”', err, profile);
+      });
+    });
 
     /* ---- 高度单位兼容性 ---- */
     if (layoutNames.length > 1) {
@@ -893,11 +911,12 @@ FE.validateProfile = function (profile) {
       }
     }
 
-    /* ---- 宏 ---- */
+    /* ---- 宏（每条宏一个定位上下文，条目可点击跳到该宏） ---- */
     var macros = isPlainObject(profile.macros) ? profile.macros : {};
     for (var mn2 in macros) {
       if (!Object.prototype.hasOwnProperty.call(macros, mn2)) continue;
-      if (!Array.isArray(macros[mn2])) { err('宏 “' + mn2 + '” 必须是数组'); continue; }
+      inCtx({ path: '宏 “' + mn2 + '”', defKind: 'macro', defName: mn2 }, function () {
+      if (!Array.isArray(macros[mn2])) { err('宏 “' + mn2 + '” 必须是数组'); return; }
       macros[mn2].forEach(function (step, i) {
         var where = '宏 “' + mn2 + '” 步骤 ' + i;
         var target = isPlainObject(step) && typeof step.action === 'string' ? step.action : (typeof step === 'string' ? step : null);
@@ -910,6 +929,7 @@ FE.validateProfile = function (profile) {
         } else {
           err(where + ' 结构无效');
         }
+      });
       });
     }
   }
@@ -1170,7 +1190,9 @@ FE.hintSizeOf = hintSizeOf;
  *   · loc 形如 { layout, isSplit, sectionIndex, rowIndex, keyIndex, group }
  *     → 可跳到布局里的该按键（交给 locateIssue）
  *   · loc 形如 { popupKey } → 可跳到弹出菜单页的该键
- *   · loc 为 null → 只读展示（引用发生在按键/动作定义内部，没有布局坐标）
+ *   · loc 形如 { defKind: 'key'|'action'|'macro', defName }
+ *     → 可跳到定义列表里的那条定义（引用发生在按键/动作/宏定义内部）
+ *   · loc 为 null → 只读展示（保留给「确实无处可跳」的来源）
  *
  * ⚠️ **必须单遍扫描**：按键定义页要给每个条目显示使用数，
  * 若对每个名字都全量走一遍配置，代价是 O(条目数 × 配置大小)——
@@ -1250,18 +1272,21 @@ function buildRefIndex(profile, popupProfile) {
     });
   }
 
-  /* 定义之间也可以互相引用：动作 → 动作/宏，宏步骤 → 动作 */
+  /* 定义之间也可以互相引用：动作 → 动作/宏，宏步骤 → 动作，按键定义 → 按键/动作/宏。
+   * 这些引用**带定义坐标**（defKind + defName），于是「使用数」弹窗里
+   * 「按键定义 k.a」这类条目也能点开跳到那条定义 —— 早期传 null 让它们
+   * 退化成不可点的只读行，用户点不动，是明确的缺陷，不要改回 null。 */
   Object.keys(profile.actions || {}).forEach(function (an) {
-    specRefs(profile.actions[an], '动作定义 ' + an, null, 0);
+    specRefs(profile.actions[an], '动作定义 ' + an, { defKind: 'action', defName: an }, 0);
   });
   Object.keys(profile.macros || {}).forEach(function (mn) {
     var arr = profile.macros[mn];
     (Array.isArray(arr) ? arr : []).forEach(function (step, si) {
-      specRefs(step, '宏 ' + mn + ' 步骤' + (si + 1), null, 0);
+      specRefs(step, '宏 ' + mn + ' 步骤' + (si + 1), { defKind: 'macro', defName: mn }, 0);
     });
   });
   Object.keys(profile.keys || {}).forEach(function (kn) {
-    nodeRefs(profile.keys[kn], '按键定义 ' + kn, null, 0);
+    nodeRefs(profile.keys[kn], '按键定义 ' + kn, { defKind: 'key', defName: kn }, 0);
   });
   Object.keys(profile.layouts || {}).forEach(function (ln) {
     var L = profile.layouts[ln];
@@ -2530,22 +2555,44 @@ function renderMeta() {
   appendValidationDetails(meta);
 }
 
-/* 该条问题能否定位：有布局名，或有区段/键坐标 */
+/* defKind → profile 里的定义容器名。校验 issue 与引用索引共用这套名字。 */
+var DEF_SECTION = { key: 'keys', action: 'actions', macro: 'macros' };
+function defExists(defKind, defName) {
+  var sec = DEF_SECTION[defKind];
+  if (!sec || typeof defName !== 'string' || !defName) return false;
+  var bucket = state.profile && state.profile[sec];
+  if (!isPlainObject(bucket)) return false;
+  var v = bucket[defName];
+  /* ⚠️ 宏的值是**数组**（macros[name] = [step, ...]），按键/动作才是对象。
+   * 一律用 isPlainObject 判断会把宏全判成"不存在"，于是宏的问题点不动 —— 别这么写。 */
+  if (defKind === 'macro') return Array.isArray(v);
+  return isPlainObject(v);
+}
+
+/* 该条问题能否定位。三种坐标源：
+ *   · 布局坐标（layout / sectionIndex）→ 切布局并选中该键
+ *   · 定义坐标（defKind / defName）→ 切到按键定义/动作与宏页并高亮该条目
+ *     ⚠️ 按键定义、动作、宏内部的问题**没有**布局坐标，早期只认布局坐标，
+ *     于是这些条目在「校验详情」里是不可点的纯文本行（用户报告的缺陷）。 */
 function issueLocatable(it) {
   if (!it) return false;
-  if (it.layout && state.profile && isPlainObject(state.profile.layouts) && state.profile.layouts[it.layout]) return true;
+  if (it.defKind && defExists(it.defKind, it.defName)) return true;
+  if (it.layout && state.profile && isPlainObject(state.profile.layouts)
+    && isPlainObject(state.profile.layouts[it.layout])) return true;
   return it.sectionIndex != null;
 }
 
-/* 点击校验条目 → 切到对应布局 / 分体片段，选中目标键并滚动到它。
- * 校验结果里的坐标（layout / isSplit / sectionIndex / rowIndex / keyIndex）由
- * validateProfile 的结构化 issues 提供。
+/* 点击校验条目 → 定位到出错处并**持续高亮**（亮到用户下次点击/按键）。
+ * 坐标由 validateProfile 的结构化 issues 提供：
+ *   · 定义坐标 → 交给 jumpToDef（按键定义 / 动作与宏页）
+ *   · 布局坐标 → 切到对应布局 / 分体片段，选中目标键并滚动到它
  *
  * variant 决定落到布局按键上时的颜色，**默认 'err' 红**（本函数的主要调用方是
  * 校验详情，出错就该是红的）。「使用数」弹窗复用本函数时要显式传 'sel' 黄 ——
  * 那只是"带你到用过它的那个键"，不是出错（见 holdFlash 的注释）。 */
 function locateIssue(it, variant) {
   if (!it) return;
+  if (it.defKind && it.defName) { jumpToDef(it.defKind, it.defName, { error: true }); return; }
   if (it.layout && state.profile && isPlainObject(state.profile.layouts) && state.profile.layouts[it.layout]) {
     state.layoutName = it.layout;
   }
@@ -3772,7 +3819,7 @@ function showUsageDialog(title, usage) {
       }
       list.appendChild(h('button', {
         type: 'button', class: 'usage-item usage-jump',
-        title: it.loc.layout ? '跳转到该布局的对应按键' : '跳转到弹出菜单页',
+        title: usageJumpHint(it.loc),
         onclick: function (e) {
           if (e && e.preventDefault) e.preventDefault();
           modal.close();
@@ -3790,8 +3837,46 @@ function showUsageDialog(title, usage) {
 }
 FE.showUsageDialog = showUsageDialog;
 
+/* 「跳转」条目的悬停提示。三种坐标各有去处，别再统一写成「跳转到布局」——
+ * 定义内部的引用会跳到定义列表，说成布局会误导。 */
+function usageJumpHint(loc) {
+  if (!loc) return '';
+  if (loc.popupKey) return '跳转到弹出菜单页的该键';
+  if (loc.defKind) {
+    var t = { key: '按键定义', action: '动作', macro: '宏' }[loc.defKind] || '定义';
+    return '跳转到' + t + ' “' + loc.defName + '”';
+  }
+  return '跳转到该布局的对应按键';
+}
+
+/* 跳到某条定义：切到对应标签页、展开（动作/宏默认折叠）并滚动高亮。
+ * 定义坐标来自 buildRefIndex 的 defKind/defName，或校验 issue 的 defKind/defName。
+ * opts.error 为真时高亮用红色（来自校验详情的「有问题」），否则蓝色。 */
+function jumpToDef(kind, name, opts) {
+  if (typeof name !== 'string' || !name) return;
+  /* 清掉该页的搜索过滤：目标条目若被筛掉就不在 DOM 里，scrollToDefItem 会静默失败，
+   * 用户看到的是「点了没反应」。清空过滤再渲染，保证一定滚得到。 */
+  var filterId = kind === 'macro' ? 'macros-filter' : (kind === 'action' ? 'actions-filter' : 'keys-filter');
+  var fi = $(filterId);
+  if (fi && fi.value) fi.value = '';
+  var flashOpts = { error: !!(opts && opts.error) };
+  if (kind === 'action' || kind === 'macro') {
+    /* 动作/宏默认折叠；先写展开集，重渲染后该条目直接是展开态 */
+    ensureOpenSet(kind === 'macro' ? 'openMacros' : 'openActions')[name] = true;
+    activateTab('tab-actions');
+    renderAll();
+    scrollToDefItem(name, kind === 'macro' ? 'macros-list' : 'actions-list', flashOpts);
+    return;
+  }
+  activateTab('tab-keys');
+  renderAll();
+  scrollToDefItem(name, 'keys-list', flashOpts);
+}
+FE.jumpToDef = jumpToDef;
+
 /* 跳到某个引用处：布局坐标交给 locateIssue（自带切布局/选中/滚动），
- * 弹出菜单交给它自己的编辑器（切到弹出菜单页并选中该键）。
+ * 弹出菜单交给它自己的编辑器（切到弹出菜单页并选中该键），
+ * 定义坐标交给 jumpToDef（切页 + 展开 + 滚动）。
  *
  * 传 'sel' 让落到布局按键上的高亮是**黄色**：这是"带你到用过它的那个键"，
  * 不是出错，与校验详情跳过来的红色区分开（用户明确要求）。 */
@@ -3801,6 +3886,7 @@ function jumpToUsage(loc) {
     if (FE.jumpToPopupEditor) FE.jumpToPopupEditor(loc.popupKey);
     return;
   }
+  if (loc.defKind) { jumpToDef(loc.defKind, loc.defName); return; }
   locateIssue({
     layout: loc.layout, isSplit: loc.isSplit,
     sectionIndex: loc.sectionIndex, rowIndex: loc.rowIndex,

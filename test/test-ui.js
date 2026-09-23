@@ -2143,6 +2143,40 @@ await sleep(350);
   FE.locateIssue(noSplitIssue);
   eq(FE.state.splitMode, false, '无 split 片段的问题定位回落到常规模式');
 
+  /* ---- 按键定义 / 动作 / 宏内部的问题也能点击定位 ----
+   * 这些位置没有布局坐标，早期 issueLocatable 判 false →
+   * 校验详情里渲染成不可点的纯文本行（用户报告「点了没反应」）。 */
+  FE.applyProfileText(JSON.stringify({
+    keys: { 'k.broken': { ref: 'nope.ref' } },
+    actions: { badact: { type: 'nope' } },
+    macros: { badstep: [{ action: 'no_such_action' }] },
+    layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.broken' }]] }] } }
+  }), {});
+  const defIssue = FE.state.validation.issues.find(i => i.defKind === 'key' && i.defName === 'k.broken');
+  ok(!!defIssue, '按键定义内部的问题带定义坐标');
+  eq(FE.issueLocatable(defIssue), true, '定义坐标被判定为可定位');
+  /* 点它 → 切到按键定义页并高亮该条目（不是切布局） */
+  FE.state.sel = null;
+  FE.locateIssue(defIssue);
+  ok($('tab-keys').classList.contains('active'), '定义问题定位切到按键定义页');
+  const brokenRow = $('keys-list').querySelectorAll('.def-item.def-row-click')
+    .find(r => r.querySelectorAll('.def-name')[0].textContent === 'k.broken');
+  ok(!!brokenRow && brokenRow.classList.contains('flash-hold'), '定位后目标条目带持续高亮');
+  ok(brokenRow.classList.contains('flash-hold-err'), '校验定位用红色（提示有问题）');
+  documentStub.dispatchEvent({ type: 'pointerdown' });
+  ok(!brokenRow.classList.contains('flash-hold'), '用户点击后该高亮消失');
+
+  /* 动作/宏的问题同样可定位 */
+  const actIssue = FE.state.validation.issues.find(i => i.defKind === 'action' && i.defName === 'badact');
+  ok(!!actIssue && FE.issueLocatable(actIssue) === true, '动作定义的问题可定位');
+  const macIssue = FE.state.validation.issues.find(i => i.defKind === 'macro' && i.defName === 'badstep');
+  ok(!!macIssue && FE.issueLocatable(macIssue) === true, '宏步骤的问题可定位');
+  /* 定义已不存在时不谎报可定位（避免点了跳到空处） */
+  eq(FE.issueLocatable({ defKind: 'key', defName: 'no_such_def' }), false,
+    '定义不存在时不判定为可定位');
+  /* 校验详情里确实渲染成可点击行 */
+  ok(q('.issue-locatable').length > 0, '校验详情渲染出可点击的定义问题条目');
+
   console.log('== 使用数按钮 + 内建弹窗 + 整行可点 ==');
   /* 造一份规模小但引用关系完整的配置：布局用按键、按键定义链、宏、动作、弹出菜单 */
   FE.applyProfileText(JSON.stringify({
@@ -2211,12 +2245,62 @@ await sleep(350);
   ok(jumpBtns.length >= 3, '可跳转条目已渲染（' + jumpBtns.length + ' 条）');
   ok(usageDlg.textContent.indexOf('跳转') >= 0, '可跳转条目带跳转提示');
 
-  /* 点可跳转条目 → 切到布局编辑页并选中该键 */
+  /* 定义内部的引用（「按键定义 k.chain」）现在也带跳转按钮 ——
+   * 早期它是不可点的只读行，用户点不动，是本次修复的目标。 */
+  const defJump = usageDlg.querySelectorAll('.usage-item.usage-jump')
+    .find(b => b.textContent.indexOf('按键定义 k.chain') >= 0);
+  ok(!!defJump, '被按键定义引用的条目也可点（不再只读）');
+
+  /* 点可跳转条目 → 切到布局编辑页并选中该键。
+   * 必须挑**布局坐标**的那条：条目顺序不保证，写 jumpBtns[0] 会挑到定义跳转项。 */
+  const layoutJump = usageDlg.querySelectorAll('.usage-item.usage-jump')
+    .find(b => b.textContent.indexOf('按键定义') < 0);
+  ok(!!layoutJump, '弹窗含布局坐标条目（' + (layoutJump && layoutJump.textContent) + '）');
   documentStub._openDialogs.length = 0;
-  jumpBtns[0]._fire('click');
+  layoutJump._fire('click');
   ok($('tab-layout').classList.contains('active'), '跳转后切到布局编辑页');
   ok(FE.state.sel != null, '跳转后选中了对应按键');
   ok(!usageDlg.open, '跳转后弹窗已关闭');
+
+  /* 点定义跳转项 → 切到按键定义页并高亮该条目（不是跳到布局） */
+  documentStub._openDialogs.length = 0;
+  uBtn2._fire('click');
+  const dlgDef = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  const defJump2 = dlgDef.querySelectorAll('.usage-item.usage-jump')
+    .find(b => b.textContent.indexOf('按键定义 k.chain') >= 0);
+  ok(!!defJump2, '重开弹窗后仍含定义跳转项');
+  defJump2._fire('click');
+  eq(FE.state.layoutName, 'default', '跳定义不改当前布局名（不是布局跳转）');
+  ok($('tab-keys').classList.contains('active'), '定义跳转切到按键定义页');
+
+  /* ---- 定位高亮必须**持续**到用户下次点击/按键（不是一闪而过） ----
+   * 用户明确要求：跳转/新建/校验定位三处的落点常落在长列表里，
+   * 1.2s 的淡出在高亮被扫到前就没了。 */
+  const heldRow = $('keys-list').querySelectorAll('.def-item.def-row-click')
+    .find(r => r.querySelectorAll('.def-name')[0].textContent === 'k.chain');
+  ok(!!heldRow, '跳转后能找到目标条目 k.chain');
+  ok(heldRow.classList.contains('flash-hold'), '跳转目标带持续高亮（.flash-hold）');
+  ok(!heldRow.classList.contains('flash-hold-err'), '引用跳转用蓝色（非出错红）');
+  /* 用户下一次「点」→ 高亮解除（capture 监听 pointerdown） */
+  documentStub.dispatchEvent({ type: 'pointerdown' });
+  ok(!heldRow.classList.contains('flash-hold'), '用户点击后跳转高亮消失');
+
+  /* 同一时刻只保留一处高亮：再定位一次，上一处应被撤掉，否则会亮一排 */
+  FE.scrollToDefItem('k.a', 'keys-list');
+  const heldA = $('keys-list').querySelectorAll('.def-item.def-row-click')
+    .find(r => r.querySelectorAll('.def-name')[0].textContent === 'k.a');
+  ok(heldA.classList.contains('flash-hold'), '新定位目标亮起');
+  ok(!heldRow.classList.contains('flash-hold'), '旧的定位高亮被撤掉（只留一处）');
+  /* 键盘操作同样解除（capture 监听 keydown） */
+  documentStub.dispatchEvent({ type: 'keydown' });
+  ok(!heldA.classList.contains('flash-hold'), '用户按键后定位高亮消失');
+
+  /* 校验详情那种「有问题」的定位用红色变体，与蓝色的引用跳转区分 */
+  FE.scrollToDefItem('k.a', 'keys-list', { error: true });
+  const heldErr = $('keys-list').querySelectorAll('.def-item.def-row-click')
+    .find(r => r.querySelectorAll('.def-name')[0].textContent === 'k.a');
+  ok(heldErr.classList.contains('flash-hold-err'), '出错定位带红色持续高亮（.flash-hold-err）');
+  documentStub.dispatchEvent({ type: 'pointerdown' });
 
   /* 跳转到 numpad（另一个布局）应切换 layoutName */
   FE.applyProfileText(JSON.stringify(FE.state.profile), {});
