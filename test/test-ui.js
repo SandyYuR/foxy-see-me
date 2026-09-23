@@ -2420,7 +2420,22 @@ await sleep(350);
   const actDlg2 = documentStub._openDialogs[0];
   ok(actDlg2.textContent.indexOf('宏 m1') >= 0, '动作弹窗列出无坐标的直接引用（宏步骤）');
   ok(actDlg2.querySelectorAll('.usage-item.usage-jump').length >= 1, '动作弹窗含可跳转条目');
+  /* 动作是最基础的条目：只被引用、不引用别人（结构上没有指他字段）。
+   * 所以动作弹窗**不该**有「引用」一节，也不该出现「它没有引用任何条目」的噪音 —
+   * 用户明确要求。 */
+  eq(actDlg2.textContent.indexOf('引用（它用到的动作与宏）'), -1, '动作弹窗没有「引用」一节');
+  eq(actDlg2.textContent.indexOf('它没有引用'), -1, '动作弹窗不出现「没有引用」的噪音文案');
   actDlg2.close();
+
+  /* 宏与按键定义**仍要**有「引用」一节（它们确实会引用动作） */
+  const macItem3 = $('macros-list').querySelectorAll('.def-item.def-collapsible')
+    .find(it => it.querySelectorAll('.def-name')[0].textContent === 'm1');
+  documentStub._openDialogs.length = 0;
+  macItem3.querySelectorAll('.def-summary button')[0]._fire('click');
+  const macDlg3 = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  ok(macDlg3.textContent.indexOf('引用（它用到的动作与宏）') >= 0, '宏弹窗保留「引用」一节');
+  ok(macDlg3.textContent.indexOf('动作 “a1”') >= 0, '宏弹窗列出它引用的动作');
+  macDlg3.close();
 
   /* 宏条目也有使用数 */
   const macItem2 = $('macros-list').querySelectorAll('.def-item.def-collapsible')

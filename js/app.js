@@ -4161,12 +4161,16 @@ function collapsibleDefItem(name, badge, openSet, opts) {
     tools.appendChild(h('button', {
       type: 'button', class: 'mini-button def-usage-btn',
       dataset: { usageKind: kind, usageName: name },
-      title: '查看被哪些布局使用',
+      /* 只有**宏**有外向引用（步骤里引用动作）。动作是最基础的条目：它只被引用、
+       * 不会引用别人（结构上没有指他字段），所以动作不传 outgoing —— 弹窗就不会
+       * 出现那句「它没有引用任何条目」的噪音（用户明确要求）。 */
+      title: kind === 'macro' ? '查看被谁引用、以及它引用了哪些动作' : '查看它被谁引用',
       onclick: function (e) {
         stopEv(e);   /* 在 <summary> 内：不阻止会连带展开/收起 */
         /* 点击时重算：静默写回只更新按钮文字，弹窗内容要保证是最新的 */
         var fresh = usageOf(currentRefIndex(), kind, name);
-        showUsageDialog((kind === 'macro' ? '宏 “' : '动作 “') + name + '” 的使用情况', fresh);
+        showUsageDialog((kind === 'macro' ? '宏 “' : '动作 “') + name + '” 的使用情况',
+          fresh, kind === 'macro' ? outgoingRefsOf(state.profile, 'macro', name) : undefined);
       }
     }, '使用 ' + opts.usage.count));
   }
