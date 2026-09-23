@@ -1191,6 +1191,49 @@ eq(FE.buildRefIndex(null, null), { key: {}, action: {}, macro: {} }, '空输入�
 eq(FE.buildRefIndex({}, undefined).key, {}, '缺 popupProfile 不报错');
 
 /* ================================================================
+ * 「引用」查询（outgoingRefsOf）—— 按键定义用到了哪些动作与宏
+ * 与 buildRefIndex（「被谁引用」）正好反向。用户要求：按键定义页的
+ * 「使用」弹窗里要能看到自己引用的动作/宏条目，并可点击跳转。
+ * ================================================================ */
+console.log('== 引用查询：某条定义用到了哪些动作与宏 ==');
+const ogProfile = {
+  type: 'foxy.keyboard-layout',
+  keys: {
+    'k.plain': { ref: 'rime.a' },
+    'k.usesA': { ref: 'rime.b', tap: { action: 'a1' }, longPress: { macro: 'm1' } },
+    'k.swiper': { ref: 'rime.c', swipe: { up: { action: 'a2' } }, hold: { start: { action: 'a1' } } },
+    'k.variant': { ref: 'rime.d', variants: [{ when: { rime: { composing: true } }, tap: { action: 'a2' } }] }
+  },
+  actions: { a1: { type: 'key', key: 'BACKSPACE' }, a2: { type: 'key', key: 'LEFT' } },
+  macros: { m1: [{ action: 'a1' }] },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.plain' }]] }] } }
+};
+eq(FE.outgoingRefsOf(ogProfile, 'key', 'k.plain'), [], '只 ref 内置键的定义没有外向引用');
+/* 基础 ref 本身不进「引用」一节：它在条目上已以 `ref: xxx` badge 显示，
+ * 且常指向内置键（不是「动作与宏」页的条目）。 */
+ok(FE.outgoingRefsOf(ogProfile, 'key', 'k.usesA').every(o => o.name !== 'rime.b'),
+  '基础 ref 不计入外向引用（避免与 badge 重复）');
+const ogA = FE.outgoingRefsOf(ogProfile, 'key', 'k.usesA');
+eq(ogA.map(o => o.kind + ':' + o.name), ['action:a1', 'macro:m1'], '手势里的动作名与宏名都被收集');
+eq(ogA.find(o => o.name === 'a1').where, 'tap', '标出出现位置 tap');
+eq(ogA.find(o => o.name === 'm1').where, 'longPress', '标出出现位置 longPress');
+/* 同一目标只留一条（tap 与 hold 都引用 a1 时不该列两遍） */
+const ogSw = FE.outgoingRefsOf(ogProfile, 'key', 'k.swiper');
+eq(ogSw.filter(o => o.name === 'a1').length, 1, '同一目标去重（hold 与 tap 都引用 a1）');
+ok(ogSw.some(o => o.where === 'swipe.up'), '标出 swipe 方向');
+ok(ogSw.some(o => o.where === 'hold · start'), '标出 hold 的侧别');
+ok(FE.outgoingRefsOf(ogProfile, 'key', 'k.variant').some(o => o.name === 'a2'),
+  '变体里的动作引用也被收集');
+eq(FE.outgoingRefsOf(ogProfile, 'macro', 'm1').map(o => o.kind + ':' + o.name), ['action:a1'],
+  '宏的步骤引用也能查（供动作与宏页复用）');
+eq(FE.outgoingRefsOf(ogProfile, 'action', 'a1'), [], '普通动作没有外向引用');
+eq(FE.outgoingRefsOf(ogProfile, 'key', '不存在的键'), [], '名字不存在时返回空数组不抛错');
+eq(FE.outgoingRefsOf(null, 'key', 'k.plain'), [], 'profile 为空安全返回');
+/* 悬空引用仍要列出来（弹窗要标「不存在」），不能因目标缺失而丢掉 */
+ok(FE.outgoingRefsOf({ keys: { k: { tap: { action: 'ghost' } } } }, 'key', 'k')
+  .some(o => o.name === 'ghost'), '悬空引用照样列出（由调用方标「不存在」）');
+
+/* ================================================================
  * 未保存改动的守卫（弹框关闭前确认）
  * 历史 bug：点遮罩/Esc 直接关闭，用户辛苦改的内容静默丢弃。
  * ================================================================ */

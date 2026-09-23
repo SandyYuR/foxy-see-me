@@ -1417,6 +1417,76 @@ function usageOf(index, kind, name) {
 }
 FE.usageOf = usageOf;
 
+/* 某条定义**向外**引用了谁 —— 「使用数」弹窗里「引用」一节的来源，
+ * 与「被谁引用」正好反向。
+ *
+ * 只收**动作与宏**（`kind === 'key'` 的 ref 不收）：按键定义的基础 `ref`
+ * 已经在条目上以 `ref: xxx` badge 显示了，而手势里直接引用的动作名 / 宏名
+ * 才是「动作与宏」页里的条目 —— 需要能在弹窗里看到并跳过去。
+ *
+ * 返回 `[{ kind: 'action'|'macro', name, where }]`，where 是出现位置
+ * （`tap` / `swipe.down` / `hold · end` / `变体2 · tap`…）。
+ * 同一目标只留首次出现（否则 tap+hold 都引用 a1 会列出两条一样的）。 */
+function outgoingRefsOf(profile, kind, name) {
+  profile = isPlainObject(profile) ? profile : {};
+  var out = [], seen = {};
+  var GESTURES = ['tap', 'doubleTap', 'longPress', 'hold'];
+  var HOLD_SIDES = ['start', 'end', 'endAction', 'endActions'];
+
+  function add(k, n, where) {
+    if (typeof n !== 'string' || !n) return;
+    var sig = k + ':' + n;
+    if (seen[sig]) return;
+    seen[sig] = 1;
+    out.push({ kind: k, name: n, where: where || '' });
+  }
+  function join(where, seg) { return where ? (where + ' · ' + seg) : seg; }
+
+  function specRefs(spec, where, depth) {
+    if (spec == null || depth > 6) return;
+    if (typeof spec === 'string') { add('action', spec, where); return; }
+    if (Array.isArray(spec)) { spec.forEach(function (s) { specRefs(s, where, depth + 1); }); return; }
+    if (!isPlainObject(spec)) return;
+    if (typeof spec.macro === 'string') add('macro', spec.macro, where);
+    if (spec.action != null && spec.action !== '') specRefs(spec.action, where, depth + 1);
+    if (Array.isArray(spec.actions)) specRefs(spec.actions, where, depth + 1);
+  }
+  /* hold 的两侧是动作对象（start/end 或 action/endAction(s)），要单独下探 */
+  function gestureRefs(g, where, depth) {
+    if (g == null) return;
+    specRefs(g, where, depth);
+    if (isPlainObject(g)) {
+      HOLD_SIDES.forEach(function (h) {
+        if (g[h] != null) specRefs(g[h], join(where, h), depth + 1);
+      });
+    }
+  }
+  function nodeRefs(node, where, depth) {
+    if (!isPlainObject(node) || depth > 6) return;
+    GESTURES.forEach(function (slot) { gestureRefs(node[slot], join(where, slot), depth + 1); });
+    if (isPlainObject(node.swipe)) {
+      FE.SWIPE_DIRS.forEach(function (d) { gestureRefs(node.swipe[d], join(where, 'swipe.' + d), depth + 1); });
+    }
+    (Array.isArray(node.variants) ? node.variants : []).forEach(function (v, i) {
+      if (isPlainObject(v)) nodeRefs(v, join(where, '变体' + (i + 1)), depth + 1);
+    });
+    if (isPlainObject(node.override)) nodeRefs(node.override, join(where, 'override'), depth + 1);
+  }
+
+  /* ⚠️ **动作没有外向引用 —— 不要为它加分支**：动作对象是单一直接动作
+   * （type/key/modifier/text/switch_layout/app），结构上没有 action/actions/macro
+   * 这类"指他"字段，所以动作只能被引用、不可能引用别人（用户明确指出的领域规则）。
+   * 硬给它跑一遍只会得到空数组，让弹窗对动作显示一句「它没有引用任何条目」的噪音。
+   * 有外向引用的是：按键定义（手势里引用动作/宏）与宏（步骤里引用动作）。 */
+  if (kind === 'key') nodeRefs(isPlainObject(profile.keys) ? profile.keys[name] : null, '', 0);
+  else if (kind === 'macro') {
+    var arr = isPlainObject(profile.macros) ? profile.macros[name] : null;
+    (Array.isArray(arr) ? arr : []).forEach(function (st, i) { specRefs(st, '步骤' + (i + 1), 0); });
+  }
+  return out;
+}
+FE.outgoingRefsOf = outgoingRefsOf;
+
 /* 单次查询（一次性全量扫一遍）。页面渲染请改用 currentRefIndex 复用索引。 */
 function countKeyUsage(name) { return usageOf(currentRefIndex(), 'key', name); }
 FE.countKeyUsage = countKeyUsage;
@@ -3768,11 +3838,15 @@ function renderKeysTab() {
         h('button', {
           type: 'button', class: 'mini-button def-usage-btn',
           dataset: { usageKind: 'key', usageName: n },
-          title: '查看被哪些布局引用',
+          title: '查看被谁引用、以及它引用了哪些动作与宏',
           onclick: function (e) {
             stopEv(e);
-            /* 点击时重算：列表不一定刚重建过，保证弹窗内容最新 */
-            showUsageDialog('按键定义 “' + n + '” 的使用情况', usageOf(currentRefIndex(), 'key', n));
+            /* 点击时重算：列表不一定刚重建过，保证弹窗内容最新。
+             * 同时给出「引用」一节：按键定义常以 tap:"my.action" / {macro:"m"}
+             * 指向「动作与宏」页的条目，那些以前在界面上完全看不到。 */
+            showUsageDialog('按键定义 “' + n + '” 的使用情况',
+              usageOf(currentRefIndex(), 'key', n),
+              outgoingRefsOf(state.profile, 'key', n));
           }
         }, '使用 ' + used.count),
         h('button', {
@@ -3796,10 +3870,20 @@ function renderKeysTab() {
 /* ================================================================
  * 使用情况对话框（网页内建弹窗；可点击条目跳转到引用处）
  * ================================================================ */
-function showUsageDialog(title, usage) {
+/* 使用情况弹窗，两个方向都列：
+ *   1. **被谁引用**（usage，来自 buildRefIndex）—— 谁用到它；
+ *   2. **引用了谁**（outgoing，来自 outgoingRefsOf）—— 它用到了哪些动作/宏。
+ * 第二条是用户要求补的：按键定义的 `tap: "my.action"` / `{macro:"m"}` 这类
+ * 引用以前在界面上完全看不到，只能自己翻 JSON。
+ * outgoing 不传（undefined）时不渲染第二节，兼容旧调用。 */
+function showUsageDialog(title, usage, outgoing) {
   /* openModal 来自 key-dialog.js（本文件之后加载）；用户点击时才调用，届时已就绪 */
   if (typeof FE.openModal !== 'function') return null;
   var modal = FE.openModal({ title: title, wide: true });
+  /* 两节都在时各自矮一点，免得弹窗总高超过屏幕 */
+  var hasOut = Array.isArray(outgoing);
+  var listCls = 'usage-list' + (hasOut ? ' usage-list-compact' : '');
+
   modal.body.appendChild(h('div', { class: 'usage-summary' },
     usage.count ? ('共被引用 ' + usage.count + ' 处') : '没有被任何地方引用'));
 
@@ -3809,9 +3893,9 @@ function showUsageDialog(title, usage) {
   } else {
     modal.body.appendChild(h('div', { class: 'dialog-hint' },
       usage.items.some(function (i) { return i.loc; })
-        ? '点击带「跳转」的条目会切到对应的布局并选中该按键。'
-        : '这些引用都没有布局坐标，无法直接跳转。'));
-    var list = h('div', { class: 'usage-list' });
+        ? '点击带「跳转」的条目会切到对应的布局或定义并选中它。'
+        : '这些引用都没有可跳转的位置。'));
+    var list = h('div', { class: listCls });
     usage.items.forEach(function (it) {
       if (!it.loc) {
         list.appendChild(h('div', { class: 'usage-item' }, it.label));
@@ -3829,6 +3913,42 @@ function showUsageDialog(title, usage) {
     });
     modal.body.appendChild(list);
   }
+
+  /* ---- 第二节：它自己引用了哪些动作 / 宏 ---- */
+  if (hasOut) {
+    modal.body.appendChild(h('div', { class: 'usage-section-title' },
+      '引用（它用到的动作与宏）'));
+    if (!outgoing.length) {
+      modal.body.appendChild(h('div', { class: 'status' },
+        '它没有引用「动作与宏」页里的条目。'));
+    } else {
+      modal.body.appendChild(h('div', { class: 'dialog-hint' },
+        '点击条目会切到「动作与宏」页并选中它。'));
+      var olist = h('div', { class: listCls });
+      outgoing.forEach(function (o) {
+        var label = (o.kind === 'macro' ? '宏 “' : '动作 “') + o.name + '”';
+        var where = o.where ? h('span', { class: 'usage-where' }, o.where) : null;
+        /* 引用可能悬空（目标已被删）—— 此时不给跳转按钮，明确标出来，
+         * 否则点了没反应会被当成 bug。校验详情里也有对应的报错条目。 */
+        if (!defExists(o.kind, o.name)) {
+          olist.appendChild(h('div', { class: 'usage-item' }, label, where,
+            h('span', { class: 'usage-missing' }, '不存在')));
+          return;
+        }
+        olist.appendChild(h('button', {
+          type: 'button', class: 'usage-item usage-jump',
+          title: usageJumpHint({ defKind: o.kind, defName: o.name }),
+          onclick: function (e) {
+            if (e && e.preventDefault) e.preventDefault();
+            modal.close();
+            jumpToDef(o.kind, o.name);
+          }
+        }, label, where, h('span', { class: 'usage-jump-mark' }, '跳转 ↗')));
+      });
+      modal.body.appendChild(olist);
+    }
+  }
+
   modal.toolbar.appendChild(h('button', {
     type: 'button', class: 'mini-button primary',
     onclick: function () { modal.close(); }

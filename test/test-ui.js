@@ -2315,6 +2315,57 @@ await sleep(350);
   numpadJump._fire('click');
   eq(FE.state.layoutName, 'numpad', '跳转到另一布局会切换当前布局');
 
+  /* ---- 按键定义的「引用」一节：它用到了哪些动作与宏（可看、可跳） ----
+   * 用户要求：按键定义除了「被谁引用」，还要能看自己**引用**了哪些
+   * 「动作与宏」页的条目 —— 以前这些引用在界面上完全看不到。 */
+  FE.applyProfileText(JSON.stringify({
+    type: 'foxy.keyboard-layout',
+    keys: {
+      'k.usesA': { ref: 'rime.b', tap: { action: 'a1' }, longPress: { macro: 'm1' } },
+      'k.dangling': { ref: 'rime.c', tap: { action: 'ghost.act' } }
+    },
+    actions: { a1: { type: 'key', key: 'BACKSPACE' } },
+    macros: { m1: [{ action: 'a1' }] },
+    layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.usesA' }]] }] } }
+  }), {});
+  FE.renderAll();
+  const usesRow = findKeyRow('k.usesA');
+  ok(!!usesRow, '找到带外向引用的按键定义 k.usesA');
+  documentStub._openDialogs.length = 0;
+  usesRow.querySelectorAll('button').find(b => /^使用 \d+$/.test(b.textContent))._fire('click');
+  const ogDlg = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  ok(ogDlg.textContent.indexOf('引用（它用到的动作与宏）') >= 0, '弹窗有「引用」一节');
+  ok(ogDlg.textContent.indexOf('动作 “a1”') >= 0, '列出引用的动作 a1');
+  ok(ogDlg.textContent.indexOf('宏 “m1”') >= 0, '列出引用的宏 m1');
+  ok(ogDlg.textContent.indexOf('tap') >= 0 && ogDlg.textContent.indexOf('longPress') >= 0,
+    '标出引用出现的位置（tap / longPress）');
+  const ogJump = ogDlg.querySelectorAll('.usage-item.usage-jump')
+    .find(b => b.textContent.indexOf('动作 “a1”') >= 0);
+  ok(!!ogJump, '引用的动作条目可点击跳转');
+  ogJump._fire('click');
+  ok($('tab-actions').classList.contains('active'), '点引用条目切到动作与宏页');
+  ok(FE.state.openActions && FE.state.openActions.a1 === true, '目标动作被展开（默认折叠也能看到）');
+  const ogActRow = $('actions-list').querySelectorAll('.def-item.def-collapsible')
+    .find(it => it.querySelectorAll('.def-name')[0].textContent === 'a1');
+  ok(!!ogActRow && ogActRow.classList.contains('flash-hold'), '跳过去后目标带持续高亮');
+  ok(!ogActRow.classList.contains('flash-hold-err'), '引用跳转用蓝色（只有校验出错是红色）');
+  documentStub.dispatchEvent({ type: 'pointerdown' });
+  /* 跳转把 a1 写进了展开集（默认折叠的条目也要能看到）。
+   * 后面「点使用数不误展开条目」的断言依赖全新折叠状态，
+   * 而 applyProfileText 不重置 openActions，所以这里显式清掉。 */
+  FE.state.openActions = {};
+
+  /* 悬空引用（目标已被删）要明确标出来，且不给跳转按钮 ——
+   * 否则点了没反应会被当成 bug。 */
+  const danglingRow = findKeyRow('k.dangling');
+  documentStub._openDialogs.length = 0;
+  danglingRow.querySelectorAll('button').find(b => /^使用 \d+$/.test(b.textContent))._fire('click');
+  const dangleDlg = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  ok(dangleDlg.textContent.indexOf('不存在') >= 0, '悬空引用标注「不存在」');
+  eq(dangleDlg.querySelectorAll('.usage-item.usage-jump')
+    .filter(b => b.textContent.indexOf('ghost.act') >= 0).length, 0, '悬空引用不给跳转按钮');
+  dangleDlg.close();
+
   /* ---- 动作与宏页：使用数按钮在删除按钮左侧 ---- */
   FE.applyProfileText(JSON.stringify({
     type: 'foxy.keyboard-layout',

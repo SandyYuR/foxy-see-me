@@ -692,6 +692,17 @@ label.check { cursor: pointer; white-space: nowrap; }
 .usage-item.usage-jump:hover { border-color: var(--accent); background: #2a3140; }
 .usage-item.usage-jump:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 .usage-jump-mark { margin-left: auto; flex: 0 0 auto; font-size: 11.5px; color: var(--accent); }
+/* 「被引用」与「引用」两节都在时各矮一点，避免弹窗总高超过屏幕 */
+.usage-list-compact { max-height: 30vh; }
+/* 第二节（引用）的小标题：与第一段列表拉开距离，明确是另一组信息 */
+.usage-section-title {
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+  margin: 14px 0 6px; padding-top: 10px; border-top: 1px solid var(--border);
+}
+/* 出现位置（tap / swipe.down / 步骤2…）：靠右、次要色，不抢名字的注意力 */
+.usage-where { margin-left: auto; flex: 0 1 auto; font-size: 11px; color: var(--text-dim); }
+/* 引用目标已不存在（悬空引用）：明确标红，别让用户点了没反应 */
+.usage-missing { margin-left: auto; flex: 0 0 auto; font-size: 11.5px; color: var(--err); }
 
 /* ---------------- 动作与宏：图形化编辑 ---------------- */
 .def-item.def-gui { gap: 8px; }
