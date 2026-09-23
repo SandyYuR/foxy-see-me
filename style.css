@@ -288,17 +288,47 @@ label.check { cursor: pointer; white-space: nowrap; }
 .issue-locatable:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 .issue-path { color: var(--text-dim); font-size: 11.5px; margin-left: 6px; }
 .st-dim { color: var(--text-dim); }
-/* 定位后目标键的短暂高亮（红色：表示"这里有问题"） */
-.issue-flash { animation: issue-flash 1.1s ease-out; }
-@keyframes issue-flash {
-  0%, 40% { box-shadow: 0 0 0 3px var(--err); }
-  100% { box-shadow: 0 0 0 0 transparent; }
+/* 定位/新建后的高亮：**一直亮到用户下一次点击或按键**。
+ *
+ * 为什么不再用「一次跑完就淡出」的 animation（历史上是 .def-flash / .issue-flash，
+ * 1.1–1.2s 淡出）：落点常在长列表里，高亮在用户还没扫到、还没看清跳到哪时就已经
+ * 消失了（用户明确要求改成持续）。CSS 动画**表达不了**「持续到用户操作」——
+ * 时长写死就无从知道用户何时看到，所以改由 app.js 的 holdFlash 挂一次性监听、
+ * 在用户 pointerdown/keydown 时移除本类。
+ *
+ * 蓝（accent）= 非问题：新建的条目、从「使用数」跳过来的目标；
+ * 红（err）  = 有问题：校验详情里点过来的出错位置（列表条目）；
+ * 黄（sel）  = 布局里的按键：它本来就被选中、自带黄框，用同色系光晕轻轻强调。
+ * 三类都持续，只是颜色语义不同。 */
+.flash-hold {
+  animation: flash-hold 1.4s ease-in-out infinite;
+  border-color: var(--accent);
 }
-/* 新建条目后的短暂高亮（蓝色 accent：表示"刚建好的是这个"，与红色的出错高亮区分） */
-.def-flash { animation: def-flash 1.2s ease-out; }
-@keyframes def-flash {
-  0%, 45% { box-shadow: 0 0 0 3px var(--accent); border-color: var(--accent); }
-  100% { box-shadow: 0 0 0 0 transparent; }
+.flash-hold.flash-hold-err { animation-name: flash-hold-err; border-color: var(--err); }
+/* 布局里的按键：**红**要"压住"它自带的黄框才看得出是出错色，所以把 outline 的
+ * 颜色也改成红（而不是再加一层）—— outline 只有一份，改色即替换，
+ * 不会出现两条框套在一起的重复观感。
+ * 选择器必须 **3 个类**才压得过既有的 `.chip.chip-sel` / `.gedit-key.chip-sel`
+ * （2 个类）；写成 2 个类会被后者按同权重、后出现顺序覆盖掉。 */
+.chip.chip-sel.flash-hold-err,
+.gedit-key.chip-sel.flash-hold-err { outline-color: var(--err); }
+/* 布局里的按键也可以是**黄色**（与 `.chip-sel` 的 --sel 选中框同色）：
+ * 用于「使用数」弹窗跳过来时 —— 那只是"带你到用过它的那个键"，
+ * 不是出错，同色系光晕比红光自然得多。
+ * 黄不需要 outline 覆盖（没有两色相争），光晕叠在黄框外圈即可。
+ * 点击后摘掉本类 → 光晕消失，按键保持选中黄框（选择状态照旧）。 */
+.flash-hold.flash-hold-sel { animation-name: flash-hold-sel; border-color: var(--sel); }
+@keyframes flash-hold {
+  0%, 100% { box-shadow: 0 0 0 3px var(--accent); }
+  50% { box-shadow: 0 0 0 7px var(--accent); }
+}
+@keyframes flash-hold-err {
+  0%, 100% { box-shadow: 0 0 0 3px var(--err); }
+  50% { box-shadow: 0 0 0 7px var(--err); }
+}
+@keyframes flash-hold-sel {
+  0%, 100% { box-shadow: 0 0 0 3px var(--sel); }
+  50% { box-shadow: 0 0 0 7px var(--sel); }
 }
 
 /* ---------------- 预览 ---------------- */

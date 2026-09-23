@@ -395,6 +395,15 @@ const documentStub = {
   querySelector(sel) { return queryAll(this._body, sel)[0] || null; },
   querySelectorAll(sel) { return queryAll(this._body, sel); },
   addEventListener(type, fn) { (this._listeners = this._listeners || {}); (this._listeners[type] = this._listeners[type] || []).push(fn); },
+  /* 与 DOMNode 一样必须成对提供：真实 document 有 removeEventListener，
+   * 桩缺了它，任何「挂监听后解绑」的代码在测试里会 TypeError
+   * （跳转后的持续高亮就是第一例：它按用户操作解绑监听）。 */
+  removeEventListener(type, fn) {
+    const l = this._listeners && this._listeners[type];
+    if (!l) return;
+    const i = l.indexOf(fn);
+    if (i >= 0) l.splice(i, 1);
+  },
   dispatchEvent(ev) {
     const l = (this._listeners && this._listeners[ev.type] || []).slice();
     for (const fn of l) fn.call(this, ev);

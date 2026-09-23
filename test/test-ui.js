@@ -843,7 +843,8 @@ ok(dialogCount() === 0, '新建动作不自动弹出编辑对话框');
 const freshItem = $('actions-list').querySelectorAll('.def-item.def-collapsible')
   .find(it => it.querySelectorAll('.def-name')[0].textContent === 'test.fresh');
 ok(!!freshItem && freshItem.open === true, '新建条目在界面上确实展开');
-ok(freshItem.classList.contains('def-flash'), '新建条目带高亮，方便一眼找到');
+ok(freshItem.classList.contains('flash-hold'), '新建条目带持续高亮，方便一眼找到');
+ok(!freshItem.classList.contains('flash-hold-err'), '新建用蓝色（只有校验出错才是红色）');
 
 ok(!!$('macros-new') && !!$('macros-add'), '宏页有新建输入框与新建按钮（工具条内）');
 $('macros-new').value = 'test.freshmacro';
@@ -867,7 +868,8 @@ eq(Object.keys(FE.state.profile.keys).join(','), keysOrderBefore + ',test.newkey
 const newKeyRow = $('keys-list').querySelectorAll('.def-item.def-row-click')
   .find(r => r.querySelectorAll('.def-name')[0].textContent === 'test.newkey');
 ok(!!newKeyRow, '新按键定义出现在列表里');
-ok(newKeyRow.classList.contains('def-flash'), '新按键定义带高亮');
+ok(newKeyRow.classList.contains('flash-hold'), '新按键定义带持续高亮');
+ok(!newKeyRow.classList.contains('flash-hold-err'), '新按键定义用蓝色（非出错红）');
 /* 仍在末位：方案 B 刻意不改数据结构，只把视口挪过去 */
 const allKeyRows = $('keys-list').querySelectorAll('.def-item.def-row-click');
 ok(allKeyRows[allKeyRows.length - 1] === newKeyRow, '新条目追加在列表末尾（未重排）');
@@ -2092,6 +2094,31 @@ await sleep(350);
   eq(FE.state.sel, { s: 0, r: 0, k: 1 }, '定位选中出错的键');
   eq(FE.state.splitMode, false, '常规片段的问题不切到分体模式');
   ok(q('.chip-sel').length > 0, '定位后该键带选中样式');
+  /* 布局按键高亮**按来源分色**（用户两次要求叠加的结果）：
+   *   校验出错跳过来 → 红（'err'）：它是"这里有错"，红才对；
+   *   「使用数」跳过来 → 黄（'sel'）：只是带你到用过它的键，按键本就被选中、
+   *   自带黄框，红得突兀。
+   * 这里先验校验这条（默认红色）。 */
+  const errChip = documentStub.querySelectorAll('.chip-sel')
+    .find(c => c.classList.contains('flash-hold-err'));
+  ok(!!errChip, '校验出错跳到布局按键时带**红色**持续高亮');
+  ok(errChip.classList.contains('flash-hold'), '红框同时带 .flash-hold 基类（CSS 靠它挑元素）');
+  ok(!errChip.classList.contains('flash-hold-sel'), '校验跳转**不是**黄色（黄只给非出错的引用跳转）');
+  documentStub.dispatchEvent({ type: 'pointerdown' });
+  ok(!errChip.classList.contains('flash-hold-err'), '点击后红色闪烁效果消失');
+  ok(errChip.classList.contains('chip-sel'), '点击后按键仍保持选中（黄框正常显示）');
+
+  /* 同一条布局按键，「使用数」跳过来要用**黄色**（非出错语义） */
+  FE.jumpToUsage({ layout: 'default', sectionIndex: 0, rowIndex: 0, keyIndex: 1, group: 'rows' });
+  const selChip = documentStub.querySelectorAll('.chip-sel')
+    .find(c => c.classList.contains('flash-hold-sel'));
+  ok(!!selChip, '「使用数」跳到布局按键时带**黄色**持续高亮');
+  ok(!selChip.classList.contains('flash-hold-err'), '该路径不用红色（只有校验出错才红）');
+  documentStub.dispatchEvent({ type: 'pointerdown' });
+  ok(!selChip.classList.contains('flash-hold-sel'), '点击后黄色光晕消失');
+  ok(selChip.classList.contains('chip-sel'), '点击后按键仍保持选中');
+  /* 复原到校验定位的选中态，后续断言（split 等）沿用 badIssue 的流程 */
+  FE.locateIssue(badIssue);
 
   /* split 片段的问题带 isSplit，定位时切到分体模式 */
   FE.applyProfileText(JSON.stringify({

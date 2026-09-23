@@ -693,8 +693,8 @@ FE.validateProfile = function (profile) {
           checkGestureRefs(v, '按键定义 “' + kn + '” 变体 ' + vi, err, profile, scope);
         });
       }
-    }
     for (var kn2 in keys) if (Object.prototype.hasOwnProperty.call(keys, kn2)) visitKeyRef(kn2, []);
+    }
 
     /* ---- 命名布局 ---- */
     layoutNames.forEach(function (ln) {
@@ -2539,8 +2539,12 @@ function issueLocatable(it) {
 
 /* 点击校验条目 → 切到对应布局 / 分体片段，选中目标键并滚动到它。
  * 校验结果里的坐标（layout / isSplit / sectionIndex / rowIndex / keyIndex）由
- * validateProfile 的结构化 issues 提供。 */
-function locateIssue(it) {
+ * validateProfile 的结构化 issues 提供。
+ *
+ * variant 决定落到布局按键上时的颜色，**默认 'err' 红**（本函数的主要调用方是
+ * 校验详情，出错就该是红的）。「使用数」弹窗复用本函数时要显式传 'sel' 黄 ——
+ * 那只是"带你到用过它的那个键"，不是出错（见 holdFlash 的注释）。 */
+function locateIssue(it, variant) {
   if (!it) return;
   if (it.layout && state.profile && isPlainObject(state.profile.layouts) && state.profile.layouts[it.layout]) {
     state.layoutName = it.layout;
@@ -2561,16 +2565,68 @@ function locateIssue(it) {
   }
   activateTab('tab-layout');
   renderAll();
-  scrollToSelection();
+  scrollToSelection(variant);
 }
 
-/* 滚动到某个定义列表条目并短暂高亮。
- * 用途：新建动作/宏/按键定义后，条目追加在列表**末尾**，而工具条在卡片顶部 ——
- * 不滚过去的话用户看不到刚建的东西。**不改数据结构**：JSON 键顺序保持插入序，
- * 只把视口挪过去（布局文件是喂给 Foxy 的，UI 操作不该顺手重排它的键序）。
+/* ---------------- 定位后的「持续高亮」 ---------------- *
+ * 定位/新建后的高亮**一直亮着，直到用户下一次点击或按键**。
+ *
+ * 为什么不再用「一次跑完就淡出」的 animation（历史上是 .def-flash / .issue-flash，
+ * 1.1–1.2s 就结束）：落点常在长列表里，高亮在用户还没扫到、还没看清跳到哪时就
+ * 已经消失了（用户明确要求三处都改成持续）。CSS 动画**表达不了**「持续到用户
+ * 操作」——时长写死就无从知道用户何时看到。
+ *
+ * 同一时刻只保留一处高亮：新的定位先撤掉上一处，否则翻几个列表会亮一排。
+ * 释放用 capture 监听 pointerdown/keydown：定位本身是由 click（或按钮上的
+ * Enter）触发的，那两个事件都已发生过，所以不会刚亮就被自己解除。 */
+var flashHoldState = null;
+
+function releaseFlashHold() {
+  var s = flashHoldState;
+  if (!s) return;
+  flashHoldState = null;
+  s.el.classList.remove('flash-hold');
+  s.el.classList.remove('flash-hold-err');
+  s.el.classList.remove('flash-hold-sel');
+  document.removeEventListener('pointerdown', s.onRelease, true);
+  document.removeEventListener('keydown', s.onRelease, true);
+}
+
+/* variant 决定颜色（`true` 是历史的 err 简写，保持兼容）：
+ *   'err' / true → 红色：**出错**的落点（校验详情点过来的，列表条目与布局按键都用它）
+ *   'sel'        → 黄色：布局里的按键，但只用于**非出错**的跳转
+ *                  （「使用数」弹窗带你到用过它的那个键）
+ *   其他/空      → 蓝色：新建条目 / 定义列表里的引用跳转目标
+ *
+ * ⚠️ 布局按键的颜色**按来源分**，不是一刀切（用户两次要求叠加的结果）：
+ *   · 校验出错跳过来 → 红（它是"这里有错"，红才对）
+ *   · 「使用数」跳过来 → 黄（它本就带选中黄框，红得突兀）
+ * 两者都作用在同一个 `.chip-sel` 上，所以区分只能靠调用方传的 variant，
+ * 别在 `scrollToSelection` 里写死一个颜色。 */
+function holdFlash(el, variant) {
+  releaseFlashHold();
+  if (!el || !el.classList) return;
+  el.classList.add('flash-hold');
+  if (variant === 'sel') el.classList.add('flash-hold-sel');
+  else if (variant === 'err' || variant === true) el.classList.add('flash-hold-err');
+  var onRelease = function () { releaseFlashHold(); };
+  flashHoldState = { el: el, onRelease: onRelease };
+  document.addEventListener('pointerdown', onRelease, true);
+  document.addEventListener('keydown', onRelease, true);
+}
+FE.holdFlash = holdFlash;
+FE.releaseFlashHold = releaseFlashHold;
+
+/* 滚动到某个定义列表条目并高亮。
+ * 用途有二，都以**持续高亮**收尾（亮到用户下次点击/按键）：
+ *   · 新建动作/宏/按键定义后 —— 条目追加在列表**末尾**，工具条在卡片顶部，
+ *     不滚过去的话用户根本看不到刚建的东西；
+ *   · 从「使用数」弹窗或校验详情跳过来 —— 落点在长列表里，闪一下会错过。
+ * **不改数据结构**：JSON 键顺序保持插入序，只把视口挪过去（布局文件是喂给
+ * Foxy 的，UI 操作不该顺手重排它的键序）。
  * 这是「有意的滚动」，所以先 cancelScrollRestore()，否则 afterChange 排下的那一帧
  * 会把位置拽回原处（与 locateIssue 同样的处理）。 */
-function scrollToDefItem(name, hostId) {
+function scrollToDefItem(name, hostId, opts) {
   var host = $(hostId);
   if (!host) return false;
   var items = host.querySelectorAll('.def-item');
@@ -2587,12 +2643,14 @@ function scrollToDefItem(name, hostId) {
   /* dom-stub 不实现 scrollIntoView，测试环境下静默跳过（与 scrollToSelection 一致） */
   if (target.scrollIntoView) target.scrollIntoView({ block: 'center' });
   else if (card && card.scrollIntoView) card.scrollIntoView({ block: 'center' });
-  target.classList.add('def-flash');
+  holdFlash(target, !!(opts && opts.error));
   return true;
 }
 FE.scrollToDefItem = scrollToDefItem;
 
-function scrollToSelection() {
+/* variant 决定高亮颜色（默认 'err' 红：本函数的主要调用方是校验定位）。
+ * 「使用数」跳转走 jumpToUsage → 传 'sel' 黄（那不是出错，红光太突兀）。 */
+function scrollToSelection(variant) {
   var sel = state.sel;
   if (!sel) return;
   var target = null, i, nodes;
@@ -2618,7 +2676,13 @@ function scrollToSelection() {
   /* dom-stub 不实现 scrollIntoView，测试环境下静默跳过 */
   if (target.scrollIntoView) target.scrollIntoView({ block: 'center' });
   else if (card && card.scrollIntoView) card.scrollIntoView({ block: 'center' });
-  target.classList.add('issue-flash');
+  /* 布局里的按键也加持续高亮，颜色**按来源分**（见 holdFlash 的注释）：
+   *   · 校验出错跳过来 → 红（'err'）：它是"这里有错"，红才对；
+   *   · 「使用数」跳过来 → 黄（'sel'）：那只是带你到用过它的键，
+   *     而按键本就被选中、自带黄框，用同色系光晕比红光自然得多。
+   * 红会同时改 outline 颜色以压过黄框（CSS 那条 3 个类的规则）；
+   * 黄则只需光晕叠在框外圈。点一下后摘掉光晕类 → 按键保持选中黄框。 */
+  holdFlash(target, variant === 'sel' ? 'sel' : 'err');
 }
 FE.locateIssue = locateIssue;
 FE.issueLocatable = issueLocatable;
@@ -3727,7 +3791,10 @@ function showUsageDialog(title, usage) {
 FE.showUsageDialog = showUsageDialog;
 
 /* 跳到某个引用处：布局坐标交给 locateIssue（自带切布局/选中/滚动），
- * 弹出菜单交给它自己的编辑器（切到弹出菜单页并选中该键）。 */
+ * 弹出菜单交给它自己的编辑器（切到弹出菜单页并选中该键）。
+ *
+ * 传 'sel' 让落到布局按键上的高亮是**黄色**：这是"带你到用过它的那个键"，
+ * 不是出错，与校验详情跳过来的红色区分开（用户明确要求）。 */
 function jumpToUsage(loc) {
   if (!loc) return;
   if (loc.popupKey) {
@@ -3738,7 +3805,7 @@ function jumpToUsage(loc) {
     layout: loc.layout, isSplit: loc.isSplit,
     sectionIndex: loc.sectionIndex, rowIndex: loc.rowIndex,
     keyIndex: loc.keyIndex, group: loc.group
-  });
+  }, 'sel');
 }
 FE.jumpToUsage = jumpToUsage;
 

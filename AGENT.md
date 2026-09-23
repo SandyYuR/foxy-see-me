@@ -827,10 +827,33 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
   「展开并配置「名」」生成。三处都要有——缺了会出现「一页有提示、另一页没有」。
 - ⭐ **新建后的落点：滚过去 + 高亮（方案 B）**。新条目总是**追加在列表末尾**
   （`Object.keys` 插入序），而工具条在卡片顶部 —— 不处理的话用户根本看不到刚建的东西。
-  - `scrollToDefItem(name, hostId)`：找到条目 → 展开所在卡片 → `cancelScrollRestore()`
-    → `scrollIntoView({block:'center'})` → 加 `.def-flash`（蓝色高亮，与红色的
-    `.issue-flash` 区分：蓝=刚建好、红=有问题）。桩不实现 `scrollIntoView`/`closest`，
+  - `scrollToDefItem(name, hostId, opts)`：找到条目 → 展开所在卡片 → `cancelScrollRestore()`
+    → `scrollIntoView({block:'center'})` → 持续高亮 `.flash-hold`（见 §4.11）。
+    颜色由 `holdFlash` 的 variant 决定：`'err'`（或历史的 `true`）= 红色（校验定位）、
+    其余 = 蓝色。桩不实现 `scrollIntoView`/`closest`，
     所以照 `scrollToSelection` 的写法做存在性判断。
+  - ⭐ **`holdFlash(el, variant)` 的三个颜色变体**（`releaseFlashHold` 一次摘干净）：
+    | variant | 类 | 用在哪 |
+    | --- | --- | --- |
+    | `'err'` / `true` | `.flash-hold.flash-hold-err`（红） | **出错的落点**：列表条目、以及**校验详情跳到的布局按键** |
+    | `'sel'` | `.flash-hold.flash-hold-sel`（黄） | **布局按键**，但只用于**非出错**跳转（从「使用数」弹窗跳过来） |
+    | 其他 / 省略 | `.flash-hold`（蓝） | 新建条目 / 定义列表里的引用跳转目标 |
+    - ⭐ **同一个布局按键，颜色按「来源」分**（用户两次要求叠加的结果）：
+      · 校验详情跳过来 → **红**（'err'）：它是"这里有错"，红才对；
+      · 「使用数」跳过来 → **黄**（'sel'）：那只是带你到用过它的那个键，
+        而按键本就被选中、自带黄框，红得突兀。
+      所以 `scrollToSelection(variant)` 接收颜色、**不要在里面写死一个颜色**；
+      `locateIssue(it, variant)` 默认 `'err'`（它的主要调用方是校验详情），
+      `jumpToUsage` 显式传 `'sel'`。
+    - ⚠️ **红必须压过自带的黄框**：`.chip-sel` / `.gedit-key.chip-sel` 自带
+      `outline: 2px solid var(--sel)`，所以红要**改 outline 的颜色**（而不是再加一层）——
+      outline 只有一份、改色即替换，不会出现两条框套在一起的重复观感。
+      那条选择器要写 **3 个类**（`.chip.chip-sel.flash-hold-err`）才压得过既有的
+      2 个类；写成 2 个类会被后者按同权重、后出现顺序覆盖掉。
+    - 黄则**不需要** outline 覆盖：没有两色相争，光晕叠在黄框外圈即可。
+    - 两者点击后都被 `releaseFlashHold` 摘掉 → 光晕/红框消失，
+      按键保持选中黄框（`state.sel` 没动）。
+    - `true` 的兼容分支别删：`scrollToDefItem` 的 `opts.error` 仍以布尔传入。
   - **刻意不改数据结构**：JSON 键顺序保持插入序。布局文件是喂给 Foxy 的，
     UI 操作不该顺手重排它的键序（这也是当初在「排到最前 vs 跳过去」之间选后者的原因）。
   - `cancelScrollRestore()` 不能漏：否则 `afterChange` 排下的那一帧位置恢复会把视口拽回去。
