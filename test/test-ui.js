@@ -525,6 +525,68 @@ FE.MAX_GRID_CELLS = savedCap;
 FE.renderAll();
 eq(q('.gedit-key').length, 14, '恢复上限后 14 个按键重新渲染');
 
+console.log('== 网格横向滚动条（与拖动分离的另一条入口） ==');
+/* 为什么需要它：`.gedit-key` 的 touch-action:none 是 attachPointerDrag 的前提，
+ * 于是「在键上横滑」永远是拖动排序、不是滚动；而 cc_grid_4 这类 48×15
+ * 全由跨距键铺满的网格（194 键 / **0 个空格**）整块画布没有任何可起手的
+ * 横向滚动面 —— 右侧的键在窄屏上根本够不到。
+ * 修法是给网格配一条**独立**滚动条（滑块管横向移动、键管拖动），
+ * 而不是去动 touch-action（那会破坏拖动，见 AGENT.md §4.4）。 */
+const host0 = q('.gedit-host')[0];
+ok(!!host0, '网格编辑器外层是 .gedit-host（滚动条必须放在可滚动画布之外，否则跟着内容滚走）');
+ok(!!host0.querySelector('.gedit-wrap'), '.gedit-host 内含可滚动画布 .gedit-wrap');
+ok(!!host0.querySelector('.gedit-scrollbar'), '.gedit-host 内含滚动条轨道');
+ok(!!host0.querySelector('.gedit-thumb'), '滚动条含滑块');
+eq(typeof FE.gridScrollMetrics, 'function', 'FE.gridScrollMetrics 已导出，几何可被断言');
+/* 桩的 clientWidth 恒为 0（量不到真实尺寸）→ 必须判定为不可滚动并自动隐藏，
+ * 否则每个小网格上都会凭空多出一条无效控件。 */
+ok(q('.gedit-scrollbar')[0].hidden === true, '量不到尺寸时滚动条自动隐藏（小网格外观零变化）');
+
+/* 死锁回归：滚动条若把「自身 clientWidth」当可滚动判据，则会
+ * 隐藏 → clientWidth=0 → 判定不可滚动 → 永远保持隐藏，切标签页再切回也回不来。
+ * 判据必须只看画布。这里用「隐藏状态下仍能算出可滚动」来锁定。 */
+const sbHiddenState = FE.gridScrollMetrics(350, 1889, 0);
+ok(sbHiddenState.scrollable === false, '轨道宽为 0（隐藏态）不产生 NaN / 负值');
+
+console.log('== 回归：网格画布横向位置在重渲染后保持 ==');
+/* 为什么单独做：网格编辑器每次重渲染都 clearEl 再重建，.gedit-wrap 是**全新节点**，
+ * scrollLeft 天然归零。用户把大网格横滚到右侧、拖一个按键（或仅仅点一下打开
+ * 编辑框），一松手就被丢回最左边 —— 而他要改的键就在右侧，于是得反复重新滚过去。
+ * 触发路径不止一条：拖动 performGridDrop → mutate → afterChange → renderAll；
+ * 单击按键 → 直接调 renderSectionsEditor；撤销/重做 → renderAll。
+ * 恢复逻辑收口在 renderSectionsEditor 里，一处覆盖全部。 */
+ok(typeof FE.captureGridScroll === 'function', '暴露 captureGridScroll');
+ok(typeof FE.restoreGridScroll === 'function', '暴露 restoreGridScroll');
+const gw0 = q('.gedit-wrap')[0];
+ok(gw0.__gridSec === 0, '网格画布标有区段号（节点被换掉了，只能靠它认领回位置）');
+ok(typeof gw0.__gridSync === 'function', '画布挂了 sync 回调（程序化设 scrollLeft 未必派发 scroll 事件）');
+
+/* 主用例：横滚到右侧 → 重渲染 → 位置必须还在 */
+gw0.scrollLeft = 420;
+const gsnap = FE.captureGridScroll();
+eq(gsnap.length, 1, 'captureGridScroll 记录 1 个网格画布');
+eq(gsnap[0].left, 420, 'captureGridScroll 记录横向位置');
+FE.renderAll();   /* 走真实路径：重建列表 → 认领位置 */
+eq(q('.gedit-wrap')[0].scrollLeft, 420, '重渲染后横向位置被认领回来（不再被丢回最左）');
+
+/* 拖动、单击按键都会走到 renderSectionsEditor；这里直接调它复现同一条路径 */
+FE.renderAll();
+q('.gedit-wrap')[0].scrollLeft = 300;
+FE.renderAll();
+eq(q('.gedit-wrap')[0].scrollLeft, 300, '反复重渲染仍保持（不会累积丢失）');
+
+/* 位置为 0 时不该做多余的事（也是「本来就在最左」的正常态） */
+FE.renderAll();
+q('.gedit-wrap')[0].scrollLeft = 0;
+FE.renderAll();
+eq(q('.gedit-wrap')[0].scrollLeft, 0, '本来就在最左时保持 0');
+
+/* 认领靠区段号：序号对不上就跳过，绝不会把位置错认到别的网格上 */
+const otherSnap = [{ si: 99, left: 777 }];
+FE.restoreGridScroll(otherSnap);
+eq(q('.gedit-wrap')[0].scrollLeft, 0, '区段号对不上时不认领（不会错滚到别的网格）');
+eq(FE.captureGridScroll().length, 1, 'capture 只收有区段标记的画布');
+
 console.log('== 回归：大网格预览的间距与字号自适应 ==');
 /* 预览是**另一条渲染路径**（buildGridSection），与上面的网格编辑器无关。
  * 原实现固定 gap:5px + 固定 18px 字号：48 列时 47 个间隙吃掉 57% 宽度，单元格

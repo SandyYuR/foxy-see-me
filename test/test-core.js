@@ -665,6 +665,35 @@ ok(gmBig.cellH > 0 && gmBig.cellW > 0, '单元格尺寸为正（间隙不会吃�
 eq(FE.gridMetrics(0, 0, 43, 5).columns, 1, '非法列数回落 1');
 eq(FE.gridMetrics(48, 15, 0, 5).cellW > 0, true, 'unit 为 0 时不产生负尺寸');
 
+/* ---- 网格横向滚动条几何（FE.gridScrollMetrics） ----
+ * 背景：`.gedit-key` 的 touch-action:none 是拖动排序的前提，于是「在键上横滑」
+ * 永远是拖动、不是滚动；而 cc_grid_4 这类 48×15 全由跨距键铺满的网格
+ * （194 键 / **0 个空格**）根本没有可起手的横向滚动面，右侧的键在窄屏够不到。
+ * 修法是给网格配一条**独立**滚动条，而不是去动 touch-action（那会破坏拖动）。
+ * 几何算成纯函数，DOM 桩量不到真实尺寸时也能断言。 */
+const sbBig = FE.gridScrollMetrics(350, 1889, 260);      // 414px 竖屏实测值
+eq(sbBig.scrollable, true, '大网格（可视 350 / 内容 1889）判定为可滚动');
+eq(sbBig.maxScroll, 1539, '可滑距离 = 内容宽 − 可视宽');
+ok(sbBig.thumbW >= 44, '滑块不小于 44px 触摸目标（实际 ' + Math.round(sbBig.thumbW) + 'px）');
+ok(sbBig.thumbW < 260, '滑块短于轨道（否则无处可滑）');
+eq(Math.round(sbBig.usable), Math.round(260 - sbBig.thumbW), '可滑距离 = 轨道宽 − 滑块宽');
+
+/* 小网格 / 量不到尺寸：不得显示滚动条（否则给普通布局凭空多出一条控件） */
+eq(FE.gridScrollMetrics(1080, 1080, 1078).scrollable, false, '内容不超出可视宽 → 不可滚动');
+eq(FE.gridScrollMetrics(1080, 1081, 1078).scrollable, false, '仅差 1px（亚像素舍入）不算可滚动');
+eq(FE.gridScrollMetrics(0, 0, 0).scrollable, false, 'DOM 桩量不到尺寸（全 0）→ 不可滚动，滚动条自动隐藏');
+
+/* 病态输入不得算出负尺寸/负距离 */
+const sbTiny = FE.gridScrollMetrics(10, 100000, 20);
+/* 不变量是「滑块尽量不小于 44px，但**不得超出轨道**」——
+ * 轨道比 44px 还窄时，只能退让到轨道宽（否则滑块会溢出轨道、usable 变负）。 */
+ok(sbTiny.thumbW <= 20, '极窄轨道时滑块不超出轨道宽（' + Math.round(sbTiny.thumbW) + 'px）');
+ok(sbTiny.thumbW >= Math.min(44, 20), '极窄轨道时滑块仍取满轨道（' + Math.round(sbTiny.thumbW) + 'px）');
+ok(sbTiny.usable >= 0, '可滑距离不为负');
+const sbZero = FE.gridScrollMetrics(350, 1889, 0);
+eq(sbZero.scrollable, false, '轨道宽为 0 → 不可滚动（除零保护）');
+ok(isFinite(sbZero.thumbW) && sbZero.usable >= 0, '轨道宽为 0 时不产生 NaN / 负值');
+
 /* 破损引用在编译期即被标记 */
 const brokenCmp = FE.compileSections([{ type: 'rows', rows: [[{ ref: 'no.such.key' }]] }], FE.NEUTRAL_STATUS, cmpScope);
 ok(brokenCmp.sections[0].rows[0].keys[0].isBroken === true, '未解析引用标记 isBroken');

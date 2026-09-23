@@ -186,7 +186,8 @@ foxy-editor/
 ├── AGENT.md              改这个编辑器之前先读（决断 / 约定 / 坑 / 工作流）
 ├── tools/
 │   ├── build-examples.js     重新生成 examples-bundle.js
-│   └── check-agent-sync.js   校验 / 同步两处 AGENT.md
+│   ├── check-agent-sync.js   校验 / 同步两处 AGENT.md
+│   └── mobile-preview.js     手机竖屏预览 / 冒烟检查（见「在电脑上测竖屏」）
 └── test/                 测试（见下）
 ```
 
@@ -203,6 +204,51 @@ node test/check-real-files.js # 用真实示例文件跑一遍体检
 ```
 
 改了 `examples/` 下的文件后，运行 `node tools/build-examples.js` 重新打包。
+
+## 在电脑上测竖屏
+
+最省事的办法是 **DevTools 设备模式**（F12 → Ctrl+Shift+M，选个手机机型）。日常改样式看效果够用。
+
+但它有盲区：那是「把窗口变窄 + 假装是触屏」，**不是真移动端语义**。有一类 bug 只在
+真正的移动模式下出现，缩窗口永远抓不到。举个本项目实际踩到的例子——加载
+`cc_grid_4.json`（48 列大网格）在 414px 宽下：
+
+| 模式 | `window.innerWidth` | 水平溢出 | 浮动按钮 |
+|---|---|---|---|
+| 桌面（只缩窗口） | 414 ✓ | 0 ✓ | 正常 ✓ |
+| 移动端语义 | **1656** ✗ | **1507px** ✗ | **不出现** ✗ |
+
+同一个宽度、同一份 CSS，结果完全相反。原因是移动模式下页面被横向撑开会触发视口缩放，
+纵向反而滚不动，`updateFloatTools()` 永远读到 `scrollTop=0`，三个浮动按钮就再也不显示。
+
+所以需要一个**跑真移动端语义**的检查脚本：
+
+```
+npm i -D playwright-core      # 只需装一次，用本机已装的 Edge/Chrome，不额外下载浏览器
+
+node tools/mobile-preview.js                 # 默认布局，跑 5 个典型竖屏
+node tools/mobile-preview.js cc_grid_4.json  # 指定某个内置示例
+node tools/mobile-preview.js --all           # 所有内置示例都过一遍
+```
+
+它会检查：水平溢出（含逐标签页）、浮动按钮滚后是否出现、宽网格末格能否横向滚到、
+JS 错误；截图落在 `.mobile-preview/`（该目录不必入库）。**退出码非 0 表示发现问题**，
+可以直接接进 CI。
+
+它比「缩窗口」多做的三件事：
+
+1. **`isMobile` + `hasTouch` + 真实触摸事件** —— 走 CDP `Input.dispatchTouchEvent`，
+   是真正的手指滑动，不是 mouse wheel 模拟；`pointerType` 也才是 `touch`。
+2. **逐标签页检查** —— 布局编辑 / 按键定义 / 动作与宏 / 弹出菜单四页各查一遍，
+   因为四个 panel 的 DOM 差异大，一处溢出未必牵连其他页。
+3. **浮动按钮可达性** —— 用真实上滑滚过阈值，确认三个浮动按钮真的出现（上表那个 bug
+   就卡在这里）。
+
+> 想指定浏览器：`MOBILE_PREVIEW_BROWSER="C:\路径\msedge.exe"`。
+> 待测视口列表在脚本顶部的 `VIEWPORTS` 里，改那里就行。
+
+**DevTools 和这个脚本都测不到、只能上真机的**：软键盘弹起导致的 `visualViewport` 收缩、
+地址栏收放对 `100vh` 的影响、真实触摸的延迟与惯性滚动、长按系统菜单。
 
 ## 说明
 

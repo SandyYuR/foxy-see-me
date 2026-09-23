@@ -474,6 +474,24 @@ FE.gridDims = function (section) {
   };
 };
 
+/* 网格横向滚动条的几何：给定画布可视宽 / 内容宽 / 轨道宽，算滑块宽与可滑距离。
+ * 抽成纯函数是为了能在 DOM 桩里断言（桩量不到真实尺寸，见 dom-stub.js 的
+ * getBoundingClientRect 恒返回 0）。滑块下限定为 44px —— 它是个触摸目标，
+ * 太细手指抓不住；但不超过轨道宽，否则「可滑距离」会算成负数。 */
+FE.gridScrollMetrics = function (viewW, contentW, trackW) {
+  var v = Math.max(0, viewW || 0);
+  var c = Math.max(0, contentW || 0);
+  var t = Math.max(0, trackW || 0);
+  var maxScroll = Math.max(0, c - v);
+  /* 留 1px 容差：亚像素舍入会产生「只差 0.5px」的假可滚动 */
+  if (maxScroll <= 1 || t <= 0) {
+    return { maxScroll: maxScroll, thumbW: t, usable: 0, scrollable: false };
+  }
+  var thumbW = Math.min(t, Math.max(44, t * v / c));
+  var usable = Math.max(0, t - thumbW);
+  return { maxScroll: maxScroll, thumbW: thumbW, usable: usable, scrollable: usable > 0 };
+};
+
 FE.layoutHeightUnits = function (L) {
   if (!isPlainObject(L) || !Array.isArray(L.sections)) return 0;
   var total = 0;
@@ -1719,6 +1737,46 @@ FE.captureScroll = captureScroll;
 FE.restoreScroll = restoreScroll;
 FE.cancelScrollRestore = cancelScrollRestore;
 
+/* ---------------- 网格画布横向滚动位置保持 ----------------
+ * 与上面的「页面滚动」是两回事，别混：那个记的是 document.scrollingElement
+ * （纵向为主），这里记的是每个 .gedit-wrap 自己的 scrollLeft。
+ *
+ * 为什么必须单独做：网格编辑器每次重渲染都 clearEl 再重建，.gedit-wrap 是
+ * **全新节点**，scrollLeft 天然归零。用户把大网格横滚到右侧、拖一个按键
+ * （或仅仅点一下打开编辑框），一松手就被丢回最左边 —— 而他要改的键就在右侧，
+ * 于是得反复重新滚过去。触发路径不止一条（拖动 performGridDrop → mutate →
+ * afterChange → renderAll；单击按键 → renderSectionsEditor），所以恢复逻辑
+ * 收口在 renderSectionsEditor 里，一处覆盖全部。
+ *
+ * 认领靠 __gridSec（区段序号）——节点被换掉了，只能靠标记认出「这是哪个网格」。
+ * 区段被增删导致序号错位时最多认领失败，不会错认到别的网格上（序号对不上就跳过）。 */
+function captureGridScroll() {
+  var out = [];
+  var wraps = document.querySelectorAll('.gedit-wrap');
+  for (var i = 0; i < wraps.length; i++) {
+    if (wraps[i].__gridSec == null) continue;
+    out.push({ si: wraps[i].__gridSec, left: wraps[i].scrollLeft || 0 });
+  }
+  return out;
+}
+function restoreGridScroll(snaps) {
+  if (!snaps || !snaps.length) return;
+  var wraps = document.querySelectorAll('.gedit-wrap');
+  snaps.forEach(function (s) {
+    if (!s.left) return;
+    for (var i = 0; i < wraps.length; i++) {
+      if (wraps[i].__gridSec !== s.si) continue;
+      wraps[i].scrollLeft = s.left;
+      /* 程序化设 scrollLeft 不一定派发 scroll 事件（DOM 桩就不会），
+       * 显式对齐一次滑块，否则滚动条滑块会停在旧位置、与画布脱节。 */
+      if (typeof wraps[i].__gridSync === 'function') wraps[i].__gridSync();
+      break;
+    }
+  });
+}
+FE.captureGridScroll = captureGridScroll;
+FE.restoreGridScroll = restoreGridScroll;
+
 function autosave() {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({
@@ -2713,6 +2771,11 @@ function renderLayoutSettings() {
 /* ---------------- 区段编辑器 ---------------- */
 function renderSectionsEditor() {
   var host = $('layout-sections');
+  /* 重建前记下各网格画布的横向位置，建好后认领回去。**必须在这里做**：
+   * 触发重渲染的路径不止一条（拖动 performGridDrop → mutate → afterChange →
+   * renderAll；单击按键 → 直接调本函数；撤销/重做 → renderAll），收口在这一处
+   * 才能一次覆盖全部，不必逐个调用方去打补丁。 */
+  var gridScroll = captureGridScroll();
   clearEl(host);
   var L = curLayout();
   var hasSplit = !!(L && isPlainObject(L.split));
@@ -2777,6 +2840,7 @@ function renderSectionsEditor() {
     host.appendChild(h('div', { class: 'status' },
       'Foxy 不会自动拆分行；分体片段需要显式编写（用 foxy.Spacer 或权重留出中间空隙）。',
       h('div', null, '可「从常规布局生成」后，再把按键在两侧之间移动调整。')));
+    restoreGridScroll(gridScroll);   /* 提前返回也要还原（此处通常无网格，留作一致） */
     return;
   }
 
@@ -2795,6 +2859,9 @@ function renderSectionsEditor() {
     h('button', { onclick: function () { addSection('rows'); } }, '+ 行区段'),
     h('button', { onclick: function () { addSection('grid'); } }, '+ 网格区段')
   ));
+  /* 全部区段建好后一次性认领横向位置。放在最后：此刻节点已 append、
+   * 浏览器能算出 scrollWidth，设 scrollLeft 才不会被夹到 0。 */
+  restoreGridScroll(gridScroll);
 }
 
 /* 从常规区段生成分体片段：每行中间插入 foxy.Spacer（weight 2），
@@ -3271,10 +3338,119 @@ function gridSectionCard(section, si, csec) {
   return card;
 }
 
+/* 网格横向滚动条 —— 「拖动排序」与「横向查看」必须各有入口，不能共用同一个触摸面。
+ *
+ * 背景：`.gedit-key` 上的 `touch-action: none` 是 attachPointerDrag 的前提
+ * （AGENT.md §4.4 锁定「不要改回 HTML5 拖放」，位移阈值 6px 也依赖它接管指针），
+ * 所以「在键上横滑」永远是拖动排序、绝不会滚动网格。对 `cc_grid_4` 这类
+ * 48×15 全由跨距键铺满的网格（194 键 / **0 个空格**），整块画布就没有任何
+ * 可起手的横向滚动面 —— 右侧的键在窄屏上根本够不到。
+ *
+ * 修法不是去动 touch-action（那会破坏拖动），而是给网格配一条**独立**滚动条：
+ * 滑块只管横向移动，键只管拖动排序。轨道/滑块尺寸交给 FE.gridScrollMetrics
+ * 纯函数算（DOM 桩量不到真实尺寸，靠它才能断言）；量不到时它返回
+ * scrollable:false，滚动条自动隐藏，小网格外观不受影响。 */
+function gridScrollbar(wrap) {
+  var track = h('div', { class: 'gedit-scrollbar' });
+  var thumb = h('div', { class: 'gedit-thumb' });
+  track.appendChild(thumb);
+
+  /* 量当前几何。**可滚动性只看画布（wrap）**，不看轨道自己 ——
+   * 滚动条一旦隐藏（display:none），它的 clientWidth 恒为 0，若拿它当判据
+   * 就成了「隐藏 → 判定不可滚动 → 永远保持隐藏」的死锁：切到别的标签页再
+   * 切回来，滚动条再也出不来（实测过）。判据只用画布尺寸就不会自锁。 */
+  function measure() {
+    var viewW = wrap.clientWidth || 0;
+    /* scrollWidth 在量不到时可能是 undefined（DOM 桩就没有这个属性），
+     * 先归一成 0，否则下面的减法会算出 NaN。 */
+    var contentW = wrap.scrollWidth || 0;
+    if (!(viewW > 0) || contentW <= viewW + 1) {
+      return { maxScroll: Math.max(0, contentW - viewW), thumbW: 0, usable: 0, scrollable: false };
+    }
+    /* 量轨道宽之前必须先让它显形：隐藏时量到的是 0，滑块会算成 0 宽 */
+    track.hidden = false;
+    return FE.gridScrollMetrics(viewW, contentW, track.clientWidth);
+  }
+
+  /* 画布滚动位置 → 滑块位置。用 translateX 而非 left：只走合成层，
+   * 拖动过程中不引起重排。 */
+  function sync() {
+    var m = measure();
+    if (!m.scrollable) { track.hidden = true; return; }
+    thumb.style.width = m.thumbW + 'px';
+    var ratio = m.maxScroll > 0 ? (wrap.scrollLeft / m.maxScroll) : 0;
+    thumb.style.transform = 'translateX(' + (ratio * m.usable) + 'px)';
+  }
+
+  /* 拖滑块。换算用**按下那一刻**的 m 固定住，拖动才是线性的；
+   * sync() 只负责把结果画出来。 */
+  thumb.addEventListener('pointerdown', function (e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    var m = measure();
+    if (!m.scrollable) return;
+    if (e.cancelable) e.preventDefault();
+    var pid = e.pointerId, startX = e.clientX, startLeft = wrap.scrollLeft;
+    /* 捕获指针：手指/鼠标移出滑块甚至移出轨道时仍能继续拖动。
+     * 与 attachPointerDrag 同样的写法（失败可忽略，document 上的捕获监听已能兜底）。 */
+    try { thumb.setPointerCapture(pid); } catch (err) {}
+    function onMove(ev) {
+      if (ev.pointerId !== pid) return;
+      if (ev.cancelable) ev.preventDefault();
+      wrap.scrollLeft = startLeft + (m.usable > 0 ? (ev.clientX - startX) / m.usable : 0) * m.maxScroll;
+      sync();
+    }
+    function onUp(ev) {
+      if (ev.pointerId !== pid) return;
+      document.removeEventListener('pointermove', onMove, true);
+      document.removeEventListener('pointerup', onUp, true);
+      document.removeEventListener('pointercancel', onUp, true);
+      try { thumb.releasePointerCapture(pid); } catch (err) {}
+    }
+    document.addEventListener('pointermove', onMove, true);
+    document.addEventListener('pointerup', onUp, true);
+    document.addEventListener('pointercancel', onUp, true);
+  });
+
+  /* 点轨道空白：把滑块中心挪到点击处（原生滚动条的习惯行为）。
+   * 点滑块本身是拖动，交给上面的 pointerdown。 */
+  track.addEventListener('click', function (e) {
+    if (e.target === thumb) return;
+    var m = measure();
+    if (!m.scrollable) return;
+    var r = track.getBoundingClientRect ? track.getBoundingClientRect() : null;
+    if (!r) return;
+    var x = e.clientX - r.left - m.thumbW / 2;
+    var ratio = Math.min(1, Math.max(0, m.usable > 0 ? x / m.usable : 0));
+    wrap.scrollLeft = ratio * m.maxScroll;
+    sync();
+  });
+
+  /* 画布自身滚动（触摸板横滚、程序化滚动）也要带动滑块 */
+  wrap.addEventListener('scroll', sync, { passive: true });
+  /* 程序化设 scrollLeft 不保证派发 scroll（DOM 桩就不会），
+   * 所以把 sync 挂到画布上，让「恢复滚动位置」的代码能显式对齐滑块。 */
+  wrap.__gridSync = sync;
+
+  /* 窗口缩放、卡片展开/折叠都会改变可视宽，滑块长度必须跟着重算 */
+  if (typeof ResizeObserver === 'function') {
+    var ro = new ResizeObserver(function () { sync(); });
+    ro.observe(wrap);
+    ro.observe(track);
+  }
+  /* 首帧同步要等布局完成（此刻元素刚建好、还没量到宽度） */
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(sync);
+  else sync();
+
+  return track;
+}
+
 function gridEditor(section, si, csec) {
   var dims = FE.gridDims(section);
   var cols = dims.columns, rws = dims.rows;
   var wrap = h('div', { class: 'gedit-wrap' });
+  /* 标上区段号：重渲染会换掉整个节点，横向滚动位置靠它认领回来
+   * （见 captureGridScroll / restoreGridScroll）。 */
+  wrap.__gridSec = si;
   var grid = h('div', { class: 'gedit' });
   grid.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(34px, 1fr))';
 
@@ -3382,7 +3558,12 @@ function gridEditor(section, si, csec) {
       '网格过大（' + cols + '×' + rws + '，' + (rendered + skipped) + ' 个可编辑格），' +
       '已渲染前 ' + rendered + ' 格，其余 ' + skipped + ' 格未渲染'));
   }
-  return wrap;
+  /* 滚动条放在 wrap **外面**：wrap 自己会横向滚动，放里面就跟着内容一起滚走了。
+   * 于是外面套一层 host，竖排 = 「可滚画布 + 固定滚动条」。 */
+  var host = h('div', { class: 'gedit-host' });
+  host.appendChild(wrap);
+  host.appendChild(gridScrollbar(wrap));
+  return host;
 }
 
 /* ================================================================

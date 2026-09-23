@@ -118,6 +118,13 @@ class DOMNode {
     this._open = false;
     this.hidden = false;
     this._html = null;
+    /* scrollLeft / scrollTop：真实浏览器里**每个元素**都有这两个属性，
+     * 没滚过时是 0（不是 undefined）。桩早先只给 documentElement 定义了它们，
+     * 于是「读一个没滚过的元素」会拿到 undefined，与真实语义不符 ——
+     * 网格画布横向位置保持的断言（期望 0 实际 undefined）就是这么红的。
+     * 补上默认值，两个方向都照抄真实行为。 */
+    this.scrollLeft = 0;
+    this.scrollTop = 0;
   }
   /* --- title：真实 DOM 里 title 是**双向反射**的 ---
    * `el.title = 'x'` 与 `setAttribute('title','x')` 等价，`getAttribute('title')` 也读得到。

@@ -161,7 +161,17 @@ details.card > summary + * { margin-top: 12px; }
 .workbench { display: flex; gap: 14px; align-items: flex-start; }
 .col-main { flex: 1 1 auto; min-width: 0; }
 .col-side { flex: 0 0 380px; }
-@media (max-width: 980px) { .workbench { flex-direction: column; } .col-side { flex: 1 1 auto; width: 100%; } }
+/* 竖排时 align-items 的语义会从「行轴的顶对齐」翻转成「列轴的水平对齐」：
+ * 沿用基准规则的 flex-start 会让子项按 max-content 收缩，宽网格（如 cc_grid_4
+ * 的 48 列，.gedit 固有 1889px）就把 .col-main 撑到 1911px → 文档整体横向溢出
+ * → 页面被横向放大、纵向反而滚不动，updateFloatTools() 永远读到 scrollTop=0，
+ * 右上撤销/重做与右下回到顶部三个浮动按钮在布局编辑页再也不出现。
+ * 竖排下必须 stretch，让 .col-main 与容器同宽，超宽网格只在自己的
+ * .gedit-wrap 里横向滚动（这正是 .gedit-wrap{overflow-x:auto} 的用途）。 */
+@media (max-width: 980px) {
+  .workbench { flex-direction: column; align-items: stretch; }
+  .col-main, .col-side { flex: 1 1 auto; width: 100%; max-width: 100%; }
+}
 
 /* ---------------- 工具栏与表单 ---------------- */
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
@@ -436,7 +446,64 @@ label.check { cursor: pointer; white-space: nowrap; }
 .chip-badges { font-size: 10px; color: #ffb020; }
 
 /* ---------------- 网格编辑器 ---------------- */
-.gedit-wrap { overflow-x: auto; }
+/* 画布仍可横向滚动（触摸板横滚、程序化、Shift+滚轮），但**隐藏原生滚动条**：
+ * 下面那条自绘滚动条已经承担了这个入口，两者同时出现就是双滚动条。
+ * 自绘那条鼠标也能用（拖滑块 / 点轨道），所以桌面端不损失能力。 */
+.gedit-wrap {
+  overflow-x: auto;
+  scrollbar-width: none;          /* Firefox */
+}
+.gedit-wrap::-webkit-scrollbar { display: none; }   /* WebKit / Blink */
+
+/* 网格横向滚动条（自绘）。
+ *
+ * 为什么需要它：`.gedit-key` 的 touch-action:none 是拖动排序的前提，于是
+ * 「在键上横滑」永远是拖动、不是滚动；而 cc_grid_4 这类 48×15 全由跨距键
+ * 铺满的网格（194 键 / 0 个空格）根本没有可起手的滚动面，右侧的键在窄屏上
+ * 够不到。这里给网格配一条独立滚动条：滑块管横向移动、键管拖动，两者分开。
+ *
+ * host 用 flex 竖排，wrap 可滚、滚动条固定在下方不动 —— 放 wrap 里面会跟着
+ * 内容一起滚走。 */
+.gedit-host { display: flex; flex-direction: column; gap: 6px; }
+.gedit-scrollbar {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  background: #1b1e23;
+  border: 1px solid var(--border);
+  /* 轨道本身不接收指针事件，只有滑块和空白区接管；避免它抢走页面滚动 */
+  touch-action: pan-y;
+  cursor: pointer;
+}
+.gedit-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: #4a4f58;
+  /* 拖动时才由 JS 设宽度与位移；初始不可见，等首帧 sync 量到尺寸再显示 */
+  width: 0;
+  /* 滑块是拖动目标，必须自己接管指针（父级是 pan-y） */
+  touch-action: none;
+}
+.gedit-thumb:hover { background: #5a606a; }
+.gedit-thumb:active { background: var(--accent); }
+/* 不可滚动时隐藏（小网格外观完全不受影响） */
+.gedit-scrollbar[hidden] { display: none; }
+
+/* 窄屏：给右下角的浮动「回到顶部」按钮让位。
+ *
+ * 浮动按钮是 fixed 贴视口右缘（bottom:20px / right:12px），而网格滚动条在
+ * 文档流里 —— 当网格滚到视口底部附近，两者必然在右下角重叠。实测 414px 竖屏：
+ * 点轨道右端空白命中到 `button.float-bottom-right`，滚动条纹丝不动
+ * （360px 时因轨道恰好错开按钮的纵向区间，所以没暴露）。
+ * 这里把轨道右端缩进，避开按钮宽度 + 间隙，让「点轨道空白跳转」这个
+ * 原生滚动条的习惯操作在整个窄屏区间都可用。拖滑块不受影响
+ * （起点在轨道左端，本来就不与按钮重叠）。 */
+@media (max-width: 980px) {
+  .gedit-scrollbar { margin-right: 88px; }
+}
 
 /* ---------------- 分体（split）横幅 ---------------- */
 .split-banner {
