@@ -2485,11 +2485,15 @@ await sleep(350);
     ok(!!$(k + '-new') && !!$(k + '-add'), label + '页有新建输入框与新建按钮');
     eq($(k + '-search').textContent, '搜索', label + '页搜索按钮文案统一');
   });
-  /* 搜索与新建各自的输入框/按钮同处一个 .def-tool-group（手机竖屏一组占一行） */
+  /* 搜索与新建各自的输入框/按钮同处一个 .def-tool-group（手机竖屏一组占一行）。
+   * ⚠️ 搜索框外面多包一层 .search-wrap（为把 ✕ 清空按钮定位在框内右侧），
+   * 所以搜索框的直接父节点是 wrap，**祖父**才是 group。 */
   ['keys', 'actions', 'macros'].forEach(k => {
-    eq($(k + '-filter').parentNode.className, 'def-tool-group', k + ' 搜索框与按钮同组');
+    eq($(k + '-filter').parentNode.className, 'search-wrap', k + ' 搜索框包在 .search-wrap 内');
+    eq($(k + '-filter').parentNode.parentNode.className, 'def-tool-group', k + ' 搜索组仍在 .def-tool-group 内');
     eq($(k + '-new').parentNode.className, 'def-tool-group', k + ' 新建框与按钮同组');
-    ok($(k + '-filter').parentNode !== $(k + '-new').parentNode, k + ' 搜索与新建是不同分组（手机可各占一行）');
+    ok($(k + '-filter').parentNode.parentNode !== $(k + '-new').parentNode,
+      k + ' 搜索与新建是不同分组（手机可各占一行）');
   });
 
   /* 搜索：按钮触发 + 即时过滤 + 匹配提示 + 清空恢复 */
@@ -2564,6 +2568,23 @@ await sleep(350);
   $('macros-filter').value = '';
   $('macros-search').click();
   eq(itemCount('macros-list'), 3, '宏清空恢复全部');
+
+  /* ---- 搜索框内的 ✕ 清空按钮（四个页签都有） ----
+   * 只在框里有字时可见；点击后清空、重渲染、并把焦点还给输入框。 */
+  console.log('== 搜索框 ✕ 清空 ==');
+  ['keys', 'actions', 'macros', 'popup'].forEach(k => {
+    const inp = $(k + '-filter'), clr = $(k + '-filter-clear');
+    ok(!!inp && !!clr, k + ' 页有搜索框与 ✕ 清空按钮');
+    ok(clr.hidden, k + ' 页空框时 ✕ 隐藏（不干扰）');
+    eq(clr.textContent, '✕', k + ' 页 ✕ 文案统一');
+    inp.value = 'zzz';
+    inp._fire('input');
+    ok(!clr.hidden, k + ' 页输入后 ✕ 出现');
+    clr._fire('click');
+    eq(inp.value, '', k + ' 页点 ✕ 清空输入框');
+    ok(clr.hidden, k + ' 页点 ✕ 后自身隐藏');
+    ok(documentStub.activeElement === inp, k + ' 页点 ✕ 后焦点回到输入框（可直接重新输入）');
+  });
 
   console.log('== 悬停提示：两页都有 ==');
   const hoverKeyRow = $('keys-list').querySelectorAll('.def-item.def-row-click')[0];

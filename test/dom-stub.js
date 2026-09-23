@@ -527,12 +527,16 @@ function buildSkeleton() {
   const wb = el('div', { class: 'workbench' }, el('div', { class: 'col-main' }, opCard, layoutCard, layoutJsonCard));
   tabLayout.appendChild(wb);
 
-  /* 按键定义面板（工具条与 index.html 保持同步：搜索组 + 新建组） */
+  /* 按键定义面板（工具条与 index.html 保持同步：搜索组 + 新建组）
+   * 搜索框外面包 .search-wrap（内含 ✕ 清空按钮），结构要与 index.html 一致 ——
+   * 少了这层，测试里 $(...).parentNode.className 之类的结构断言就会对不上。 */
   const tabKeys = el('section', { class: 'tabpanel', id: 'tab-keys' });
   tabKeys.appendChild(el('details', { class: 'card', open: 'open' },
     el('div', { class: 'def-toolbar' },
       el('div', { class: 'def-tool-group' },
-        el('input', { id: 'keys-filter', type: 'text', placeholder: '搜索：名称 / 引用' }),
+        el('span', { class: 'search-wrap' },
+          el('input', { id: 'keys-filter', type: 'text', placeholder: '搜索：名称 / 引用' }),
+          el('button', { id: 'keys-filter-clear', class: 'search-clear', hidden: 'hidden' }, '✕')),
         el('button', { id: 'keys-search' }, '搜索')),
       el('div', { class: 'def-tool-group' },
         el('input', { id: 'keys-new', type: 'text', placeholder: '新按键定义名称，如 my.tab' }),
@@ -545,7 +549,9 @@ function buildSkeleton() {
     el('details', { class: 'card', open: 'open' },
       el('div', { class: 'def-toolbar' },
         el('div', { class: 'def-tool-group' },
-          el('input', { id: 'actions-filter', type: 'text', placeholder: '搜索：名称 / 动作内容' }),
+          el('span', { class: 'search-wrap' },
+            el('input', { id: 'actions-filter', type: 'text', placeholder: '搜索：名称 / 动作内容' }),
+            el('button', { id: 'actions-filter-clear', class: 'search-clear', hidden: 'hidden' }, '✕')),
           el('button', { id: 'actions-search' }, '搜索')),
         el('div', { class: 'def-tool-group' },
           el('input', { id: 'actions-new', type: 'text', placeholder: '新动作名称，如 editor.select_all' }),
@@ -554,7 +560,9 @@ function buildSkeleton() {
     el('details', { class: 'card', open: 'open' },
       el('div', { class: 'def-toolbar' },
         el('div', { class: 'def-tool-group' },
-          el('input', { id: 'macros-filter', type: 'text', placeholder: '搜索：名称 / 步骤内容' }),
+          el('span', { class: 'search-wrap' },
+            el('input', { id: 'macros-filter', type: 'text', placeholder: '搜索：名称 / 步骤内容' }),
+            el('button', { id: 'macros-filter-clear', class: 'search-clear', hidden: 'hidden' }, '✕')),
           el('button', { id: 'macros-search' }, '搜索')),
         el('div', { class: 'def-tool-group' },
           el('input', { id: 'macros-new', type: 'text', placeholder: '新宏名称，如 delete_to_line_start' }),
@@ -583,6 +591,12 @@ function buildSkeleton() {
       el('button', { id: 'popup-schema-add' }),
       el('button', { id: 'popup-schema-del' }),
       el('div', { id: 'popup-validation', class: 'status' }),
+      el('div', { class: 'def-toolbar' },
+        el('div', { class: 'def-tool-group' },
+          el('span', { class: 'search-wrap' },
+            el('input', { id: 'popup-filter', type: 'text', placeholder: '搜索：popupKey / 候选内容' }),
+            el('button', { id: 'popup-filter-clear', class: 'search-clear', hidden: 'hidden' }, '✕')),
+          el('button', { id: 'popup-search' }, '搜索'))),
       el('div', { id: 'popup-keys' })),
     el('details', { class: 'card', open: 'open' },
       el('summary', null, '弹出菜单 JSON（实时同步；可直接编辑后“应用”）'),

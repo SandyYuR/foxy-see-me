@@ -3778,6 +3778,43 @@ function appendMatchHint(host, shown, total, filter, what) {
       : ('没有匹配的' + what + '（共 ' + total + ' 项）')));
 }
 
+/* ---------------- 搜索框接线（按键定义 / 动作 / 宏 / 弹出菜单 共用） ----------------
+ * 输入时即时过滤（input 事件），右侧按钮再补一次显式触发 —— 手机输入法有时
+ * 不派发 input，按钮保证一定能筛。空串时等价于「显示全部」。
+ * clearId：框内右侧的 ✕ 清空按钮，**只在框里有字时可见**（空框上留个 ✕ 是干扰）。
+ * 清空后主动重渲染并让输入框重新获得焦点 —— 用户点 ✕ 的意图是「重新输入」，
+ * 焦点跑掉的话还得再点一次输入框。
+ *
+ * 放在模块作用域是为了让 popup-editor.js 也能复用（弹出菜单页要与其三页同构）；
+ * 各写一份必然漂移。 */
+var searchClearSyncers = [];
+function wireSearch(inputId, btnId, render, clearId) {
+  var inp = $(inputId), btn = $(btnId), clr = clearId ? $(clearId) : null;
+  function syncClear() { if (clr) clr.hidden = !(inp && inp.value); }
+  if (inp) inp.addEventListener('input', function () { syncClear(); render(); });
+  if (inp) inp.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { stopEv(e); render(); }
+  });
+  if (btn) btn.addEventListener('click', function (e) { stopEv(e); render(); });
+  if (clr && inp) clr.addEventListener('click', function (e) {
+    stopEv(e);
+    inp.value = '';
+    syncClear();
+    render();
+    if (inp.focus) inp.focus();
+  });
+  syncClear();
+  searchClearSyncers.push({ inputId: inputId, sync: syncClear });
+}
+FE.wireSearch = wireSearch;
+
+/* 程序化改了某个搜索框的值之后（如 jumpToDef 清空过滤）要把 ✕ 的显隐对上 ——
+ * 直接写 input.value 不会派发 input 事件，同步函数就永远不会跑。 */
+function syncSearchClear(inputId) {
+  searchClearSyncers.forEach(function (s) { if (s.inputId === inputId) s.sync(); });
+}
+FE.syncSearchClear = syncSearchClear;
+
 function renderKeysTab() {
   var host = $('keys-list');
   if (!host) return;
@@ -3984,10 +4021,12 @@ function usageJumpHint(loc) {
 function jumpToDef(kind, name, opts) {
   if (typeof name !== 'string' || !name) return;
   /* 清掉该页的搜索过滤：目标条目若被筛掉就不在 DOM 里，scrollToDefItem 会静默失败，
-   * 用户看到的是「点了没反应」。清空过滤再渲染，保证一定滚得到。 */
+   * 用户看到的是「点了没反应」。清空过滤再渲染，保证一定滚得到。
+   * ⚠️ 直接写 input.value **不会**派发 input 事件，所以 ✕ 清空按钮的显隐会停在
+   * 旧状态（框已空却还挂着一个 ✕）—— 必须显式 syncSearchClear。 */
   var filterId = kind === 'macro' ? 'macros-filter' : (kind === 'action' ? 'actions-filter' : 'keys-filter');
   var fi = $(filterId);
-  if (fi && fi.value) fi.value = '';
+  if (fi && fi.value) { fi.value = ''; syncSearchClear(filterId); }
   var flashOpts = { error: !!(opts && opts.error) };
   if (kind === 'action' || kind === 'macro') {
     /* 动作/宏默认折叠；先写展开集，重渲染后该条目直接是展开态 */
@@ -4943,20 +4982,9 @@ function initToolbar() {
   if (hp) bindHeightInput(hp, 'keyboardHeightPercent');
   if (hl) bindHeightInput(hl, 'keyboardHeightPercentLandscape');
 
-  /* 「按键定义」与「动作与宏」三张列表共用同一套工具条接线：
-   * 每组是「输入框 + 按钮」，两侧行为完全一致，样式也同步（.def-toolbar / .def-tool-group）。
-   *
-   * 搜索：输入时即时过滤（input 事件），右侧按钮再补一次显式触发 ——
-   *   手机输入法有时不派发 input，按钮保证一定能筛。
-   *   空串时等价于「显示全部」。 */
-  function wireSearch(inputId, btnId, render) {
-    var inp = $(inputId), btn = $(btnId);
-    if (inp) inp.addEventListener('input', render);
-    if (inp) inp.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { stopEv(e); render(); }
-    });
-    if (btn) btn.addEventListener('click', function (e) { stopEv(e); render(); });
-  }
+  /* 「按键定义」「动作与宏」与「弹出菜单」的列表共用同一套工具条接线。
+   * wireSearch 已提到模块作用域（popup-editor.js 也要复用，见其定义处注释），
+   * 这里不要再定义一份 —— 内部同名函数会遮蔽它，而那份不认识 ✕ 清空按钮。 */
   /* 新建：输入框 + 按钮（不再是 prompt 了，输入框就在这一行右侧）。
    * opts.openKey 给可折叠列表用（新建后默认展开，建完即可接着配置）；
    * 按键定义不是折叠条目，不传该字段。
@@ -4989,19 +5017,19 @@ function initToolbar() {
     });
   }
 
-  wireSearch('keys-filter', 'keys-search', renderKeysTab);
+  wireSearch('keys-filter', 'keys-search', renderKeysTab, 'keys-filter-clear');
   wireAdd('keys-new', 'keys-add', {
     section: 'keys', label: '按键定义', scrollHost: 'keys-list',
     initial: function () { return { ref: 'rime.Tab' }; }
   });
 
-  wireSearch('actions-filter', 'actions-search', renderActionsList);
+  wireSearch('actions-filter', 'actions-search', renderActionsList, 'actions-filter-clear');
   wireAdd('actions-new', 'actions-add', {
     section: 'actions', openKey: 'openActions', label: '动作', scrollHost: 'actions-list',
     initial: function () { return { type: 'key', key: 'A' }; }
   });
 
-  wireSearch('macros-filter', 'macros-search', renderMacrosList);
+  wireSearch('macros-filter', 'macros-search', renderMacrosList, 'macros-filter-clear');
   wireAdd('macros-new', 'macros-add', {
     section: 'macros', openKey: 'openMacros', label: '宏', scrollHost: 'macros-list',
     initial: function () { return [{ action: { type: 'key', key: 'BACKSPACE' } }]; }

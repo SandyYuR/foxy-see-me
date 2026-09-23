@@ -652,19 +652,40 @@ label.check { cursor: pointer; white-space: nowrap; }
   display: flex; gap: 6px; align-items: center;
   flex: 1 1 auto; min-width: 0;
 }
-/* 输入框吃掉剩余宽度，按钮保持自然宽度不被压扁 */
-.def-tool-group > .mini-input { flex: 1 1 auto; min-width: 0; width: auto; }
+/* 输入框吃掉剩余宽度，按钮保持自然宽度不被压扁。
+ * ⚠️ 搜索框外面包了一层 .search-wrap（为了把 ✕ 清空按钮定位在框内右侧），
+ * 所以尺寸规则要**同时**覆盖「直接子元素」与「wrap 内的 input」两种情况 ——
+ * 只写 `.def-tool-group > .mini-input` 的话，包起来之后那条规则就失效了
+ * （input 不再是 group 的直接子元素），输入框会缩成默认宽度。 */
+.def-tool-group > .mini-input,
+.search-wrap > .mini-input { flex: 1 1 auto; min-width: 0; width: auto; }
 .def-tool-group > .mini-button { flex: 0 0 auto; }
 @media (min-width: 641px) {
   /* 桌面上限宽，两组靠左，不要拉满整行显得松散 */
   .def-tool-group { flex: 0 1 auto; }
-  .def-tool-group > .mini-input { width: min(260px, 100%); }
+  .def-tool-group > .mini-input,
+  .search-wrap { width: min(260px, 100%); }
+  .search-wrap > .mini-input { width: auto; }
 }
 @media (max-width: 640px) {
   /* 手机竖屏：搜索一行、新建一行，各自的输入框与按钮同处一行 */
   .def-tool-group { flex: 1 1 100%; }
-  .def-tool-group > .mini-input { width: auto; }
+  .def-tool-group > .mini-input,
+  .search-wrap > .mini-input { width: auto; }
 }
+/* 搜索框 + 框内 ✕：wrap 负责占位，✕ 绝对定位在输入框右内侧 */
+.search-wrap { position: relative; display: flex; flex: 1 1 auto; min-width: 0; }
+/* 给 ✕ 留出空间，否则长文字会压到按钮下面 */
+.search-wrap > .mini-input { padding-right: 26px; }
+.search-clear {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 18px; height: 18px; padding: 0; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 50%; cursor: pointer;
+  background: transparent; color: var(--text-dim); font-size: 12px;
+}
+.search-clear:hover { background: #2f333a; color: var(--text); }
+.search-clear:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 /* 过滤生效时的提示行（匹配 N / 总数） */
 .def-match-hint {
   font-size: 12px; color: var(--text-dim);

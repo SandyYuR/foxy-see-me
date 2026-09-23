@@ -157,7 +157,10 @@
         <summary>按键定义（keys）— 可复用按键与手势</summary>
         <div class="def-toolbar">
           <div class="def-tool-group">
-            <input id="keys-filter" type="text" class="mini-input" placeholder="搜索：名称 / 引用">
+            <span class="search-wrap">
+              <input id="keys-filter" type="text" class="mini-input" placeholder="搜索：名称 / 引用">
+              <button id="keys-filter-clear" type="button" class="search-clear" hidden title="清空搜索" aria-label="清空搜索">✕</button>
+            </span>
             <button id="keys-search" type="button" class="mini-button">搜索</button>
           </div>
           <div class="def-tool-group">
@@ -175,7 +178,10 @@
         <summary>动作定义（actions）</summary>
         <div class="def-toolbar">
           <div class="def-tool-group">
-            <input id="actions-filter" type="text" class="mini-input" placeholder="搜索：名称 / 动作内容">
+            <span class="search-wrap">
+              <input id="actions-filter" type="text" class="mini-input" placeholder="搜索：名称 / 动作内容">
+              <button id="actions-filter-clear" type="button" class="search-clear" hidden title="清空搜索" aria-label="清空搜索">✕</button>
+            </span>
             <button id="actions-search" type="button" class="mini-button">搜索</button>
           </div>
           <div class="def-tool-group">
@@ -189,7 +195,10 @@
         <summary>宏（macros）</summary>
         <div class="def-toolbar">
           <div class="def-tool-group">
-            <input id="macros-filter" type="text" class="mini-input" placeholder="搜索：名称 / 步骤内容">
+            <span class="search-wrap">
+              <input id="macros-filter" type="text" class="mini-input" placeholder="搜索：名称 / 步骤内容">
+              <button id="macros-filter-clear" type="button" class="search-clear" hidden title="清空搜索" aria-label="清空搜索">✕</button>
+            </span>
             <button id="macros-search" type="button" class="mini-button">搜索</button>
           </div>
           <div class="def-tool-group">
@@ -232,6 +241,15 @@
           <button id="popup-schema-del" class="mini-button danger">删除</button>
         </div>
         <div id="popup-validation" class="status"></div>
+        <div class="def-toolbar">
+          <div class="def-tool-group">
+            <span class="search-wrap">
+              <input id="popup-filter" type="text" class="mini-input" placeholder="搜索：popupKey / 候选内容">
+              <button id="popup-filter-clear" type="button" class="search-clear" hidden title="清空搜索" aria-label="清空搜索">✕</button>
+            </span>
+            <button id="popup-search" type="button" class="mini-button">搜索</button>
+          </div>
+        </div>
         <div id="popup-keys"></div>
       </details>
       <details class="card" open>

@@ -884,6 +884,10 @@ function initPopupTab() {
     setPopupJsonStatus(rep.total ? '已格式化并修复 ' + rep.total + ' 处问题（尚未应用）' : '已格式化（尚未应用）', 'ok');
   });
 
+  /* 键列表搜索（与按键定义 / 动作宏三页共用同一套接线：即时过滤 + 按钮兜底 +
+   * 框内 ✕ 清空）。wireSearch 在 app.js 模块作用域导出。 */
+  if (FE.wireSearch) FE.wireSearch('popup-filter', 'popup-search', renderPopupKeys, 'popup-filter-clear');
+
   renderPopupTab();
 }
 FE.renderPopupTab = renderPopupTab;
