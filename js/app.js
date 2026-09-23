@@ -63,6 +63,10 @@ var state = {
    * 新建的条目会自动加入这里，因此新建后默认展开、方便立即编辑。 */
   openActions: null,
   openMacros: null,
+  /* 「校验详情」折叠块的展开态。renderMeta 每次重渲染都会重建这个 <details>，
+   * 所以展开状态必须存在 state 里，否则点条目跳转（会触发 renderAll）
+   * 就会把它收起。 */
+  metaDetailsOpen: null,
   /* 引用索引缓存（「使用数」用）。按 profile/popupProfile 的**对象引用**比对，
    * 但 mutate 多为就地改属性、引用不变，所以数据变更处必须显式
    * 调 invalidateRefIndex()，只靠引用比对会让计数停在旧值。 */
@@ -2818,7 +2822,12 @@ function appendValidationDetails(meta) {
   else if (locatable) vparts.push(h('span', { class: 'st-dim' }, ' · 点击条目可定位'));
   meta.appendChild(h('span', null, vparts));
 
-  var det = h('details', { class: 'meta-details' });
+  /* 「校验详情」的展开态必须**跨重渲染保持**：点条目跳转走的是
+   * locateIssue → renderAll → renderMeta，而 renderMeta 会 clearEl 重建整个
+   * meta（含这个 <details>）。不记住展开态的话，用户每点一条错误详情就被收起，
+   * 想连着看下一条得重新展开（用户明确要求修掉）。 */
+  var det = h('details', { class: 'meta-details', open: state.metaDetailsOpen ? 'open' : null });
+  det.addEventListener('toggle', function () { state.metaDetailsOpen = !!det.open; });
   det.appendChild(h('summary', null, '校验详情'));
   var list = h('ul', { class: 'meta-list' });
   if (issues && issues.length) {

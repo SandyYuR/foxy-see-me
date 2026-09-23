@@ -2087,12 +2087,40 @@ await sleep(350);
   ok(FE.issueLocatable(badIssue) === true, 'issueLocatable 判定为可定位');
   /* 面板里渲染出可点击条目 */
   ok(q('.issue-locatable').length > 0, '校验详情渲染出可点击条目');
+
+  /* ---- 跳转后「校验详情」必须保持展开 ----
+   * renderMeta 每次重渲染都会 clearEl 重建这个 <details>，展开态得存在 state 里，
+   * 否则点一条错误详情就被收起，想连着看下一条要反复展开（用户明确要求修掉）。 */
+  const metaDet = q('.meta-details')[0];
+  ok(!!metaDet, '校验详情折叠块已渲染');
+  ok(metaDet.open === false, '默认是收起的');
+  metaDet.open = true;
+  metaDet._fire('toggle');
+  eq(FE.state.metaDetailsOpen, true, '展开后展开态写进 state');
   /* 先切到别处，确认定位会切回来 */
   FE.state.sel = null;
   FE.locateIssue(badIssue);
   eq(FE.state.layoutName, 'default', '定位切到问题所在布局');
   eq(FE.state.sel, { s: 0, r: 0, k: 1 }, '定位选中出错的键');
   eq(FE.state.splitMode, false, '常规片段的问题不切到分体模式');
+  /* 渲染被重建了（是新节点），但展开态跟着 state 恢复 */
+  const metaDet2 = q('.meta-details')[0];
+  ok(metaDet2 !== metaDet, '定位触发了重渲染（折叠块是新节点）');
+  eq(metaDet2.open, true, '跳转后校验详情仍保持展开（不再被收起）');
+  /* 用户手动收起后，后续重渲染也应保持收起（不能反过来强制展开） */
+  metaDet2.open = false;
+  metaDet2._fire('toggle');
+  eq(FE.state.metaDetailsOpen, false, '收起后展开态同步为 false');
+  FE.renderAll();
+  eq(q('.meta-details')[0].open, false, '收起状态同样跨重渲染保持');
+  /* 复原成展开态，后面的断言仍按"可点击条目可见"的前提走。
+   * 必须**重新定位一次**：上面的 FE.renderAll() 会 clearEl 重建预览 DOM，
+   * 之前 holdFlash 加在旧 chip 上的 .flash-hold-err 随节点一起没了
+   * （高亮是渲染后加的类，任何重渲染都会丢——这是既有行为，不是本次改动引入的）。 */
+  q('.meta-details')[0].open = true;
+  q('.meta-details')[0]._fire('toggle');
+  FE.locateIssue(badIssue);
+  eq(q('.meta-details')[0].open, true, '重新定位后校验详情仍展开');
   ok(q('.chip-sel').length > 0, '定位后该键带选中样式');
   /* 布局按键高亮**按来源分色**（用户两次要求叠加的结果）：
    *   校验出错跳过来 → 红（'err'）：它是"这里有错"，红才对；
