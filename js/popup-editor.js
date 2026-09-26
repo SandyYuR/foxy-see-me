@@ -718,7 +718,15 @@ function renderPopupPreview() {
   }
 
   var cands = FE.popupCandidates(P, state.popupSchema, pk, state.popupShifted);
-  var stage = h('div', { class: 'pp-stage' });
+  /* 弹出效果预览跟随上面键盘颜色：
+   * · 预览区背景（舞台）用键盘底色（kb-dark/kb-light，与键盘预览容器同款）；
+   * · 气泡/候选随键盘明暗主题；
+   * · 模拟按键额外套该 popupKey 对应布局按键的 keyType 配色 + colors 覆盖。
+   * 实时性：主题切换由 pt-theme 联动 renderPopupTab；改按键 colors 经
+   * renderAll→renderPopupTab，均立即反映。 */
+  var themeCls = (state.theme === 'light') ? 'kb-light' : 'kb-dark';
+  var keyType = (mockEff && mockEff.keyType) ? String(mockEff.keyType).toLowerCase() : 'letter';
+  var stage = h('div', { class: 'pp-stage ' + themeCls });
   var bubble = h('div', { class: 'pp-bubble' });
   if (!cands || !cands.length) {
     bubble.appendChild(h('span', { class: 'pp-empty-hint' }, used[pk] ? '（弹出菜单未定义该键的候选）' : '（未定义候选）'));
@@ -730,7 +738,12 @@ function renderPopupPreview() {
       }, FE.popupCandidateLabel(c) || '？'));
     });
   }
-  var keyMock = h('div', { class: 'pp-key' }, mockLabel);
+  var keyMock = h('div', { class: 'pp-key kt-' + keyType }, mockLabel);
+  /* 该 popupKey 对应布局按键的 colors 覆盖直接套到模拟按键上
+   * （与键盘预览同款语义：全局主题 → keyType → 键 colors）。 */
+  if (mockEff && FE.applyKeyColors) {
+    try { FE.applyKeyColors(keyMock, mockEff, false, state.status); } catch (e) { /* 忽略着色失败 */ }
+  }
   var wrap = h('div', { class: 'pp-wrap' }, bubble, keyMock);
   stage.appendChild(wrap);
   host.appendChild(stage);

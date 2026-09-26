@@ -5048,7 +5048,7 @@ function initToolbar() {
   $('pt-composing').addEventListener('change', function () { state.status.composing = this.checked; renderPreview(); });
   $('pt-ascii').addEventListener('change', function () { state.status.ascii_mode = this.checked; renderPreview(); });
   $('pt-disabled') && $('pt-disabled').addEventListener('change', function () { state.status.disabled = this.checked; renderPreview(); });
-  $('pt-theme').addEventListener('change', function () { state.theme = this.value; renderPreview(); });
+  $('pt-theme').addEventListener('change', function () { state.theme = this.value; renderPreview(); if (FE.renderPopupTab) FE.renderPopupTab(); });
   $('pt-status-text').addEventListener('input', function () { state.statusSample = this.value; renderPreview(); });
   $('pt-split') && $('pt-split').addEventListener('change', function () {
     state.splitMode = this.checked;
@@ -5152,6 +5152,9 @@ FE.showUsageDialog = showUsageDialog;
 FE.scrollToDefItem = scrollToDefItem;
 FE.curSections = curSections;
 FE.getRowKeys = function (section, ri) { return getRowKeys(section, ri); };
+/* 弹出菜单页的弹出效果预览复用：模拟按键直接套对应布局按键的 colors
+ * 覆盖（与键盘预览同款语义）。纯导出，不改逻辑。 */
+FE.applyKeyColors = applyKeyColors;
 
 function placementContainer(loc) {
   /* 只读解析：不做数组行 → 对象行的转换，避免打开对话框时改动结构 */

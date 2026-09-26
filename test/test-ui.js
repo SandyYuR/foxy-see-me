@@ -1779,6 +1779,37 @@ await sleep(350);
   eq(FE.popupShiftSingleChar('г'), 'Г', '西里尔小写 г Shift 变大写');
   eq(FE.popupShiftSingleChar('ג'), 'ג', '希伯来文 ג 无大小写保持原样');
   eq(FE.popupShiftSingleChar('ا'), 'ا', '阿拉伯文 ا 无大小写保持原样');
+  /* 弹出效果预览跟随键盘颜色：舞台背景用键盘底色（kb-dark/kb-light 主题类），
+   * 气泡/候选随主题，模拟按键额外套 keyType + colors 覆盖；主题切换实时同步。
+   * 且改按键 colors 后模拟按键**实时**更新（经 renderAll→renderPopupTab）。 */
+  (function () {
+    var stage = q('.pp-stage')[0];
+    ok(!!stage, '弹出效果预览舞台存在');
+    var want = FE.state.theme === 'light' ? 'kb-light' : 'kb-dark';
+    ok(stage.classList.contains(want), '预览舞台跟随键盘主题（背景用键盘底色，' + want + '）');
+    var key = q('.pp-key')[0];
+    ok(!!key, '模拟按键存在');
+    ok(key.classList.contains('kt-letter'), '回退时模拟按键按 LETTER 配色');
+    /* 实时：切主题后舞台主题类同步切换 */
+    FE.state.theme = (want === 'light') ? 'dark' : 'light';
+    $('pt-theme').value = FE.state.theme;
+    $('pt-theme')._fire('change');
+    var want2 = FE.state.theme === 'light' ? 'kb-light' : 'kb-dark';
+    ok(q('.pp-stage')[0] && q('.pp-stage')[0].classList.contains(want2),
+      '主题切换后预览舞台主题类同步（' + want2 + '）');
+    FE.state.theme = (want === 'light') ? 'light' : 'dark';
+    $('pt-theme').value = FE.state.theme;
+    $('pt-theme')._fire('change');
+    /* 改按键 colors → 弹出预览模拟按键实时套色（用带 popupKey=a 的参考布局） */
+    var lt = fs.readFileSync(path.join(__dirname, '..', 'examples', '带弹出菜单参考-layout.json'), 'utf8');
+    FE.applyProfileText(lt);
+    FE.state.popupSelKey = 'a';
+    FE.renderPopupTab();
+    var bgBefore = q('.pp-key')[0].style.background;
+    FE.mutate(function () { FE.state.profile.keys['qwerty.a'].colors = { background: '#ff0000' }; });
+    eq(q('.pp-key')[0].style.background, '#ff0000', '改按键 a 颜色后模拟按键实时变红');
+    ok(bgBefore !== '#ff0000', '（前置）改色前模拟按键不是红色');
+  })();
 
   /* 添加候选（文本类型）端到端。
    * 键卡片默认折叠且懒建，所以要**在已展开的卡片内**取添加按钮 ——

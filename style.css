@@ -556,8 +556,13 @@ label.check { cursor: pointer; white-space: nowrap; }
 /* 主按键对话框里内嵌的弹出菜单整键编辑（与键定义卡片同构） */
 .popup-section .popup-key-editor .section-head { margin-bottom: 6px; }
 
-/* 弹出气泡预览 */
-.pp-stage { padding: 18px 0 6px; display: flex; justify-content: center; }
+/* 弹出气泡预览：整体跟随上面键盘颜色。
+ * · 舞台背景用键盘底色（.kb-dark/.kb-light 容器同款色值）；
+ * · 气泡/候选随明暗主题；模拟按键额外套 keyType 配色 + colors 覆盖。 */
+.pp-stage { padding: 18px 12px 12px; display: flex; justify-content: center; border-radius: 8px; }
+/* 舞台背景 = 键盘容器底色（与 .kb-dark / .kb-light 同款） */
+.pp-stage.kb-dark { background: #191a1e; }
+.pp-stage.kb-light { background: #cfd2d7; }
 .pp-wrap { display: flex; flex-direction: column; align-items: center; position: relative; }
 .pp-bubble {
   display: flex; align-items: stretch; gap: 4px; position: relative;
@@ -566,15 +571,23 @@ label.check { cursor: pointer; white-space: nowrap; }
   box-shadow: 0 4px 16px rgba(0,0,0,0.35);
   margin-bottom: 14px; min-height: 44px;
 }
+/* 气泡背景随键盘主题 */
+.pp-stage.kb-dark .pp-bubble { background: #2b2d31; color: #f2f3f5; }
+.pp-stage.kb-light .pp-bubble { background: #ffffff; color: #22242a; box-shadow: 0 4px 16px rgba(0,0,0,0.18); }
 .pp-bubble::after {
   content: ''; position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%) rotate(45deg);
   width: 10px; height: 10px; background: #f4f5f7; border-radius: 2px;
 }
+.pp-stage.kb-dark .pp-bubble::after { background: #2b2d31; }
+.pp-stage.kb-light .pp-bubble::after { background: #ffffff; }
 .pp-cand {
   display: flex; align-items: center; justify-content: center;
   min-width: 34px; padding: 2px 8px; border-radius: 6px; background: #ffffff; color: #22242a;
   font-size: 15px; cursor: default;
 }
+/* 候选是「键」：随键盘主题套 LETTER 键色（与 .kb-*.kb-key 同款色值） */
+.pp-stage.kb-dark .pp-cand { background: #52555b; color: #f2f3f5; }
+.pp-stage.kb-light .pp-cand { background: #ffffff; color: #22242a; box-shadow: 0 1px 1px rgba(0,0,0,0.18); }
 .pp-cand-first { min-width: 52px; min-height: 40px; font-size: 22px; font-weight: 600; }
 .pp-empty-hint { color: #888; font-size: 12.5px; align-self: center; padding: 4px 10px; }
 .pp-key {
@@ -582,6 +595,12 @@ label.check { cursor: pointer; white-space: nowrap; }
   background: #52555b; color: #f2f3f5; display: flex; align-items: center; justify-content: center;
   font-size: 18px; font-weight: 600; position: relative; z-index: 1;
 }
+/* 模拟按键的 keyType 配色（随键盘主题；colors 覆盖由 FE.applyKeyColors 以行内样式写入，优先级更高） */
+.pp-stage.kb-light .pp-key { background: #ffffff; color: #22242a; box-shadow: 0 1px 1px rgba(0,0,0,0.22); }
+.pp-stage.kb-light .pp-key.kt-function { background: #d6d9de; }
+.pp-stage.kb-light .pp-key.kt-action { background: #a8c8f2; }
+.pp-stage.kb-dark .pp-key.kt-function, .pp-key.kt-function { background: #313439; }
+.pp-stage.kb-dark .pp-key.kt-action, .pp-key.kt-action { background: #3d6fb4; }
 .gedit {
   display: grid;
   gap: 5px;
