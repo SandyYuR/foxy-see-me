@@ -699,7 +699,10 @@ function renderPopupPreview() {
     h('label', { class: 'mini-label check' }, shiftChk, ' Shift 状态')));
 
   /* 模拟按键的显示标签：找布局里第一个使用该 popupKey 的按键，
-   * 按预览 Shift 开关套 shiftedLabel / 大小写（与键盘预览一致）。
+   * 按预览 Shift 开关套 shiftedLabel / 大小写。
+   * 布局未使用该键时回退用 popupKey 本身，此时同样套单字符大写规则
+   * （Unicode 感知：г→Г；无大小写概念的如 ג/ا 原样返回），
+   * 否则 Shift 开关只切气泡、不切按键（见 Shift 下仍显示小写问题）。
    * 注意：只动这个模拟按键的标签；上方候选气泡与下方说明保持原逻辑。 */
   var mockEff = findMockEff(pk);
   var mockLabel = pk;
@@ -708,10 +711,10 @@ function renderPopupPreview() {
     try { raw = FE.rawLabelOf(mockEff, FE.NEUTRAL_STATUS); } catch (e) { raw = null; }
     if (raw == null) raw = pk;
     mockLabel = String(raw);
-    if (state.popupShifted) {
-      if (typeof mockEff.shiftedLabel === 'string') mockLabel = mockEff.shiftedLabel;
-      else if (/^[a-z]$/.test(mockLabel)) mockLabel = mockLabel.toUpperCase();
-    }
+  }
+  if (state.popupShifted) {
+    if (mockEff && typeof mockEff.shiftedLabel === 'string') mockLabel = mockEff.shiftedLabel;
+    else mockLabel = shiftSingleChar(mockLabel);
   }
 
   var cands = FE.popupCandidates(P, state.popupSchema, pk, state.popupShifted);
@@ -735,6 +738,20 @@ function renderPopupPreview() {
     '状态回退：schema[' + (state.popupShifted ? 'shifted' : 'normal') + '] → default[' + (state.popupShifted ? 'shifted' : 'normal') + '] → schema.normal → default.normal' +
     (used[pk] ? ' · 布局使用 ' + used[pk].length + ' 处' : ' · 布局未使用该键')));
 }
+
+/* Shift 下单字符“大写化”（Unicode 感知，不止 a-z）。
+ * 有 shiftedLabel 时调用方优先用 shiftedLabel；这里处理无显式值时的回退：
+ * 单个字符且 toUpperCase 能变就变（如 г→Г、ß→SS），无大小写概念的
+ * （如希伯来文 ג、阿拉伯文 ا、数字符号）原样返回。 */
+function shiftSingleChar(label) {
+  var s = String(label == null ? '' : label);
+  if (!s) return s;
+  var chars = Array.from(s);
+  if (chars.length !== 1) return s;
+  var up = chars[0].toUpperCase();
+  return up !== chars[0] ? up : s;
+}
+FE.popupShiftSingleChar = shiftSingleChar;
 
 function findMockLabel(pk) {
   var eff = findMockEff(pk);

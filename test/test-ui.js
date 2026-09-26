@@ -1760,6 +1760,25 @@ await sleep(350);
   shiftChk.checked = false;
   shiftChk._fire('change');
   eq(q('.pp-key')[0].textContent, keyBefore, '取消 Shift 后模拟按键恢复');
+  /* 回归：布局未使用该 popupKey 时，模拟按键回退用 popupKey 本身作标签，
+   * Shift 下同样要套单字符大写（此前回退分支在 if (mockEff) 内，Shift 开关
+   * 只切气泡、不切按键，q 恒显示小写）。此时默认布局无任何 popupKey，
+   * 正好覆盖“布局未使用”回退路径。 */
+  FE.state.popupSelKey = 'q';
+  FE.state.popupShifted = false;
+  FE.renderPopupTab();
+  eq(q('.pp-key')[0].textContent, 'q', '回退时 normal 显示 popupKey 小写');
+  FE.state.popupShifted = true;
+  FE.renderPopupTab();
+  eq(q('.pp-key')[0].textContent, 'Q', '回退时 Shift 显示大写');
+  FE.state.popupShifted = false;
+  FE.renderPopupTab();
+  eq(q('.pp-key')[0].textContent, 'q', '回退时取消 Shift 恢复小写');
+  /* 回归（Unicode）：回退分支的大写化必须 Unicode 感知，不能只认 a-z。
+   * г→Г（西里尔小写变大写）；ג（希伯来文无大小写）原样不动。 */
+  eq(FE.popupShiftSingleChar('г'), 'Г', '西里尔小写 г Shift 变大写');
+  eq(FE.popupShiftSingleChar('ג'), 'ג', '希伯来文 ג 无大小写保持原样');
+  eq(FE.popupShiftSingleChar('ا'), 'ا', '阿拉伯文 ا 无大小写保持原样');
 
   /* 添加候选（文本类型）端到端。
    * 键卡片默认折叠且懒建，所以要**在已展开的卡片内**取添加按钮 ——
