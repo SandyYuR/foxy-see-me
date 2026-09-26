@@ -4415,11 +4415,8 @@ function renderOps() {
 }
 
 function updateUndoButtons() {
-  /* 三处入口状态同步：浮动按钮（右上）/ 顶栏右侧 / 「布局与文件操作」卡片内。
+  /* 两处入口状态同步：顶栏右侧 / 浮动按钮（右上）。
    * 任一处的可用性都必须一致，否则用户会看到"这个能点、那个灰着"。 */
-  var u = $('op-undo'), r = $('op-redo');
-  if (u) { u.disabled = !state.history.length; u.title = state.history.length ? '撤销' : '没有可撤销的操作'; }
-  if (r) { r.disabled = !state.future.length; r.title = state.future.length ? '重做' : '没有可重做的操作'; }
   var tu = $('top-undo'), tr = $('top-redo');
   if (tu) {
     tu.disabled = !state.history.length;
@@ -4884,12 +4881,10 @@ function initToolbar() {
     }
   });
 
-  $('op-undo').addEventListener('click', undo);
-  $('op-redo').addEventListener('click', redo);
   var topUndo = $('top-undo'), topRedo = $('top-redo');
   if (topUndo) topUndo.addEventListener('click', undo);
   if (topRedo) topRedo.addEventListener('click', redo);
-  /* 浮动版同款按钮：与上面两处共用 undo/redo，状态由 updateUndoButtons 统一同步 */
+  /* 浮动版同款按钮：与顶栏共用 undo/redo，状态由 updateUndoButtons 统一同步 */
   var floatUndo = $('float-undo'), floatRedo = $('float-redo');
   if (floatUndo) floatUndo.addEventListener('click', undo);
   if (floatRedo) floatRedo.addEventListener('click', redo);

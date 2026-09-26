@@ -212,13 +212,13 @@ ok(sumTexts[sumTexts.length - 1].indexOf('布局 JSON') >= 0, '布局 JSON 卡�
 console.log('== 撤销 / 重做 ==');
 FE.mutate(() => { FE.state.profile.keys['zz.test'] = { ref: 'rime.z' }; });
 ok(FE.state.history.length === 1, '历史记录 1 条');
-ok($('op-undo').disabled === false, '撤销可用');
-$('op-undo').click();
+ok($('top-undo').disabled === false, '撤销可用');
+$('top-undo').click();
 ok(!FE.state.profile.keys['zz.test'], '撤销后按键定义移除');
-ok($('op-redo').disabled === false, '重做可用');
-$('op-redo').click();
+ok($('top-redo').disabled === false, '重做可用');
+$('top-redo').click();
 ok(!!FE.state.profile.keys['zz.test'], '重做后恢复');
-$('op-undo').click();
+$('top-undo').click();
 FE.mutate(() => { delete FE.state.profile.keys['zz.test']; });
 
 console.log('== 点击预览按键 → 对话框 ==');
@@ -254,10 +254,10 @@ const savedPlacement = FE.state.profile.layouts.default.sections[0].rows[0][0];
 eq(savedPlacement.label, '啾', '放置 label 已写入 profile');
 ok(q('.kb-label', q('.kb-key')[0])[0].textContent === '啾', '预览实时显示新标签');
 /* 撤销恢复 */
-$('op-undo').click();
+$('top-undo').click();
 eq(FE.state.profile.layouts.default.sections[0].rows[0][0].label, undefined, '撤销后 label 移除');
 ok(q('.kb-label', q('.kb-key')[0])[0].textContent === 'q', '预览恢复 q');
-$('op-redo').click();
+$('top-redo').click();
 documentStub._openDialogs.length = 0;
 
 console.log('== 点击编辑器 chip → 对话框 ==');
@@ -322,9 +322,9 @@ kdHts2.querySelectorAll('.dialog-toolbar .primary')[0].click();
 ok(FE.state.profile.keys['qwerty.q'].hintTextSize === null, '「清除」写入显式 null（显式清除继承）');
 FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q', keyType: 'LETTER', swipe: { up: { ref: 'rime.Q' }, down: { ref: 'rime.1' } } };
 documentStub._openDialogs.length = 0;
-$('op-undo').click();
+$('top-undo').click();
 eq(FE.state.profile.keys['qwerty.q'].swipe.up.label, undefined, '撤销手势修改');
-$('op-undo').click();
+$('top-undo').click();
 eq(FE.state.profile.keys['qwerty.q'].swipe.up.label, undefined, '撤销手势修改');
 documentStub._openDialogs.length = 0;
 
@@ -1021,7 +1021,7 @@ rawDlg.querySelectorAll('.dialog-toolbar .primary')[0].click(); /* 应用 */
 ok(kdRaw.querySelectorAll('input').some(i => i.value === '修复测试'), '按键对话框已应用修复后的 JSON');
 kdRaw.querySelectorAll('.dialog-toolbar .primary')[0].click(); /* 保存按键定义 */
 eq(FE.state.profile.keys['qwerty.q'].label, '修复测试', '修复后的 JSON 写入 profile');
-$('op-undo').click();
+$('top-undo').click();
 eq(FE.state.profile.keys['qwerty.q'].label, undefined, '撤销恢复按键定义');
 documentStub._openDialogs.length = 0;
 
@@ -1138,7 +1138,7 @@ FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
   ok(!d6.open, '点「保存」直接关闭（不触发守卫）');
   eq(dialogCount(), 0, '保存后没有多余的确认框');
   eq(FE.state.profile.keys['qwerty.q'].label, '保存不拦', '保存正常写入');
-  $('op-undo').click();
+  $('top-undo').click();
   eq(FE.state.profile.keys['qwerty.q'].label, undefined, '撤销恢复');
 }
 documentStub._openDialogs.length = 0;
@@ -1243,7 +1243,7 @@ FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
   ok(!!colorAlert && colorAlert.indexOf('颜色格式无效') >= 0, '非法颜色输入被内建弹窗提示');
   ok(badInput.value === keepVal, '非法颜色输入被回退');
   kd2.querySelectorAll('.dialog-toolbar')[0].querySelectorAll('button')[0].click(); /* 取消 */
-  $('op-undo').click();
+  $('top-undo').click();
   eq(FE.state.profile.keys['qwerty.q'].colors, undefined, '撤销清除颜色覆盖');
   /* states 子卡：badge + 清除 + shadow 回显 */
   documentStub._openDialogs.length = 0;
@@ -1703,10 +1703,10 @@ await sleep(350);
   ok(FE.state.profile.layouts.default.split.sections.length === beforeSplitSections + 1, '分体模式新增区段写入 split');
   ok(FE.state.profile.layouts.default.sections.length === 1, '常规 sections 未被改动');
   /* 撤销能整体回退（含 split 修改） */
-  $('op-undo').click();
-  $('op-undo').click();
-  $('op-undo').click();
-  $('op-undo').click();
+  $('top-undo').click();
+  $('top-undo').click();
+  $('top-undo').click();
+  $('top-undo').click();
   ok(FE.state.profile.layouts.default.sections.length === 1, '撤销后恢复正常');
   state2splitOff();
   function state2splitOff() { FE.state.splitMode = false; FE.renderAll(); }
@@ -1785,7 +1785,7 @@ await sleep(350);
   const firstArr = FE.state.popupProfile.schemas.default[openPk].normal;
   ok(firstArr[firstArr.length - 1] === 'ẗ', '新候选写入 normal 末尾');
   /* 撤销 */
-  $('op-undo').click();
+  $('top-undo').click();
   ok(FE.state.popupProfile.schemas.default[openPk].normal[firstArr.length - 1] !== 'ẗ' || FE.state.popupProfile.schemas.default[openPk].normal.length === firstArr.length - 1, '撤销弹回候选');
 
   /* 布局联动：构造只含 z 键的弹出菜单 + 加载带 popupKey 的 split 布局 */
@@ -1860,7 +1860,7 @@ await sleep(350);
   ok(!pcDlg.open, '候选保存后关闭');
   const qArr = FE.state.popupProfile.schemas.default.q.normal;
   ok(qArr[qArr.length - 1] === 'qtest', 'section 内添加候选写回 profile');
-  $('op-undo').click();
+  $('top-undo').click();
   ok(FE.state.popupProfile.schemas.default.q.normal.indexOf('qtest') < 0, '撤销弹回 section 内添加');
   /* 主对话框保存后 popupKey 修改能同步到 section（重建表单） */
   pdlg.close();
@@ -1933,7 +1933,7 @@ await sleep(350);
   FE.performChipDrop({ s: 0, r: 1, k: 2 }, { kind: 'before', loc: { s: 0, r: 0, k: 0 } });
   eq(rowRefs(0), ['rime.c', 'rime.b', 'rime.a'], '跨行拖动：c 插回第 0 行开头');
   /* 拖动经 mutate 记录历史，可撤销 */
-  $('op-undo').click();
+  $('top-undo').click();
   eq(rowRefs(0), ['rime.b', 'rime.a'], '撤销恢复上一步拖动');
 
   console.log('== 指针拖动：网格按键移动/交换（performGridDrop） ==');
@@ -1954,7 +1954,7 @@ await sleep(350);
   const g1 = FE.state.profile.layouts.default.sections[0].keys[1];
   eq([g0.column, g0.row], [1, 0], '交换后 KP_1 取得原 KP_2 坐标');
   eq([g1.column, g1.row], [2, 1], '交换后 KP_2 取得原 KP_1 坐标');
-  $('op-undo').click();
+  $('top-undo').click();
   const g1b = FE.state.profile.layouts.default.sections[0].keys[1];
   eq([g1b.column, g1b.row], [1, 0], '撤销恢复网格坐标');
 
@@ -1976,8 +1976,6 @@ await sleep(350);
   ok($('top-redo').disabled === false, '撤销后顶栏重做可用');
   $('top-redo').click();
   eq(FE.state.profile.author, '顶栏测试', '顶栏重做按钮生效');
-  /* 顶栏与卡片内按钮状态同步 */
-  eq($('op-undo').disabled, $('top-undo').disabled, '顶栏与卡片内撤销按钮同步');
 
   console.log('== 浮动工具：右上撤销/重做、右下回到顶部 ==');
   /* 滚动监听注册在 window 上（桩把监听器收进 _winListeners），照真实路径触发它 */
@@ -2015,10 +2013,9 @@ await sleep(350);
   ok($('float-undo-group').hidden === false, '滚过顶栏后浮动撤销/重做出现');
   ok($('float-top').hidden === false, '滚过顶栏后回到顶部出现');
 
-  /* 状态三处同步：浮动 / 顶栏 / 卡片内 */
+  /* 状态两处同步：浮动 / 顶栏 */
   eq($('float-undo').disabled, $('top-undo').disabled, '浮动撤销与顶栏撤销状态同步');
   eq($('float-redo').disabled, $('top-redo').disabled, '浮动重做与顶栏重做状态同步');
-  eq($('float-undo').disabled, $('op-undo').disabled, '浮动撤销与卡片内撤销状态同步');
   FE.mutate(function () { FE.state.profile.author = '浮动测试'; });
   ok($('float-undo').disabled === false, '有历史后浮动撤销可用');
   ok($('float-undo').getAttribute('title').indexOf('Ctrl+Z') >= 0, '浮动撤销 title 带快捷键提示');

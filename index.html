@@ -85,8 +85,6 @@
               <button id="op-export-defs" class="mini-button" hidden title="把共享定义还原为 definitions.json">导出 definitions</button>
               <select id="op-example" class="mini-select wide"></select>
               <button id="op-load-example" class="mini-button">加载示例</button>
-              <button id="op-undo" class="mini-button" disabled>↶ 撤销</button>
-              <button id="op-redo" class="mini-button" disabled>↷ 重做</button>
             </div>
             <div class="form-row form-inline">
               <label class="mini-label">作者 author</label>
@@ -106,6 +104,7 @@
             </div>
             <div id="op-folder-report" class="status"></div>
             <div id="op-status" class="status"></div>
+            <div id="op-path-hint" class="status dim">布局文件请放置于 <code>&lt;外部存储&gt;/foxy/frontend/layouts/&lt;profile&gt;.json</code> 后在 Foxy 设置中选择。</div>
           </details>
 
           <details class="card" open>
@@ -271,7 +270,7 @@
        紧贴**中央操作区的外缘**（而不是视口边缘 —— 那样屏幕越宽离内容越远）。
        二者都在**滚出顶栏后**才出现：顶栏右侧已有同款按钮，常驻会与它们重叠；
        滚下去后顶栏看不见了，浮动版才真正派上用场。
-       状态与顶栏、卡片内按钮三方同步（见 app.js 的 updateUndoButtons）。 -->
+       状态与顶栏按钮两方同步（见 app.js 的 updateUndoButtons）。 -->
   <div class="float-layer">
     <div class="float-rail">
       <div id="float-undo-group" class="float-group float-top-right" hidden>
@@ -284,8 +283,7 @@
   </div>
 
   <footer class="footnote">
-    <p>格式依据 Foxy 布局格式规范（<code>foxy.keyboard-layout</code>，见 <code>skills/</code>）。布局文件请放置于
-      <code>&lt;外部存储&gt;/foxy/frontend/layouts/&lt;profile&gt;.json</code> 后在 Foxy 设置中选择。</p>
+    <p>格式依据 Foxy 布局格式规范（<code>foxy.keyboard-layout</code>，见 <code>skills/</code>）。</p>
   </footer>
 
   <script src="./js/data.js"></script>

@@ -509,9 +509,7 @@ function buildSkeleton() {
       el('button', { id: 'op-export' }),
       el('button', { id: 'op-export-defs' }),
       el('select', { id: 'op-example' }),
-      el('button', { id: 'op-load-example' }),
-      el('button', { id: 'op-undo' }),
-      el('button', { id: 'op-redo' })),
+      el('button', { id: 'op-load-example' })),
     el('input', { id: 'op-author', type: 'text' }),
     el('input', { id: 'op-type', type: 'checkbox' }),
     el('div', { id: 'op-folder' },
@@ -522,7 +520,8 @@ function buildSkeleton() {
       el('button', { id: 'op-folder-complete', class: 'mini-button attention' }, '选择文件夹…'),
       el('input', { id: 'op-import-dir-file', type: 'file' })),
     el('div', { id: 'op-folder-report' }),
-    el('div', { id: 'op-status', class: 'status' })
+    el('div', { id: 'op-status', class: 'status' }),
+    el('div', { id: 'op-path-hint', class: 'status dim' })
   );
   const wb = el('div', { class: 'workbench' }, el('div', { class: 'col-main' }, opCard, layoutCard, layoutJsonCard));
   tabLayout.appendChild(wb);
