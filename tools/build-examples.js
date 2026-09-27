@@ -70,6 +70,7 @@ for (const f of names) {
   let kind, symKind = null;
   if (parsed.type === 'foxy.popup-profile') kind = 'popup';
   else if (parsed.type === 'foxy.keyboard-layout') kind = 'layout';
+  else if (parsed.type === 'foxy.keyboard-theme') kind = 'theme';
   /* 符号面板数据：顶层恰为 {multiLine, groups}（groups 是数组）。
    * 布局没有 groups、弹出菜单也没有这两个键，所以不与上面冲突。
    * ⚠️ 必须排在 layouts/schemas 兜底判定**之前**，否则会被误判成 layout
@@ -81,7 +82,11 @@ for (const f of names) {
   else if (parsed.schemas && !parsed.layouts) kind = 'popup';
   else if (parsed.layouts && !parsed.schemas) kind = 'layout';
   else throw new Error(`无法判断示例类型 ${f}，请设置 type 或唯一的 layouts/schemas/groups`);
-  const desc = typeof parsed.author === 'string' ? parsed.author : '';
+  /* desc：布局/弹出菜单用 author，主题用 name（作者字段主题里通常没有，
+   * 而主题的文件名与内部 name 可能不一致，把 name 显示出来更好认）。 */
+  const desc = kind === 'theme'
+    ? (typeof parsed.name === 'string' ? parsed.name : '')
+    : (typeof parsed.author === 'string' ? parsed.author : '');
   meta[f] = symKind ? { kind: kind, symbolKind: symKind, desc: desc } : { kind: kind, desc: desc };
   lines.push('  ' + JSON.stringify(f) + ': ' + JSON.stringify(text) + ',');
 }
@@ -102,6 +107,18 @@ lines.push('    out[k][n] = files[n];');
 lines.push('  });');
 lines.push('  return out;');
 lines.push('})();');
+lines.push('');
+lines.push('/* 主题类示例（文件名 → 文本）。主题页「载入示例」用这里。');
+lines.push(' * 与符号一样按 kind 索引，调用方不必自己过滤 EXAMPLE_META。 */');
+lines.push('FE.THEME_EXAMPLE_FILES = (function () {');
+lines.push('  var out = {};');
+lines.push('  var files = FE.EXAMPLE_FILES, m = FE.EXAMPLE_META;');
+lines.push('  Object.keys(files).forEach(function (n) {');
+lines.push('    var info = m[n];');
+lines.push('    if (info && info.kind === "theme") out[n] = files[n];');
+lines.push('  });');
+lines.push('  return out;');
+lines.push('})();');
 const outPath = path.join(__dirname, '..', 'js', 'examples-bundle.js');
 fs.writeFileSync(outPath, lines.join('\n') + '\n');
 const defaultSource = fs.readFileSync(path.join(exDir, 'layout-variant.json'), 'utf8');
@@ -110,4 +127,5 @@ fs.writeFileSync(defaultPath, 'window.FE = window.FE || {};\nFE.DEFAULT_PROFILE_
 const layoutN = Object.values(meta).filter(m => m.kind === 'layout').length;
 const popupN = Object.values(meta).filter(m => m.kind === 'popup').length;
 const symN = Object.values(meta).filter(m => m.kind === 'symbol').length;
-console.log(`bundled ${names.length} files (${layoutN} layout / ${popupN} popup / ${symN} symbol) -> ${outPath}; default -> ${defaultPath}`);
+const themeN = Object.values(meta).filter(m => m.kind === 'theme').length;
+console.log(`bundled ${names.length} files (${layoutN} layout / ${popupN} popup / ${symN} symbol / ${themeN} theme) -> ${outPath}; default -> ${defaultPath}`);
