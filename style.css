@@ -471,6 +471,21 @@ html.site-light .pill.active { background: var(--accent); border-color: var(--ac
   html.site-auto .pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 }
 .preview-toggles { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--text-dim); }
+/* 键盘状态开关组（Shift/组字/ASCII/停用/分体/状态标签/高度）。
+ * 单独包一层是因为切到「符号面板」页时要**整组隐藏** —— 这些只对布局有意义。
+ * 用 contents 让它在常规布局下不引入额外的盒（排布与从前的扁平结构一致，
+ * 避免"多加一层 div 就把换行点挪了"的视觉回归）。 */
+.pt-state-group { display: contents; }
+.pt-state-group[hidden] { display: none; }
+/* 工具栏第二行：预览几何旋钮（高度/圆角/水平间隙/垂直间隙）+ 深浅键盘。
+ * 单独占一行（用户要求）—— 上面那排是"模拟键盘状态"，这里是"改预览怎么画"，
+ * 混在一行会挤成一团、也不便扫读。上边距 + 一条细线把它与状态开关分开。 */
+.preview-toggles-geom {
+  flex-basis: 100%;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
 .preview-stage { padding: 12px 14px 4px; }
 
 /* 预览角标图例 */
@@ -515,17 +530,27 @@ html.site-light .st-split { color: #2e8b57; }
 .kb-split {
   max-width: 1228px;
 }
-.kb-dark { background: #191a1e; box-shadow: inset 0 0 0 1px #26282d; }
-.kb-light { background: #cfd2d7; box-shadow: inset 0 0 0 1px #b9bdc4; }
+/* 键容器底色 / 内描边：主题生效时由 app.js 写 --kb-bg（= 主题 keyboardColor 或
+ * altKeyboardColor，随 key_border_enabled 联动）与 --kb-inset=none（清掉下面这圈
+ * 写死的 1px 内描边，否则主题底色上会多一圈固定色）。
+ * 未导入主题时两个变量都不存在 → var() 回落原色值，外观与从前逐像素一致。 */
+.kb-dark { background: var(--kb-bg, #191a1e); box-shadow: var(--kb-inset, inset 0 0 0 1px #26282d); }
+.kb-light { background: var(--kb-bg, #cfd2d7); box-shadow: var(--kb-inset, inset 0 0 0 1px #b9bdc4); }
 .kb-section { display: flex; flex-direction: column; }
-/* 槽位对齐：行内无 gap，槽按 weight 分整行宽，键在槽内左右各留半个间隙
- * （见 buildRowsSection）。不同键数的行同权重点边界重合。 */
-.kb-row { display: flex; margin-bottom: 5px; }
-.kb-row:last-child { margin-bottom: 0; }
+/* 槽位对齐：行内无 gap，槽按 weight 分整行宽，键在槽内左右各留间隙
+ * （见 buildRowsSection）。不同键数的行同权重点边界重合。
+ *
+ * ⚠️ 行/网格容器**不带自己的上下外边距**：App 的键间距是「每键四周内缩」
+ * （v40.setPadding + InsetDrawable，见 foxy-render-spec.md §2.7），
+ * 所以上下相邻键的可见间隙由两侧键各自的 margin 合成（= 2×间隙设置）。
+ * 早先这里写死 `margin-bottom: 5px` 属"固定间隙"时代的遗留 —— 它会在
+ * 按键内缩之外**再加一份**，使间距大于设置值、与手机不一致。 */
+.kb-row { display: flex; }
 .kb-slot { display: flex; min-width: 0; }
 .kb-slot > .kb-key { flex: 1 1 auto; min-width: 0; }
-.kb-grid { display: grid; gap: 5px; margin-bottom: 5px; }
-.kb-grid:last-child { margin-bottom: 0; }
+/* 网格：gap 由 JS 按「按键外观」设置写入（同样取 2×设置值，见 buildGridSection），
+ * 这里不写死，避免与配置值打架。 */
+.kb-grid { display: grid; }
 .kb-empty { color: var(--text-dim); text-align: center; padding: 30px 10px; font-size: 13px; }
 
 .kb-key {
@@ -538,25 +563,46 @@ html.site-light .st-split { color: #2e8b57; }
   cursor: pointer;
   transition: filter 0.06s;
 }
-.kb-dark .kb-key { background: #52555b; color: #f2f3f5; box-shadow: 0 1px 0 rgba(0,0,0,0.45); }
-.kb-dark .kb-key.kt-function { background: #313439; }
-.kb-dark .kb-key.kt-action { background: #3d6fb4; }
-.kb-light .kb-key { background: #ffffff; color: #22242a; box-shadow: 0 1px 1px rgba(0,0,0,0.22); }
-.kb-light .kb-key.kt-function { background: #d6d9de; }
-.kb-light .kb-key.kt-action { background: #a8c8f2; }
-.kb-key:hover { filter: brightness(1.12); }
-.kb-key.pressed { filter: brightness(1.35); }
+.kb-dark .kb-key { background: var(--kb-key-bg, #52555b); color: var(--kb-key-fg, #f2f3f5); box-shadow: var(--kb-key-shadow, 0 1px 0 rgba(0,0,0,0.45)); }
+.kb-dark .kb-key.kt-function { background: var(--kb-key-bg-fn, #313439); }
+.kb-dark .kb-key.kt-action { background: var(--kb-key-bg-action, #3d6fb4); }
+.kb-light .kb-key { background: var(--kb-key-bg, #ffffff); color: var(--kb-key-fg, #22242a); box-shadow: var(--kb-key-shadow, 0 1px 1px rgba(0,0,0,0.22)); }
+.kb-light .kb-key.kt-function { background: var(--kb-key-bg-fn, #d6d9de); }
+.kb-light .kb-key.kt-action { background: var(--kb-key-bg-action, #a8c8f2); }
+/* ⚠️ 按下态**不能**用亮度滤镜。App 端按下是 StateListDrawable 换背景色
+ * （state_pressed 分支用 pressedColor，见 foxy-render-spec.md §2.6，v40.java:276-291），
+ * 而不是把原色提亮。早先这里是 `filter: brightness(1.35)`，叠在主题 pressed 行内色
+ * 之上，导致**显示值 ≠ 配置值**（用户配 #FF0000，屏幕上是提亮后的粉红）—— 已删除。
+ * 按下时的背景色完全由 app.js 的 applyKeyColors 写入。 */
+/* hover 提亮**仅为本网页的交互反馈**，手机端没有 hover 概念、App 无此效果。
+ * 所以系数压到很小（1.06），避免盖掉配置色观感；也绝不作用于按下态
+ * （`.kb-key.pressed` 在下面、同权重后出现者胜 → 按下时 filter 恒为 none）。 */
+.kb-key:hover { filter: brightness(1.06); }
+/* 按下态：不加任何滤镜，颜色由 applyKeyColors 写 background。
+ * 显式写 filter: none 是为了盖掉上面 hover 的提亮（悬停时按下也不能变亮）。 */
+.kb-key.pressed { filter: none; }
 .kb-key.kb-key-broken { outline: 2px dashed var(--err); outline-offset: -2px; }
 .kb-key.kb-key-sel { outline: 2px solid var(--sel); outline-offset: -1px; }
+/* 键边框：是否画、画什么，由 app.js 的 applyKeyColors 按**两个开关组合**决定
+ * （foxy-render-spec.md §2.4，v40.java:196-206）：
+ *   B=keyBorderEnabled   true  → 键面内缩 + 1dp 边框 / 描边；false → 无边框无描边，纯色圆角块
+ *   C=keyStrokeEnabled   true  → 用描边（setStroke 1dp）；false → 用实线边框
+ * 本类只负责「边框宽度 1dp」这一半；**开关关掉时根本不会加上这个类**。
+ * ⚠️ C（描边）默认 false（xw0.java:56），且编辑器目前**没有**描边开关的 UI ——
+ * 预览一律按 C=false 的实线边框画（与 App 默认一致）；将来加开关时
+ * 在这里补「描边」变体即可，不要再让边框无条件出现。 */
 .kb-key-hasborder { border-style: solid; border-width: 1px; }
 .kb-spacer { background: transparent !important; box-shadow: none !important; cursor: default; pointer-events: none; }
 
 .kb-label { font-weight: 500; pointer-events: none; text-align: center; overflow: hidden; max-width: 96%; }
 .kb-icon-wrap { pointer-events: none; display: inline-flex; }
 .kb-icon { width: 100%; height: 100%; }
-.kb-dark .kb-icon-wrap { color: #e8eaee; }
-.kb-light .kb-icon-wrap { color: #33363d; }
-.kb-icon-active { color: var(--sel) !important; }
+/* 图标色跟随**键的主文字色**（App 端 v40.e 用 setColorFilter 给图标上同一种色，
+ * foxy-render-spec.md §1.4）。这里必须用 currentColor：早先写死 #e8eaee/#33363d，
+ * 优先级高于父级行内 color，主题键文字色（或 accentColor）就传不进来。
+ * 主题生效时 app.js 会把 --kb-icon-active 置成 currentColor（见 applyKeyboardCssVars）。 */
+.kb-icon-wrap { color: currentColor; }
+.kb-icon-active { color: var(--kb-icon-active, var(--sel)) !important; }
 
 .kb-hint {
   position: absolute; pointer-events: none; color: #aeb4bd; line-height: 1;
@@ -573,6 +619,10 @@ html.site-light .st-split { color: #2e8b57; }
 }
 .kb-badge-hold { color: #ffd28f; }
 .kb-light .kb-badge-lp { color: #1f6fb8; }
+/* ⚠️ 长按/按住徽标（.kb-badge-lp / .kb-badge-hold）的颜色**写死且不跟主题**：
+ * 它们是本编辑器的**编辑器私有标注**（index.html 图例里的"右上蓝/橙角标"），
+ * 不是 Foxy 键面的一部分 —— 主题 26 色里**没有**对应字段，无处联动。
+ * 因此保持写死（不要硬编主题色去"假装"联动），只保证深浅两档各自可读。 */
 /* 长按弹出菜单徽标：键底中 ⌄ */
 .kb-badge-popup {
   position: absolute; bottom: 1px; left: 50%; transform: translateX(-50%);
@@ -630,6 +680,24 @@ html.site-light .st-split { color: #2e8b57; }
   scrollbar-width: none;          /* Firefox */
 }
 .gedit-wrap::-webkit-scrollbar { display: none; }   /* WebKit / Blink */
+
+/* ---------------- 符号面板预览（.sym-pv，由 symbol-preview.js 画） ----------------
+ * 两条滚动槽**隐藏原生滚动条**（用户要求：「去掉那两个网页滑动杆」，以便对齐 App 观感）。
+ *
+ * App 端两列各是一个 ScrollView（ly.java:66-71 / 149-153），条多时能滚，
+ * 但滚动指示是 Android 那套（细、贴边、会自动淡出），不是网页这种粗白条 ——
+ * 深色面板底色上一条浅色滚动条尤其扎眼，看起来就不像手机。
+ *
+ * 所以：**保留滚动能力，只隐藏滚动指示**（与上面 .gedit-wrap 同一套做法，
+ * 桌面端仍可用滚轮 / 触控板拖动，手机端仍可用手指滑动）。
+ * 两列各自可滚这条语义没变 —— test-ui 有断言钉着 overflowY === 'auto'。 */
+.sym-pv-groups,
+.sym-pv-cells-wrap {
+  scrollbar-width: none;                        /* Firefox */
+  -ms-overflow-style: none;                     /* 旧 Edge / IE */
+}
+.sym-pv-groups::-webkit-scrollbar,
+.sym-pv-cells-wrap::-webkit-scrollbar { display: none; }   /* WebKit / Blink */
 
 /* 网格横向滚动条（自绘）。
  *
@@ -704,7 +772,10 @@ html.site-light .st-split { color: #2e8b57; }
  * · 舞台背景用键盘底色（.kb-dark/.kb-light 容器同款色值）；
  * · 气泡/候选随明暗主题；模拟按键额外套 keyType 配色 + colors 覆盖。 */
 .pp-stage { padding: 18px 12px 12px; display: flex; justify-content: center; border-radius: 8px; }
-/* 舞台背景 = 键盘容器底色（与 .kb-dark / .kb-light 同款） */
+/* 舞台背景 = 键盘容器底色（与 .kb-dark / .kb-light 同款）。
+ * ⚠️ 这里**保持写死色值**：弹出菜单那侧（popup-editor.js）已按 foxy-render-spec.md §7
+ * 给舞台写内联主题底（resolveKeyboardColor，含 key_border_enabled 联动），
+ * 行内优先级更高；若这里再套 --kb-bg 变量就是重复建模、两处互相牵制。 */
 .pp-stage.kb-dark { background: #191a1e; }
 .pp-stage.kb-light { background: #cfd2d7; }
 .pp-wrap { display: flex; flex-direction: column; align-items: center; position: relative; }
@@ -718,12 +789,18 @@ html.site-light .st-split { color: #2e8b57; }
 /* 气泡背景随键盘主题 */
 .pp-stage.kb-dark .pp-bubble { background: #2b2d31; color: #f2f3f5; }
 .pp-stage.kb-light .pp-bubble { background: #ffffff; color: #22242a; box-shadow: 0 4px 16px rgba(0,0,0,0.18); }
+/* 气泡下的小三角必须**跟气泡同色**：`background: inherit` 对伪元素取的是
+ * 起源元素（.pp-bubble）的计算值，所以无论气泡色来自
+ *   · popup-editor.js 写的行内主题色（popupBackgroundColor，foxy-render-spec.md §7.1），
+ *   · 还是下面 .pp-stage.kb-dark/.kb-light 两档 CSS，
+ * 三角都会自动一致。早先写死 #f4f5f7，气泡一变它就"露馅"（明显对不上）。
+ * ⚠️ 因此**不要再给 ::after 单独写 background 的档位规则** —— 那会盖掉 inherit。 */
 .pp-bubble::after {
   content: ''; position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%) rotate(45deg);
-  width: 10px; height: 10px; background: #f4f5f7; border-radius: 2px;
+  width: 10px; height: 10px; background: inherit; border-radius: 2px;
+  /* 三角不单独投影：气泡那圈模糊阴影是舞台层的观感处理，三角自带阴影会与气泡错位 */
+  box-shadow: none;
 }
-.pp-stage.kb-dark .pp-bubble::after { background: #2b2d31; }
-.pp-stage.kb-light .pp-bubble::after { background: #ffffff; }
 .pp-cand {
   display: flex; align-items: center; justify-content: center;
   min-width: 34px; padding: 2px 8px; border-radius: 6px; background: #ffffff; color: #22242a;
@@ -797,6 +874,16 @@ html.site-light .st-split { color: #2e8b57; }
 .theme-dark .gedit-key.chip-fn { background: #313439; }
 .theme-dark .gedit-sub { color: #b9bec6; }
 
+/* ⭐ 主题生效时，编辑区按键跟随**键盘配色变量**（由 app.js 写到 #layout-sections）。
+ * 上面那批写死规则**保留不动**（test-ui.js 有源码级正则断言钉着它们，防整站浅色带跑），
+ * 这一组是**同权重后置**规则：变量不存在（未导入主题）时 var() 回落同一色值 →
+ * 外观逐像素不变；变量存在（主题生效）时才真正跟随键盘主题。
+ * 目的：键盘预览变了、旁边的编辑区按键不再"各说各话"。 */
+.theme-light .chip, .theme-light .gedit-key { background: var(--kb-key-bg, #ffffff); color: var(--kb-key-fg, #22242a); }
+.theme-dark .chip, .theme-dark .gedit-key { background: var(--kb-key-bg, #52555b); color: var(--kb-key-fg, #f2f3f5); }
+.theme-light .chip.chip-fn, .theme-light .gedit-key.chip-fn { background: var(--kb-key-bg-fn, #d6d9de); }
+.theme-dark .chip.chip-fn, .theme-dark .gedit-key.chip-fn { background: var(--kb-key-bg-fn, #313439); }
+
 /* 布局编辑容器（行块 / 网格画布 / 网格滚动条）跟随预览键盘底色。
  * 行块 ≈ 预览 .kb（自带 padding，底色整块可见）；网格 .gedit 本身无 padding，
  * 间隙透出的是父级 .gedit-wrap，所以底色打在 wrap 上；滚动条轨道/滑块同步键盘底，
@@ -830,6 +917,9 @@ html.site-light .st-split { color: #2e8b57; }
  * 否则将来整站浅色的 button 白底规则（tag 选择器）会透进来，白底贴深底行块上。 */
 .theme-dark .row-block .icon-button { color: #9aa0a8; border-color: #34383f; background: #191a1e; }
 .theme-dark .row-block .icon-button:hover { color: #e6e8ec; border-color: #4a4f58; background: #262a31; }
+/* ⚠️ 行块 / 网格画布（.row-block / .gedit-wrap）的底色**暂不接 --kb-bg**：
+ * test-ui.js:3022-3023 有源码级正则断言要求这里显式写死 #191a1e（防整站浅色带跑），
+ * 改成 var() 会与既有断言冲突。该面板由弹出菜单那侧的代理统一处理。 */
 .theme-dark .gedit-wrap { background: #191a1e; border-radius: 8px; }
 .theme-dark .gedit-scrollbar { background: #1b1e23; border-color: #34383f; }
 .theme-dark .gedit-thumb { background: #4a4f58; }
@@ -1184,6 +1274,64 @@ dialog.editor-dialog::backdrop { background: rgba(5, 6, 8, 0.6); backdrop-filter
 .footnote code { font-size: 11px; }
 
 /* ================================================================
+ * 主题页 / 符号面板页
+ * 主题、符号面板与弹出菜单一样是**另一类文档**，标签间用间距分隔。
+ * ================================================================ */
+.tab.tab-theme { margin-left: 22px; }
+.tab.tab-symbols { margin-left: 0; }
+
+/* 槽位配色表单：26 个字段排成自适应多列，窄屏自动回落单列。
+ * 用 grid + minmax 而不是固定列数 —— 色值输入框宽度固定（.color-input），
+ * 列数由容器宽度决定，避免 PC 上过宽、手机上挤成一条。 */
+.th-color-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 4px 12px;
+  margin: 6px 0;
+}
+.th-color-grid .form-row.form-inline { margin: 0; }
+.th-color-grid .mini-label { flex: 1 1 auto; min-width: 0; }
+
+/* 字段名很长（keyHintTextBottomColor 等），允许换行显示完整名，不省略 */
+.th-field-label { overflow-wrap: anywhere; }
+
+/* keyTypes 分组卡片：三类（LETTER / FUNCTION / ACTION）各一块 */
+.th-keytype-block {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  background: var(--card-inner);
+}
+.th-keytype-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.th-keytype-head code { font-family: var(--mono); font-size: 13px; color: var(--text); }
+.th-keytype-missing { font-size: 12px; color: var(--text-dim); }
+
+/* 主题预览槽位提示条：明确区分"主题槽位"与"预览深浅开关" */
+.th-slot-hint { font-size: 12.5px; color: var(--text-dim); margin: 4px 0; }
+.th-slot-hint code { font-family: var(--mono); }
+
+/* 符号分组：组名 + 条目 chips（symbol-editor.js 使用，容器先备好） */
+.sym-group-block {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  background: var(--card-inner);
+}
+.sym-entries { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.sym-entry {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 34px; min-height: 30px; padding: 2px 7px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-soft); font-size: 15px; line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* ================================================================
  * 竖屏手机优化（仅 ≤640px 生效，不影响 PC / 平板横屏布局）
  * 目标：更大的触摸目标、更省空间的排版、拖动时不误触滚动。
  * ================================================================ */
@@ -1200,7 +1348,7 @@ dialog.editor-dialog::backdrop { background: rgba(5, 6, 8, 0.6); backdrop-filter
   /* 标签页：整行铺满、加大点按区域 */
   .tabs { gap: 4px; }
   .tab { flex: 1 1 auto; text-align: center; padding: 10px 8px; font-size: 13.5px; }
-  .tab.tab-popup { margin-left: 0; }
+  .tab.tab-popup, .tab.tab-theme, .tab.tab-symbols { margin-left: 0; }
 
   /* 工具栏按钮更大更易点，输入框占满一行 */
   .toolbar { gap: 6px; }

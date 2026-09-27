@@ -39,21 +39,49 @@
   <main>
     <!-- ===================== 布局预览 ===================== -->
     <details class="panel preview-panel" open>
-      <summary>布局预览（实时渲染，点击按键即可编辑）</summary>
+      <summary id="preview-panel-title">布局预览（实时渲染，点击按键即可编辑）</summary>
       <div class="preview-toolbar">
         <div class="layout-tabs" id="layout-tabs"></div>
         <div class="preview-toggles">
-          <label class="check"><input type="checkbox" id="pt-shift"> Shift</label>
-          <label class="check"><input type="checkbox" id="pt-composing"> 组字</label>
-          <label class="check"><input type="checkbox" id="pt-ascii"> ASCII</label>
-          <label class="check"><input type="checkbox" id="pt-disabled"> 停用</label>
-          <label class="check" title="预览命名布局的 split 分体片段（由 Foxy 分体键盘设置选择）"><input type="checkbox" id="pt-split"> 分体</label>
-          <label class="mini-label">状态标签示例 <input id="pt-status-text" type="text" class="mini-input" size="8" value="朙月拼音"></label>
-          <label class="mini-label" title="模拟手机上键盘高度占屏幕的百分比（Foxy 设置里的键盘高度），只拉高预览、不改宽不改字">高度 <input id="pt-height" type="range" min="15" max="60" step="1" value="31" class="mini-range" aria-label="预览键盘高度百分比"><span id="pt-height-val">31%</span></label>
-          <select id="pt-theme" class="mini-select" aria-label="预览配色">
-            <option value="dark">深色键盘</option>
-            <option value="light" selected>浅色键盘</option>
-          </select>
+          <!-- 键盘状态开关（Shift/组字/ASCII/停用/分体/状态标签/高度）只对**布局**有意义；
+               切到「符号面板」页时整组隐藏，只留下面的深浅配色（符号面板底也跟它走）。
+               由 app.js 的 syncPreviewPanelChrome() 按 state.activeTab 控制。 -->
+          <div class="pt-state-group" id="pt-state-group">
+            <label class="check"><input type="checkbox" id="pt-shift"> Shift</label>
+            <label class="check"><input type="checkbox" id="pt-composing"> 组字</label>
+            <label class="check"><input type="checkbox" id="pt-ascii"> ASCII</label>
+            <label class="check"><input type="checkbox" id="pt-disabled"> 停用</label>
+            <label class="check" title="预览命名布局的 split 分体片段（由 Foxy 分体键盘设置选择），会**切换成 split 片段**渲染"><input type="checkbox" id="pt-split"> 分体</label>
+            <label class="check" title="横屏预览：容器加宽到分体宽度（1228px）、按键按 flex 拉宽，但**仍渲染当前常规布局**，不切到 split 片段。用来查看同一套布局在宽屏下的观感"><input type="checkbox" id="pt-landscape"> 横屏</label>
+            <label class="mini-label">状态标签示例 <input id="pt-status-text" type="text" class="mini-input" size="8" value="朙月拼音"></label>
+          </div>
+        </div>
+        <!-- 第二行：预览几何旋钮（高度 + 按键外观三项）与深浅键盘，独占一行。
+             与上面的状态开关分开的理由：上面那排是「模拟键盘状态」的开关，
+             这里是「改预览怎么画」的旋钮，混在一行会挤成一团、也不便扫读。
+             切到符号面板页时**四个滑杆隐藏**（符号面板的尺寸由布局高度与按键外观推出来，
+             在符号页摆一排"改键盘几何"的滑杆既改不动它、又是噪音），
+             但**深浅下拉保留** —— 符号面板底也跟它走。由 syncPreviewPanelChrome 控制。 -->
+        <div class="preview-toggles preview-toggles-geom">
+          <div class="pt-geom-sliders" id="pt-geom-sliders">
+            <!-- 高度：模拟手机上键盘高度占屏幕的百分比（Foxy 设置里的键盘高度），只拉高预览、不改宽不改字 -->
+            <label class="mini-label" title="模拟手机上键盘高度占屏幕的百分比（Foxy 设置里的键盘高度），只拉高预览、不改宽不改字">高度 <input id="pt-height" type="range" min="15" max="60" step="1" value="31" class="mini-range" aria-label="预览键盘高度百分比"><span id="pt-height-val">31%</span></label>
+            <!-- 按键外观三项：对应 Foxy「设置 → 键盘外观」的同名设置。
+                 取值范围与默认值照 App 端（圆角 0–24 默认 6、水平 0–16 默认 3、
+                 垂直 0–16 默认 4），依据见 foxy-render-spec.md §2.7。
+                 纯预览建模，不写进任何 Foxy 文件。 -->
+            <label class="mini-label" title="对应 Foxy「设置 → 键盘外观 → 按键圆角」（0–24dp，默认 6）。大圆角在小键上会被夹到键面短边的一半">圆角 <input id="pt-corner" type="range" min="0" max="24" step="1" value="6" class="mini-range" aria-label="按键圆角 dp"><span id="pt-corner-val">6dp</span></label>
+            <label class="mini-label" title="对应 Foxy「设置 → 键盘外观 → 按键水平间隙」（0–16dp，默认 3）。App 是每个键四周内缩该值，故相邻两键的可见间隙为此值的 2 倍">水平间隙 <input id="pt-gap-h" type="range" min="0" max="16" step="1" value="3" class="mini-range" aria-label="按键水平间隙 dp"><span id="pt-gap-h-val">3dp</span></label>
+            <label class="mini-label" title="对应 Foxy「设置 → 键盘外观 → 按键垂直间隙」（0–16dp，默认 4）。App 是每个键四周内缩该值，故上下相邻键的可见间隙为此值的 2 倍">垂直间隙 <input id="pt-gap-v" type="range" min="0" max="16" step="1" value="4" class="mini-range" aria-label="按键垂直间隙 dp"><span id="pt-gap-v-val">4dp</span></label>
+          </div>
+          <!-- 深浅键盘：**与主题编辑页的槽位（light/dark）是同一个状态**，
+               改这里等于在主题页切槽位，反之亦然（见 app.js 的 setPreviewSlot）。
+               语义上就是 Foxy 主题文件里的两套槽位，不是两个无关的预览档位。
+               符号页也保留它（面板底跟它走）。 -->
+          <label class="mini-label" title="键盘配色的深浅槽位 —— 与「主题」页的槽位是同一个状态，两边联动">键盘 <select id="pt-theme" class="mini-select" aria-label="预览配色（与主题页槽位联动）">
+            <option value="dark">深色（dark 槽）</option>
+            <option value="light" selected>浅色（light 槽）</option>
+          </select></label>
         </div>
       </div>
       <div class="preview-stage">
@@ -76,6 +104,8 @@
       <button type="button" class="tab" data-tab="tab-keys" aria-controls="tab-keys" aria-selected="false">按键定义</button>
       <button type="button" class="tab" data-tab="tab-actions" aria-controls="tab-actions" aria-selected="false">动作与宏</button>
       <button type="button" class="tab tab-popup" data-tab="tab-popup" aria-controls="tab-popup" aria-selected="false">弹出菜单</button>
+      <button type="button" class="tab tab-theme" data-tab="tab-theme" aria-controls="tab-theme" aria-selected="false">主题</button>
+      <button type="button" class="tab tab-symbols" data-tab="tab-symbols" aria-controls="tab-symbols" aria-selected="false">符号面板</button>
     </div>
 
     <!-- ===================== 布局编辑 ===================== -->
@@ -266,7 +296,128 @@
         <textarea id="popup-json" class="json-editor" spellcheck="false"></textarea>
         <div id="popup-json-status" class="status"></div>
       </details>
-</section>
+    </section>
+
+    <!-- ===================== 主题（foxy.keyboard-theme） ===================== -->
+    <section class="tabpanel" id="tab-theme" role="tabpanel">
+      <details class="card" open>
+        <summary>主题文件</summary>
+        <div class="toolbar">
+          <button id="th-import" class="mini-button">导入 JSON</button>
+          <input id="th-import-file" type="file" accept="application/json,.json" hidden>
+          <button id="th-export" class="mini-button">导出 JSON</button>
+          <select id="th-example" class="mini-select wide"></select>
+          <button id="th-load-example" class="mini-button">加载示例</button>
+        </div>
+        <div class="form-row form-inline">
+          <label class="mini-label">主题名 name</label>
+          <input id="th-name" type="text" class="mini-input" placeholder="即文件名（非法字符会百分号转义）">
+        </div>
+        <div class="form-row form-inline">
+          <label class="mini-label">作者 author</label>
+          <input id="th-author" type="text" class="mini-input" placeholder="主题作者（可选）">
+        </div>
+        <div class="form-row form-inline">
+          <label class="mini-label">配色槽位</label>
+          <select id="th-slot" class="mini-select">
+            <option value="light">light（浅色槽）</option>
+            <option value="dark">dark（深色槽）</option>
+          </select>
+          <label class="mini-label">键边框</label>
+          <select id="th-bordermode" class="mini-select">
+            <option value="on">启用（key_border_enabled = true）</option>
+            <option value="off">禁用（回落 keyboardColor）</option>
+          </select>
+        </div>
+        <div id="th-status" class="status"></div>
+        <div class="status dim">文件名为主题的 <code>name</code> 字段（非法字符百分号转义）+ <code>.json</code>，放置于
+          <code>&lt;外部存储&gt;/foxy/frontend/themes/</code>（精确路径
+          <code>Android/data/com.fxliang.foxy/files/foxy/frontend/themes/</code>）。</div>
+        <div class="status dim">注意：<code>light</code> / <code>dark</code> 是两套<strong>配色槽位</strong>，与预览右上角的深浅开关不是一回事。
+          <code>key_border_enabled</code> / <code>key_stroke_enabled</code> 属全局设置，<strong>不写入</strong>主题 JSON，此处仅作预览建模。</div>
+      </details>
+      <details class="card" open>
+        <summary>主题校验</summary>
+        <div id="th-validation" class="status"></div>
+      </details>
+      <details class="card" open>
+        <summary>槽位全局配色（26 个字段）</summary>
+        <div id="th-colors"></div>
+      </details>
+      <details class="card" open>
+        <summary>键类型配色 keyTypes（LETTER / FUNCTION / ACTION）</summary>
+        <div id="th-keytypes"></div>
+      </details>
+      <details class="card" open>
+        <summary>主题 JSON（实时同步；可直接编辑后“应用”）</summary>
+        <div class="toolbar">
+          <button id="th-json-apply" class="mini-button primary">应用</button>
+          <button id="th-json-format" class="mini-button">格式化并修复</button>
+        </div>
+        <textarea id="th-json" class="json-editor" spellcheck="false"></textarea>
+        <div id="th-json-status" class="status"></div>
+      </details>
+    </section>
+
+    <!-- ===================== 符号面板（symbols / emoji / kaomoji） ===================== -->
+    <section class="tabpanel" id="tab-symbols" role="tabpanel">
+      <details class="card" open>
+        <summary>符号面板文件</summary>
+        <div class="toolbar">
+          <button id="sym-import" class="mini-button">导入 JSON</button>
+          <input id="sym-import-file" type="file" accept="application/json,.json" hidden>
+          <button id="sym-export" class="mini-button">导出 JSON</button>
+          <select id="sym-example" class="mini-select wide"></select>
+          <button id="sym-load-example" class="mini-button">加载示例</button>
+        </div>
+        <div class="form-row form-inline">
+          <label class="mini-label">类别</label>
+          <select id="sym-kind" class="mini-select">
+            <option value="symbols">symbols</option>
+            <option value="emoji">emoji</option>
+            <option value="kaomoji">kaomoji</option>
+          </select>
+        </div>
+        <div id="sym-status" class="status"></div>
+        <div class="status dim">目录 <code>&lt;外部存储&gt;/foxy/frontend/{symbols,emoji,kaomoji}/</code>（精确路径
+          <code>Android/data/com.fxliang.foxy/files/foxy/frontend/…</code>）。该目录<strong>开机后是空的</strong>，
+          且<strong>必须在 App 的「设置 → 符号布局」里显式选中</strong>才会改读外部文件；否则一直读 APK 内置（assets）。</div>
+      </details>
+      <details class="card" open>
+        <summary>面板选项</summary>
+        <div class="form-row form-inline">
+          <label class="mini-label check">
+            <input id="sym-multiline" type="checkbox"> multiLine（每行 1 格；关闭时固定 40dp 高度、长条目会被裁切）
+          </label>
+        </div>
+      </details>
+      <details class="card" open>
+        <summary>分组与条目</summary>
+        <div class="def-toolbar">
+          <div class="def-tool-group">
+            <span class="search-wrap">
+              <input id="sym-filter" type="text" class="mini-input" placeholder="搜索：分组名 / 条目内容">
+              <button id="sym-filter-clear" type="button" class="search-clear" hidden title="清空搜索" aria-label="清空搜索">✕</button>
+            </span>
+            <button id="sym-search" type="button" class="mini-button">搜索</button>
+          </div>
+          <div class="def-tool-group">
+            <input id="sym-new" type="text" class="mini-input" placeholder="新分组名称（如 常用）">
+            <button id="sym-add" type="button" class="mini-button">+ 新建分组</button>
+          </div>
+        </div>
+        <div id="sym-list"></div>
+      </details>
+      <details class="card" open>
+        <summary>符号面板 JSON（实时同步；可直接编辑后“应用”）</summary>
+        <div class="toolbar">
+          <button id="sym-json-apply" class="mini-button primary">应用</button>
+          <button id="sym-json-format" class="mini-button">格式化并修复</button>
+        </div>
+        <textarea id="sym-json" class="json-editor" spellcheck="false"></textarea>
+        <div id="sym-json-status" class="status"></div>
+      </details>
+    </section>
   </main>
 
   <!-- 浮动工具：编辑长列表时不必每次滑回顶部
@@ -301,5 +452,9 @@
   <script src="./js/key-dialog.js"></script>
   <script src="./js/macro-editor.js"></script>
   <script src="./js/popup-editor.js"></script>
+  <script src="./js/theme-editor.js"></script>
+  <script src="./js/color-source.js"></script>
+  <script src="./js/symbol-editor.js"></script>
+  <script src="./js/symbol-preview.js"></script>
 </body>
 </html>

@@ -52,7 +52,11 @@ var state = {
   history: [],
   future: [],
   splitMode: false,       // 分体键盘：预览与区段编辑作用于 split 片段
-  portraitW: null,      // 竖屏基准宽度（分体横屏预览时记住，切回后恢复）
+  /* 横屏预览（工具栏「横屏」复选）：容器加宽到分体宽度、按键按 flex 拉宽，
+   * 但**仍渲染当前常规布局**，不切到 split 片段 —— 这是它与 splitMode 的唯一区别。
+   * 用来查看同一套布局在宽屏下的观感（键会被拉得很宽），无需先造一份 split 片段。 */
+  landscapeMode: false,
+  portraitW: null,      // 竖屏基准宽度（分体/横屏预览时记住，切回后恢复）
   popupProfile: null,     // 弹出菜单 profile（foxy.popup-profile JSON，由 popup-editor.js 管理）
   popupFileName: 'popups.json',
   popupSchema: 'default', // 弹出菜单当前编辑的 schema
@@ -66,6 +70,46 @@ var state = {
   /* 弹出菜单页的键卡片展开态（与动作/宏同理：默认全部折叠，只记展开中的）。
    * 由 popup-editor.js 通过 FE.ensureOpenSet('openPopupKeys') 使用。 */
   openPopupKeys: null,
+  /* 主题文档（foxy.keyboard-theme JSON，由 theme-editor.js 管理）。
+   * 未导入时必须是 null —— 预览要按"没有主题"走原有硬编码配色，
+   * 强造空对象会让预览认为"有主题但字段全空"，行为与从前不同。 */
+  themeProfile: null,
+  themeFileName: 'theme.json',
+  themeSlot: 'light',     // 主题的两套配色槽位（light/dark），**不是** state.theme 那个预览深浅开关
+  openThemeGroups: null,  // 主题页 keyTypes 分组的展开态
+  /* 键边框开关（基线 §1.3 的 key_border_enabled，默认 true）。
+   * ⚠️ 这是 App 的全局设置，**不写进主题 JSON**；这里只为让预览的键盘底色
+   * 精确建模（为真用 altKeyboardColor，为假回落 keyboardColor，§1.4）。 */
+  keyBorderEnabled: true,
+  /* ---- 按键外观三项（App「设置 → 键盘外观」的对应项，foxy-render-spec.md §2.7）----
+   * App 存在 SharedPreferences `foxy_size`，纵/横屏各一份；编辑器只做**纵屏**那套
+   * （预览就是竖屏口径），不写进任何 Foxy 文件 —— 它们纯属预览建模。
+   * ⚠️ 取值范围与默认值都有双重佐证，别随手改：
+   *   圆角 0–24 默认 6（c50.java:16 滑块；a60.e 校验 <0||>=25 无效；设置页回落 6）
+   *   水平 0–16 默认 3（同上；a60.f；回落 3）
+   *   垂直 0–16 默认 4（同上；a60.g；回落 4） */
+  keyCornerRadiusDp: 6,
+  keyGapHorizontalDp: 3,
+  keyGapVerticalDp: 4,
+  /* 符号 / emoji / 颜文字 catalog 文档（由 symbol-editor.js 管理）。
+   * ⚠️ 事实来源是**复数槽**：一个编辑器同时可能编辑三类 catalog，
+   * 单数 `symbolProfile` 只是「当前类别」的镜像（symbol-editor 自己维护）。
+   * 撤销栈 / 草稿必须存复数槽，否则切过类别就会只存到当前那一类、撤销等于没生效。
+   * 未导入时保持 null —— 与主题同理，不要强造空对象。 */
+  symbolProfiles: null,   // { kind: profile }
+  symbolFileNames: null,  // { kind: 导出文件名 }
+  symbolLegacy: null,     // { kind: 是否来自旧格式（顶层数组）}
+  symbolProfile: null,    // 当前类别的镜像（与 symbolProfiles[kind] 同一对象）
+  symbolKind: 'symbols',  // symbols / emoji / kaomoji
+  openSymbolGroups: null,
+  /* 符号面板预览里选中的分组下标（0 起）。仅预览用，不影响 catalog 数据。
+   * 之所以存在 state 里：点预览里的分组要能保持选中（重渲染会重建 DOM）。 */
+  symbolPreviewGroup: 0,
+  /* 当前激活的页签 id。renderPreview 用它决定"渲染键盘还是符号面板"
+   * —— App 端符号面板是**整块替换键盘**的（foxy-render-spec.md §8），
+   * 不是叠在键盘上的浮层，所以必须是渲染分支而不是附加层。
+   * 由 activateTab / boot 维护，初值即 index.html 里默认激活的那个。 */
+  activeTab: 'tab-layout',
   /* 「校验详情」折叠块的展开态。renderMeta 每次重渲染都会重建这个 <details>，
    * 所以展开状态必须存在 state 里，否则点条目跳转（会触发 renderAll）
    * 就会把它收起。 */
@@ -437,8 +481,61 @@ FE.rowsOfSection = function (section) {
 FE.MAX_GRID_CELLS = 4000;
 
 /* 行内键间隙（px）：槽位对齐口径下从槽内扣，键数不同的行同权重点依然对齐。
- * 后面做可调间距时改这里（运行时可在控制台改 FE.ROW_GAP 后重渲染）。 */
+ *
+ * ⚠️ 已被 §2.7 的「按键水平间隙」设置取代（见 FE.keyAppearance / FE.kbDp）。
+ * 保留导出只为兼容外部引用，**渲染不再读它**。 */
 FE.ROW_GAP = 5;
+
+/* ================================================================
+ * 按键外观（圆角 / 水平间隙 / 垂直间隙）—— 对应 App「设置 → 键盘外观」
+ * 权威依据：foxy-render-spec.md §2.7（c50.java:16 / a60.java / 设置页默认值）
+ * ================================================================ */
+
+/* dp → 预览 px。
+ * 键盘预览的 unit = portraitW / 10，等价于"360dp 宽屏"，故 1dp = unit / 36。
+ * 与 symbol-preview.js 的 FE.symbolPreviewDp 同一口径（面板与键盘同尺度）。 */
+FE.kbDp = function (dp, unit) {
+  var u = (typeof unit === 'number' && unit > 0) ? unit : 38;
+  return dp * (u / 36);
+};
+
+/* 三项设置的合法范围与默认值（**别改**，与 App 双重佐证）：
+ *   圆角 0–24 默认 6；水平 0–16 默认 3；垂直 0–16 默认 4。
+ * 越界/非法值一律回落默认（App 端 `a60.e/f/g` 判定非法后也回落默认）。 */
+FE.KEY_APPEARANCE_SPEC = {
+  cornerRadius: { key: 'keyCornerRadiusDp', min: 0, max: 24, def: 6 },
+  gapHorizontal: { key: 'keyGapHorizontalDp', min: 0, max: 16, def: 3 },
+  gapVertical: { key: 'keyGapVerticalDp', min: 0, max: 16, def: 4 }
+};
+
+function appearanceValue(spec) {
+  var v = Number(state[spec.key]);
+  if (!isFinite(v) || v < spec.min || v > spec.max) return spec.def;
+  return v;
+}
+
+/* 当前生效的三项外观值（dp）。 */
+FE.keyAppearance = function () {
+  var sp = FE.KEY_APPEARANCE_SPEC;
+  return {
+    cornerDp: appearanceValue(sp.cornerRadius),
+    gapHDp: appearanceValue(sp.gapHorizontal),
+    gapVDp: appearanceValue(sp.gapVertical)
+  };
+};
+
+/* 键面的圆角 px：App 是 `clamp(cornerRadiusDp×density, 0, min(faceW, faceH)/2)`
+ * （v40.java:397-404）。这里按**已知的键面尺寸**夹一下：大圆角在小键上会被夹住，
+ * 否则会圆成胶囊、与手机不一致。faceW/faceH 传 null 表示未知（不夹）。 */
+FE.keyCornerPx = function (cornerDp, unit, faceW, faceH) {
+  var r = FE.kbDp(cornerDp, unit);
+  if (typeof faceW === 'number' && typeof faceH === 'number' &&
+      isFinite(faceW) && isFinite(faceH)) {
+    var half = Math.max(0, Math.min(faceW, faceH) / 2);
+    if (isFinite(half)) r = Math.min(r, half);
+  }
+  return Math.max(0, r);
+};
 
 /* 预览键盘高度系数：只拉高、不拉宽、不放大字。
  * 口径 = 手机键盘高宽比 / 预览默认高宽比。
@@ -1812,7 +1909,23 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
 /* ---------------- 历史与变更 ---------------- */
 function snapshot() {
-  return JSON.stringify({ layout: state.profile, popup: state.popupProfile || null });
+  /* 四份文档同栈：布局 / 弹出菜单 / 主题 / 符号。
+   * 主题与符号**未导入时是 null**，这里必须原样保留 null —— 用 `|| null`
+   * 而不是强造空对象，否则「未导入主题」会被快照成「已导入一份空主题」，
+   * 撤销后预览配色与导入状态全变。 */
+  return JSON.stringify({
+    layout: state.profile,
+    popup: state.popupProfile || null,
+    theme: state.themeProfile || null,
+    /* 符号是**复数槽**：三类 catalog 各自独立，单数镜像只记录"当前正在看哪一类"。
+     * 只存单数会让「切过类别再撤销」丢数据（撤销按钮可点、符号却没变）。 */
+    symbol: {
+      profiles: state.symbolProfiles || null,
+      fileNames: state.symbolFileNames || null,
+      legacy: state.symbolLegacy || null,
+      kind: state.symbolKind || null
+    }
+  });
 }
 function pushHistory() {
   state.history.push(snapshot());
@@ -1831,6 +1944,32 @@ function restoreSnapshot(s) {
   state.popupProfile = o.popup != null ? o.popup : null;
   if (state.popupProfile != null && FE.normalizePopupProfile) {
     state.popupProfile = FE.normalizePopupProfile(state.popupProfile);
+  }
+  /* 主题与符号：**保持 null 语义**（未导入 = null）。若为 null 时强造空对象，
+   * 「未导入主题 → 预览与现在完全一致」这条回归保证就会破功：
+   * 预览会以为存在一份字段全空的主题，进而把兜底色算成"缺失"。 */
+  state.themeProfile = (o.theme != null && FE.normalizeThemeProfile) ? FE.normalizeThemeProfile(o.theme) : null;
+  /* 符号按**复数槽**整组恢复：三类 catalog 各自独立。单数 symbolProfile 只是
+   * 当前类别的镜像，撤销后必须由 profiles[kind] 重新指过去，
+   * 否则界面读到的还是撤销前那个对象（撤销"看似生效、实则没换"）。 */
+  var sym = o.symbol;
+  if (sym != null && !Array.isArray(sym) && typeof sym === 'object') {
+    state.symbolProfiles = FE.isPlainObject(sym.profiles) ? sym.profiles : null;
+    state.symbolFileNames = FE.isPlainObject(sym.fileNames) ? sym.fileNames : null;
+    state.symbolLegacy = FE.isPlainObject(sym.legacy) ? sym.legacy : null;
+    var kinds = (FE.SYMBOL_KINDS || []).map(function (k) { return k.id; });
+    if (typeof sym.kind === 'string' && (!kinds.length || kinds.indexOf(sym.kind) >= 0)) {
+      state.symbolKind = sym.kind;
+    }
+    state.symbolProfile = FE.isPlainObject(state.symbolProfiles)
+      ? (state.symbolProfiles[state.symbolKind] || null) : null;
+  } else {
+    /* 旧快照（只有单数 symbolProfile）或"未导入"：都退回 null 语义，
+     * 让 symbol-editor 下次进入时按自己的懒建逻辑重建当前类别。 */
+    state.symbolProfiles = null;
+    state.symbolFileNames = null;
+    state.symbolLegacy = null;
+    state.symbolProfile = null;
   }
   state.jsonDirty = false;
   var names = Object.keys(state.profile.layouts);
@@ -1866,6 +2005,20 @@ function afterChange() {
 FE.mutate = mutate;
 FE.afterChange = afterChange;
 FE.renderAll = function () { renderAll(); };
+/* 只重画预览（+ 撤销按钮态），**不重建表单**。
+ * 主题页取色面板拖动时用它：整体重渲染会把正在拖动的那块表单连同
+ * jscolor 面板一起拆掉，手感直接断掉。 */
+FE.renderPreviewOnly = function () { renderPreview(); updateUndoButtons(); };
+/* 历史快照的外部入口：供主题 / 符号页做「一次手势 = 一条历史」的手势分组
+ * （取色拖动会连发几十次回调，逐次压栈会把撤销栈冲爆）。 */
+FE.snapshotState = snapshot;
+FE.pushHistorySnapshot = function (snap) {
+  if (typeof snap !== 'string') return;
+  state.history.push(snap);
+  if (state.history.length > 100) state.history.shift();
+  state.future = [];
+};
+FE.downloadJson = downloadJson;
 FE.syncEditorTheme = syncEditorTheme;
 
 /* ---------------- 页面滚动位置保持 ----------------
@@ -1950,8 +2103,22 @@ function autosave() {
     localStorage.setItem(LS_KEY, JSON.stringify({
       profile: state.profile, layoutName: state.layoutName, fileName: state.fileName,
       popupProfile: state.popupProfile || null, popupFileName: state.popupFileName,
+      /* 主题随草稿一起存。存 null 表示"未导入"，恢复时仍为 null。 */
+      themeProfile: state.themeProfile || null, themeFileName: state.themeFileName,
+      themeSlot: state.themeSlot,
+      /* 符号存**复数槽**：三类 catalog 与各自文件名都要留着，
+       * 只存当前类别的单数镜像会让另外两类在刷新后凭空消失。 */
+      symbolProfiles: state.symbolProfiles || null,
+      symbolFileNames: state.symbolFileNames || null,
+      symbolLegacy: state.symbolLegacy || null,
+      symbolKind: state.symbolKind,
       splitMode: state.splitMode, includeType: state.includeType,
-      previewHeightPct: state.previewHeightPct != null ? state.previewHeightPct : 31
+      previewHeightPct: state.previewHeightPct != null ? state.previewHeightPct : 31,
+      /* 按键外观三项（纯预览设置，不进 Foxy 文件）：跟草稿一起存，
+       * 否则每次刷新都要重拖一遍。越界值在读取处回落默认。 */
+      keyCornerRadiusDp: state.keyCornerRadiusDp,
+      keyGapHorizontalDp: state.keyGapHorizontalDp,
+      keyGapVerticalDp: state.keyGapVerticalDp
     }));
   } catch (e) { /* 忽略存储失败 */ }
 }
@@ -2270,10 +2437,57 @@ function activateTab(id) {
   document.querySelectorAll('.tabpanel').forEach(function (p) { p.classList.remove('active'); });
   var panel = document.getElementById(id);
   if (panel) panel.classList.add('active');
+  /* 记下当前页签：renderPreview 据此决定渲染键盘还是**符号面板**
+   * （App 端符号面板整块替换键盘，见 foxy-render-spec.md §8）。 */
+  var prevTab = state.activeTab;
+  state.activeTab = id;
   if (id === 'tab-keys') renderKeysTab();
   if (id === 'tab-popup' && FE.renderPopupTab) FE.renderPopupTab();
+  if (id === 'tab-theme' && FE.renderThemeTab) FE.renderThemeTab();
+  if (id === 'tab-symbols' && FE.renderSymbolsTab) FE.renderSymbolsTab();
+  /* 预览区在「符号面板」页与其它页显示**不同东西**，所以跨这条边界时要重画。
+   * 判定用"两个页签是否都在/都不在符号页"，避免同区内来回切做无谓重渲染。 */
+  var wasSym = (prevTab === 'tab-symbols');
+  var isSym = (id === 'tab-symbols');
+  if (wasSym !== isSym) {
+    syncPreviewPanelChrome();
+    renderPreview();
+  }
 }
 FE.activateTab = activateTab;
+
+/* 预览面板的「外壳」随页签切换：
+ *   · 标题：布局页写「布局预览…」，符号页写「符号面板预览…」；
+ *   · 键盘状态开关组（Shift/组字/ASCII/停用/分体/状态标签/高度）整组隐藏 ——
+ *     这些只对布局有意义，摆在符号面板上方纯属噪音；
+ *   · 角标图例同样只对键盘有意义，一并隐藏；
+ *   · **四个几何滑杆（高度/圆角/水平间隙/垂直间隙）隐藏** —— 用户要求「那一行滑杆
+ *     调整键盘的，就不要显示在符号键盘预览了」。理由也说得通：符号面板的尺寸是由
+ *     布局高度与按键外观**推出来**的（见 symbol-preview.js），在符号页摆一排
+ *     "改键盘几何"的滑杆既改不动符号面板的观感、又是噪音。
+ *   · ⚠️ 但**深浅下拉 `#pt-theme` 保留**：符号面板底也跟它走（同一套 kb-light/kb-dark）。
+ *     所以隐藏的是 `#pt-geom-sliders` 这个**滑杆包装层**，不是整行 —— 整行连同
+ *     下拉一起隐藏，就把"符号页也要能切深浅"这件事弄丢了。
+ * 未导入/未加载的容器一律跳过，不抛。 */
+function syncPreviewPanelChrome() {
+  var isSym = (state.activeTab === 'tab-symbols');
+  var title = $('preview-panel-title');
+  if (title) {
+    title.textContent = isSym
+      ? '符号面板预览（对照 App 实际显示；点左侧分组可切换查看）'
+      : '布局预览（实时渲染，点击按键即可编辑）';
+  }
+  var grp = $('pt-state-group');
+  if (grp) grp.hidden = isSym;
+  /* 几何滑杆组（高度/三个外观滑杆）：符号页隐藏；深浅下拉不在这一层里，故保留。 */
+  var sliders = $('pt-geom-sliders');
+  if (sliders) sliders.hidden = isSym;
+  var legend = document.querySelector('.preview-legend');
+  if (legend) legend.hidden = isSym;
+  var lt = $('layout-tabs');
+  if (lt) lt.hidden = isSym;
+}
+FE.syncPreviewPanelChrome = syncPreviewPanelChrome;
 
 /* ---------------- 当前布局访问 ---------------- */
 function curLayout() {
@@ -2353,21 +2567,145 @@ function foxyColorToCss(v) {
   return '#' + hex.slice(2) + hex.slice(0, 2);
 }
 
-/* 阴影色 → CSS box-shadow（shadow 角色只给颜色，偏移/模糊沿用主题口径） */
-function shadowCss(color) { return '0 1px 2px ' + color; }
+/* 阴影色 → CSS box-shadow。
+ * ⚠️ App 端的阴影**不是模糊阴影**：它是 LayerDrawable 里叠在键面背后的第二层
+ * 纯色圆角 drawable，比键面层**向下多伸出 keyShadowOffsetDp**（默认 1dp），
+ * 水平与上方内缩相同（foxy-render-spec.md §2.5，v40.java:113-124）。
+ * 视觉上就是「向下偏移 1dp 的实心圆角色块」，所以这里用 0 模糊、0 扩散的实心投影：
+ *   0 → 水平无偏移、1px → 向下偏移（对应 §2.1 的 keyShadowOffset=1dp）、0 → 无模糊。
+ * 早先是 '0 1px 2px'（带模糊），与手机观感不符 —— 别改回去。 */
+function shadowCss(color) { return '0 1px 0 ' + color; }
 
-/* 键面着色。status 显式传入（不再隐式读全局 state），使渲染可对任意状态进行。 */
+/* ---------------- 键盘配色的 CSS 变量（⭐ 主题生效时供多个面板共用） ----------------
+ * 预览键盘、编辑区行块/网格画布、弹出菜单舞台是**三处独立的 DOM 子树**，
+ * 只有「网页配色」的 theme-* 类被复制过去（见 syncEditorTheme）。主题 26 色生效后
+ * 键盘预览变了、旁边这些面板不变，并排看就是两种底色。这里把它们统一挂到一套
+ * CSS 自定义属性上，由本文件写到各自的 host：
+ *   #preview-kb（键盘自身）、#layout-sections、#popup-keys（面板宿主，其后代
+ *   含 .row-block / .gedit-wrap / .pp-stage）。
+ * ⚠️ 未导入主题时变量**全部清空** → style.css 里一律写成 var(--kb-xxx, 原值)，
+ * 回落原 CSS 色值，未导入主题的预览外观**逐像素不变**（回归保证，别破坏）。 */
+
+/* DOM 桩的 StyleProxy 只支持属性赋值、没有 setProperty；真实浏览器反之。
+ * 两条路都走一遍，保证 file:// 真机与测试环境行为一致（D3 / D4）。
+ * ⚠️ 清空（value 为 null/空）时必须**删除**该变量，不能写成 `--x: ;`：
+ * 空的自定义属性值是「合法空值」，`var(--x, fallback)` 会取到空值而**不回落**，
+ * 于是属性声明变成 invalid-at-computed-value-time、退化为 unset（background 会变透明），
+ * 未导入主题的「零变化」回归保证就被打破了。 */
+function setCssVar(el, name, value) {
+  if (!el || !el.style) return;
+  try {
+    if (value == null || value === '') {
+      if (typeof el.style.removeProperty === 'function') el.style.removeProperty(name);
+      else delete el.style[name];
+      return;
+    }
+    if (typeof el.style.setProperty === 'function') el.style.setProperty(name, value);
+    else el.style[name] = value;   /* 桩：StyleProxy 允许任意属性赋值 */
+  } catch (e) { /* 变量写入失败不影响渲染 */ }
+}
+
+/* 当前键盘容器底的 CSS 色值。
+ * ⭐ 未导入主题时返回**App 内置默认主题**的底色（themeSlotColors 已回退），
+ * 所以这里不再有"null = 不写色"的分支 —— 预览始终按内置默认主题呈现（用户要求）。 */
+function keyboardBgCss() {
+  var kbColor = FE.themeKeyboardColor ? FE.themeKeyboardColor(state.keyBorderEnabled) : null;
+  return kbColor ? foxyColorToCss(kbColor) : null;
+}
+
+/* 主题 accentColor → CSS 色。
+ * ⭐ 传 includeBuiltin:true —— **预览一律按 App 内置默认主题兜底**（用户要求：
+ * 预览默认用 App 内置默认主题的深浅色，而不是编辑器自己那套预置色）。
+ * App 端本就是这样：用户没自定义时用的就是内置默认主题（xw0.java:158-160/189-191），
+ * 编辑器旧的"未导入主题就完全不写色、走 CSS 预置色"反而不像手机。 */
+function themeAccentCss() {
+  if (!FE.resolveThemeField) return null;
+  var r = FE.resolveThemeField('accentColor', { includeBuiltin: true });
+  return (r && r.value) ? foxyColorToCss(r.value) : null;
+}
+
+/* 全部变量名（含各 keyType 变体），写入与清空共用同一份清单，避免漏清。 */
+var KB_CSS_VARS = ['--kb-bg', '--kb-inset', '--kb-icon-active',
+  '--kb-key-bg', '--kb-key-fg', '--kb-key-border', '--kb-key-shadow',
+  '--kb-key-bg-fn', '--kb-key-fg-fn', '--kb-key-bg-action', '--kb-key-fg-action'];
+
+/* 计算并写入「键盘配色」变量。bgCss 为 null（未导入主题）时全部清空。 */
+function applyKeyboardCssVars(el, bgCss) {
+  if (!el) return;
+  var v = {};
+  if (bgCss) {
+    v['--kb-bg'] = bgCss;
+    /* 主题底色上不再叠 CSS 类里那圈写死的内描边（style.css 的 .kb-* inset） */
+    v['--kb-inset'] = 'none';
+    /* 修饰键激活的图标改跟键文字色走（= 主题 accentColor，规范 §1.4） */
+    v['--kb-icon-active'] = 'currentColor';
+    if (FE.themeKeyColors) {
+      var put = function (suffix, kt) {
+        var c = FE.themeKeyColors(kt);
+        if (!c) return;
+        var bg = c.background ? foxyColorToCss(c.background) : null;
+        var fg = c.text ? foxyColorToCss(c.text) : null;
+        var bd = c.border ? foxyColorToCss(c.border) : null;
+        var sh = c.shadow ? foxyColorToCss(c.shadow) : null;
+        if (bg) v['--kb-key-bg' + suffix] = bg;
+        if (fg) v['--kb-key-fg' + suffix] = fg;
+        if (bd) v['--kb-key-border' + suffix] = bd;
+        if (sh) v['--kb-key-shadow' + suffix] = shadowCss(sh);
+      };
+      put('', 'LETTER');
+      put('-fn', 'FUNCTION');
+      put('-action', 'ACTION');
+    }
+  }
+  KB_CSS_VARS.forEach(function (name) { setCssVar(el, name, v[name] || ''); });
+}
+
+/* 键面着色。status 显式传入（不再隐式读全局 state），使渲染可对任意状态进行。
+ *
+ * 优先级（基线 §1.5，**与直觉相反，务必照做**）：
+ *   ① 布局 colors.states.*  >  ② 布局每键 colors  >  ③ 主题 keyTypes[键类型]
+ *   >  ④ 主题 26 色全局默认
+ * 即**布局每键覆盖胜过主题 keyTypes**。实现方式：先用 ③④（`FE.themeKeyColors`
+ * 已把两层合成好）铺一层内联样式做兜底，再让 ②（eff.colors）逐项盖上去，
+ * 最后按 ① 叠加运行时状态色。
+ *
+ * ⚠️ 未导入主题时 `FE.themeKeyColors` 返回 null → 一个内联颜色都不写，
+ * 完全走原来的 CSS 类配色，预览与从前**逐像素一致**（回归保证，别破坏它）。 */
 function applyKeyColors(el, eff, pressed, status) {
   status = status || state.status;
-  var c = eff.colors;
-  if (!isPlainObject(c)) return;
+  var c = isPlainObject(eff.colors) ? eff.colors : null;
+  /* ③④ 主题兜底（keyType 未指定按 LETTER；主题未导入则为 null） */
+  var tc = (FE.themeKeyColors && eff.spacer !== true) ? FE.themeKeyColors(eff.keyType) : null;
+  if (!c && !tc) return;
   var col = {};
+  /* 边框开关（规范 §2.4）：B=keyBorderEnabled 决定**是否画键边框**；
+   * 为真时再由 C=keyStrokeEnabled 决定画「内缩实线边框」还是「描边」。
+   * ⚠️ 早先只要有边框色就无条件加 kb-key-hasborder，开关形同虚设 —— 现在真正起作用。
+   * 这是 App 的**全局设置**（state.keyBorderEnabled，默认 true），不写进任何文件。 */
+  var borderOn = state.keyBorderEnabled !== false;
+  if (tc) {
+    var tbg = tc.background ? foxyColorToCss(tc.background) : null;
+    if (tbg) col.background = tbg;
+    var ttx = tc.text ? foxyColorToCss(tc.text) : null;
+    if (ttx) col.color = ttx;
+    var tbd = tc.border ? foxyColorToCss(tc.border) : null;
+    if (tbd && borderOn) { col.borderColor = tbd; el.classList.add('kb-key-hasborder'); }
+    var tsh = tc.shadow ? foxyColorToCss(tc.shadow) : null;
+    if (tsh) col.boxShadow = shadowCss(tsh);
+    /* 主题的按下色是**基础** pressed：布局若给了 colors.pressed 或 states.pressed，
+     * 会在下面被覆盖（② 与 ① 都在 ④ 之上）。 */
+    if (pressed && tc.pressed) {
+      var tpr = foxyColorToCss(tc.pressed);
+      if (tpr) col.background = tpr;
+    }
+  }
+  c = c || {};
   var bg = typeof c.background === 'string' ? foxyColorToCss(c.background) : null;
   if (bg) col.background = bg;
   var tx = typeof c.text === 'string' ? foxyColorToCss(c.text) : null;
   if (tx) col.color = tx;
   var bd = typeof c.border === 'string' ? foxyColorToCss(c.border) : null;
-  if (bd) { col.borderColor = bd; el.classList.add('kb-key-hasborder'); }
+  if (bd && borderOn) { col.borderColor = bd; el.classList.add('kb-key-hasborder'); }
   var sh = typeof c.shadow === 'string' ? foxyColorToCss(c.shadow) : null;
   if (sh) col.boxShadow = shadowCss(sh);
   /* 基础 pressed 角色：手指按住该键时的背景色（优先级低于 states.pressed） */
@@ -2376,8 +2714,15 @@ function applyKeyColors(el, eff, pressed, status) {
     if (pr) col.background = pr;
   }
 
-  /* 运行时状态色：优先级 modifierActive < modifierLocked < pressed，按序叠加 */
-  var modifierOn = !pressed && eff.modifier === 'SHIFT' && status.shift;
+  /* 运行时状态色：优先级 modifierActive < modifierLocked < pressed，按序叠加。
+   * 状态判定统一走 FE.keyStateOpts（color-source.js），与预览/编辑面口径一致：
+   * 该方法按 App 的 m00.k 返回 { pressed, modifierActive, modifierLocked }。
+   * ⚠️ 编辑器目前只模拟 modifierActive（Shift + 状态栏勾选），**没有 modifierLocked
+   * 的模拟入口**（App 端锁定是另一个状态，l30 枚举里独立存在）。这里仍让 locked
+   * 参与叠加链，一旦将来加了锁定开关，无需改这段。 */
+  var stOpts = (FE.keyStateOpts ? FE.keyStateOpts(eff, status, pressed)
+    : { pressed: !!pressed, modifierActive: !pressed && eff.modifier === 'SHIFT' && !!(status && status.shift), modifierLocked: false });
+  var modifierOn = !!(stOpts.modifierActive || stOpts.modifierLocked);
   var chain = [];
   if (isPlainObject(c.states)) {
     if (modifierOn) {
@@ -2387,6 +2732,7 @@ function applyKeyColors(el, eff, pressed, status) {
     if (pressed && isPlainObject(c.states.pressed)) chain.push(c.states.pressed);
   }
   var stateShadow = null;
+  var stateText = false;   /* 状态链里是否显式给了主文字色 */
   chain.forEach(function (st) {
     if (typeof st.background === 'string') {
       var sbg = foxyColorToCss(st.background);
@@ -2394,14 +2740,25 @@ function applyKeyColors(el, eff, pressed, status) {
     }
     if (typeof st.text === 'string') {
       var stx = foxyColorToCss(st.text);
-      if (stx) col.color = stx;
+      if (stx) { col.color = stx; stateText = true; }
     }
     if (typeof st.shadow === 'string') {
       var ssh = foxyColorToCss(st.shadow);
       if (ssh) stateShadow = ssh;
     }
   });
-  /* 按下与修饰锁定的键默认隐藏普通阴影；只有该状态显式给出 shadow 才绘制（含透明值） */
+  /* ⭐ 修饰键激活/锁定的主文字色（规范 §1.4，v40.e:346-371）：
+   *   states[PRESSED/MODIFIER_LOCKED/MODIFIER_ACTIVE].text 都无
+   *   且 (modifierActive || modifierLocked) → **主题 accentColor**（不是 keyTextColor）。
+   * 注意它是**覆盖**布局每键 colors.text 与主题 keyTextColor 的 —— 规范原文
+   * 「都无且… → accentColor」，即这条只在状态显式给 text 时才让位。
+   * accentColor 的取值走 color-source 的 resolveThemeField（唯一解析入口）。 */
+  if (modifierOn && !stateText && !pressed) {
+    var accCss = themeAccentCss();
+    if (accCss) col.color = accCss;
+  }
+  /* 按下与修饰键激活的键默认隐藏普通阴影；只有该状态显式给出 shadow 才绘制（含透明值）。
+   * ⚠️ 这条已正确实现（规范 §5 行动项 9），别改成"按下也画阴影"。 */
   if (pressed || modifierOn) col.boxShadow = stateShadow ? shadowCss(stateShadow) : 'none';
 
   Object.assign(el.style, col);
@@ -2410,12 +2767,16 @@ function applyKeyColors(el, eff, pressed, status) {
 
 /* 提示文字颜色：基础 hint 作用于全部四向，hintTop/hintBottom/hintLeft/hintRight 按边覆盖。
  * 单独抽出是因为滑动提示元素是在按键主体着色之后才 append 的，
- * buildPreviewKey 需要在挂完提示后再调用一次。 */
+ * buildPreviewKey 需要在挂完提示后再调用一次。
+ * 主题兜底（③④）同样垫在最下面：布局的 hint / hintXxx 一旦给出就盖住主题值。 */
 function applyHintColors(el, eff) {
-  var c = eff.colors;
-  if (!isPlainObject(c)) return;
-  var hintBase = typeof c.hint === 'string' ? c.hint : null;
+  var c = isPlainObject(eff.colors) ? eff.colors : null;
+  var tc = (FE.themeKeyColors && eff.spacer !== true) ? FE.themeKeyColors(eff.keyType) : null;
+  if (!c && !tc) return;
+  c = c || {};
+  var hintBase = typeof c.hint === 'string' ? c.hint : (tc ? tc.hint : null);
   var hintEdge = { up: c.hintTop, down: c.hintBottom, left: c.hintLeft, right: c.hintRight };
+  var themeEdge = tc ? { up: tc.hintUp, down: tc.hintDown, left: tc.hintLeft, right: tc.hintRight } : null;
   var hints = el.querySelectorAll('.kb-hint');
   for (var hi = 0; hi < hints.length; hi++) {
     var hel = hints[hi];
@@ -2423,7 +2784,8 @@ function applyHintColors(el, eff) {
     for (var dj in hintEdge) {
       if (hel.classList.contains('kb-hint-' + dj)) { dir = dj; break; }
     }
-    var hc = (dir && typeof hintEdge[dir] === 'string') ? hintEdge[dir] : hintBase;
+    var hc = (dir && typeof hintEdge[dir] === 'string') ? hintEdge[dir]
+      : (dir && themeEdge && themeEdge[dir] ? themeEdge[dir] : hintBase);
     var hcc = typeof hc === 'string' ? foxyColorToCss(hc) : null;
     if (hcc) hel.style.color = hcc;
   }
@@ -2489,6 +2851,17 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
   if (item.spacer) el.classList.add('kb-spacer');
   el.style.flexGrow = String(opts.grow != null ? opts.grow : 0);
   el.style.flexBasis = '0';
+  /* 按键圆角（App「键盘外观 → 按键圆角」，foxy-render-spec.md §2.7）：
+   * App 是 clamp(cornerRadiusDp×density, 0, min(键面宽,键面高)/2)，大圆角在小键上
+   * 会被夹住。这里用调用方给的键面估计尺寸（行区段传 faceH、网格传 cellW/H）夹一下；
+   * 未给则不夹（沿用 CSS 的 6px 兜底，行为与从前一致）。
+   * ⚠️ 只在 spacer 之外的正常键上写 —— spacer 是占位、不该有圆角。 */
+  if (!item.spacer) {
+    var cornerDp = FE.keyAppearance().cornerDp;
+    var faceW = (typeof opts.faceW === 'number') ? opts.faceW : null;
+    var faceH0 = (typeof opts.faceH === 'number') ? opts.faceH : null;
+    el.style.borderRadius = FE.keyCornerPx(cornerDp, unit, faceW, faceH0) + 'px';
+  }
   if (maxKeyHeight > 0) {
     var hfrac = item.height / maxKeyHeight;
     if (hfrac < 0.999) {
@@ -2606,17 +2979,37 @@ function buildRowsSection(compiledSection, unit) {
      * 左右各留半个间隙。不同键数的行同权重点边界精确重合；若间隙参与 flex
      * 分配，键数少的行每份权重会多分到像素，对不齐。间隙集中在 FE.ROW_GAP，
      * 后面做可调间距时只改这一处。 */
-    var n = row.keys.length;
+    /* 间隙口径（foxy-render-spec.md §2.7）：App 是**每键四周内缩** gap
+     * （`v40.setPadding(gapH, gapV, gapH, gapV)` + 背景 InsetDrawable 内缩），
+     * 所以：
+     *   · 相邻两键的**可见间隙 = 2 × gap**（各内缩一半）；
+     *   · **行的首尾键也内缩 gap**（不是贴边）；
+     *   · 键面高 = 行高 − 2 × gapV。
+     * ⚠️ 早先只给"行内非首尾键"半个间隙（ROW_GAP/2），那是"相邻留空"口径，
+     * 既少一半、首尾又不内缩 —— 与手机不一致。
+     * 槽位分割必须**不受间隙影响**（槽按 weight 分整行宽），所以间隙放在
+     * 槽内用 margin 实现，而不是让 flex gap 参与分配。 */
+    var app = FE.keyAppearance();
+    var gapH = FE.kbDp(app.gapHDp, unit);
+    var gapV = FE.kbDp(app.gapVDp, unit);
     row.keys.forEach(function (item, ki) {
       var slot = h('div', { class: 'kb-slot' });
       slot.style.flexGrow = String(item.grow != null ? item.grow : 0);
       slot.style.flexBasis = '0';
       slot.style.minWidth = '0';
-      var keyEl = buildKeyEl(item, unit, { grow: 1, maxKeyHeight: item.maxKeyHeight });
+      var keyEl = buildKeyEl(item, unit, {
+        grow: 1, maxKeyHeight: item.maxKeyHeight,
+        /* 键面高已知（行高减去上下内缩），宽未知 → 只按高夹圆角 */
+        faceH: Math.max(0, Math.max(18, row.heightUnits * unit * HK) - 2 * gapV)
+      });
       keyEl.style.flexGrow = '1';
-      if (n > 1) {
-        if (ki > 0) keyEl.style.marginLeft = (FE.ROW_GAP / 2) + 'px';
-        if (ki < n - 1) keyEl.style.marginRight = (FE.ROW_GAP / 2) + 'px';
+      if (gapH > 0) {
+        keyEl.style.marginLeft = gapH + 'px';
+        keyEl.style.marginRight = gapH + 'px';
+      }
+      if (gapV > 0) {
+        keyEl.style.marginTop = gapV + 'px';
+        keyEl.style.marginBottom = gapV + 'px';
       }
       slot.appendChild(keyEl);
       rowEl.appendChild(slot);
@@ -2626,13 +3019,38 @@ function buildRowsSection(compiledSection, unit) {
   return wrap;
 }
 
+/* 网格预览的**实际生效间隙**（px）：按键外观配置值（×2，见下）与该网格
+ * 安全上限的较小者。抽成函数是为了**渲染与测试共用同一份口径** —— 别在两处
+ * 各算一遍，否则测试钉的期望值和渲染实际值会悄悄漂开。
+ *
+ * 为什么 ×2：App 的 gap 是「每键四周内缩」（v40.setPadding + InsetDrawable），
+ * 所以相邻两键的可见间隙 = 2 × gap。网格这里用 CSS `gap`（本身就表达"相邻间距"），
+ * 故要写成 2 × 配置值，视觉口径才与行区段（用 margin 内缩）一致。
+ *
+ * 为什么还要套上限：大网格下照搬 16dp 会让间隙总和吃掉整个宽度、格子被压成负数
+ * （历史上"大网格撑爆预览"就是这么来的）。上限取 gridMetrics 的收缩值 ×2。
+ * 小网格下配置值远小于上限 → 用配置值，与手机一致；差异只出现在病态网格上。 */
+FE.gridGaps = function (columns, rows, unit, totalUnits) {
+  var m = FE.gridMetrics(columns, rows, unit, totalUnits);
+  var app = FE.keyAppearance();
+  var wantCol = Math.max(0, FE.kbDp(app.gapHDp, unit) * 2);
+  var wantRow = Math.max(0, FE.kbDp(app.gapVDp, unit) * 2);
+  return {
+    colGap: Math.min(wantCol, m.colGap * 2),
+    rowGap: Math.min(wantRow, m.rowGap * 2),
+    metrics: m
+  };
+};
+
 function buildGridSection(compiledSection, unit) {
   var el = h('div', { class: 'kb-grid' });
   /* 大网格的关键修复：间距与字号都必须随格子尺寸走。
    * 固定 5px 间距 + 固定 18px 字号在 48 列/15 行时会让格子仅 3.7×9.7px，
    * 字比格子还高（18px vs 9.7px）→ 文字上下重叠、整块预览糊成一团。 */
-  var m = FE.gridMetrics(compiledSection.columns, compiledSection.rows, unit, compiledSection.totalUnits);
-  el.style.gap = m.colGap + 'px ' + m.rowGap + 'px';
+  var g = FE.gridGaps(compiledSection.columns, compiledSection.rows, unit, compiledSection.totalUnits);
+  var m = g.metrics;
+  var colGap = g.colGap, rowGap = g.rowGap;
+  el.style.gap = colGap + 'px ' + rowGap + 'px';
   el.style.gridTemplateColumns = 'repeat(' + compiledSection.columns + ', 1fr)';
   if (compiledSection.rowHeights && compiledSection.rowHeights.length) {
     el.style.gridTemplateRows = compiledSection.rowHeights.map(function (x) { return (Number(x) || 1) + 'fr'; }).join(' ');
@@ -2645,10 +3063,14 @@ function buildGridSection(compiledSection, unit) {
   (compiledSection.keys || []).forEach(function (item) {
     var cspan = Math.max(1, item.columnSpan || 1);
     var rspan = Math.max(1, item.rowSpan || 1);
-    var w = m.cellW * cspan + m.colGap * (cspan - 1);
-    var h = m.cellH * rspan + m.rowGap * (rspan - 1);
+    var w = m.cellW * cspan + colGap * (cspan - 1);
+    var h = m.cellH * rspan + rowGap * (rspan - 1);
     var fontCap = Math.max(3, Math.min(w, h) * 0.8);
-    var keyEl = buildKeyEl(item, unit, { grow: '', maxKeyHeight: 1, fontCap: fontCap });
+    /* 网格里键面尺寸已知（格子宽高 × 跨距）→ 圆角按短边夹住，
+     * 与 App 的 clamp(…, min(faceW,faceH)/2) 同口径。 */
+    var keyEl = buildKeyEl(item, unit, {
+      grow: '', maxKeyHeight: 1, fontCap: fontCap, faceW: w, faceH: h
+    });
     keyEl.style.gridColumn = (item.column + 1) + ' / span ' + cspan;
     keyEl.style.gridRow = (item.row + 1) + ' / span ' + rspan;
     keyEl.style.flexGrow = '';
@@ -2668,12 +3090,66 @@ function renderCompiledInto(host, compiled, unit) {
 function renderPreview() {
   var host = $('preview-kb');
   if (!host) return;
+  /* 外壳（标题 / 键盘状态开关组 / 角标图例 / 布局 pill）先与当前页签对齐。
+   * ⚠️ 必须放在**渲染入口**而不是只在 activateTab 里：renderAll / 窗口 resize /
+   * details 展开 等路径都会直接调 renderPreview，若只在切页时同步，
+   * 这些路径下就会出现「渲染的是符号面板、标题却写布局预览」的错配。幂等，重复调无害。 */
+  syncPreviewPanelChrome();
   clearEl(host);
   /* 先清空编译产物：提前返回的分支若留着上一次的结果，
    * renderMeta 的键数统计与后续消费 state.compiled 的逻辑会读到过期数据。 */
   state.compiled = null;
   host.className = 'kb ' + (state.theme === 'light' ? 'kb-light' : 'kb-dark') +
-    (state.splitMode ? ' kb-split' : '');
+    ((state.splitMode || state.landscapeMode) ? ' kb-split' : '');
+  /* 键盘容器底色（基线 §1.4）：主题给了就用主题的，否则清掉行内背景、
+   * 回到 .kb-dark / .kb-light 的 CSS 底色。
+   * key_border_enabled 为真 → altKeyboardColor，为假 → 回落 keyboardColor。
+   * 未导入主题时 themeKeyboardColor 返回 null → 这里不写内联样式，外观零变化。
+   * ⚠️ 写入行内 background 时，.kb-dark/.kb-light 那圈**写死的内描边**
+   * （style.css 的 box-shadow: inset ...）会留在主题底色上、多出一圈固定色，
+   * 所以由 applyKeyboardCssVars 把 --kb-inset 置成 none（见该函数）。 */
+  var kbCss = keyboardBgCss();
+  if (kbCss) host.style.background = kbCss;
+  else host.style.background = '';
+
+  /* ---- 符号面板预览：切到「符号面板」页签时，把预览区换成符号面板 ----
+   * App 端符号面板（`ly`）是**整块替换键盘区域**的横排面板，不是弹层
+   * （foxy-render-spec.md §8）。所以这里不是"在键盘上加一层"，而是**改渲染分支**。
+   * 只认 state.activeTab —— activateTab 会先切状态再重渲染，故不会有中间态。 */
+  if (state.activeTab === 'tab-symbols' && FE.renderSymbolPreview) {
+    /* 面板与键盘同尺度：用同一个 unit 口径（portraitW/10），
+     * 保证符号格子与键盘按键的物理大小可比（见 symbol-preview.js 的 dp 换算）。 */
+    if (state.portraitW == null) state.portraitW = (host.clientWidth || 380);
+    host.className = 'kb ' + (state.theme === 'light' ? 'kb-light' : 'kb-dark');
+    if (!kbCss) host.style.background = '';
+    /* **面板尺寸强制与布局预览相同**（用户明确要求）：
+     * 高度取"常规布局的总单位数 × unit × 高度系数"，正是布局预览里各区段高度之和。
+     * 这样两边一切换，预览盒子大小完全一致 —— 用户看符号面板时想判断的正是
+     * "它在真机那块屏幕上会不会挤"，尺寸若不同就失去意义。
+     * ⚠️ 用**常规**布局的 units（不看 splitMode/landscapeMode）：符号面板与
+     * 分体无关，宽模式在符号页也不该被继承（本分支的 className 已不含 kb-split）。 */
+    var symUnits = 0;
+    var symL = curLayout();
+    if (symL) symUnits = FE.layoutHeightUnits(symL);
+    var symRes = FE.renderSymbolPreview(host, {
+      unit: state.portraitW / 10,
+      units: symUnits,
+      heightK: FE.PREVIEW_HEIGHT_K
+    });
+    state.compiled = null;
+    if (symRes) {
+      renderSymbolPreviewMeta(symRes);
+    } else {
+      renderMeta();
+    }
+    return;
+  }
+  /* 同一套配色变量也挂给编辑区/弹出菜单宿主的祖先，供 .row-block / .gedit-wrap
+   * 等面板共用（未导入主题时全部清空 → 各处回落原 CSS 值，零变化）。 */
+  applyKeyboardCssVars(host, kbCss);
+  [$('layout-sections'), $('popup-keys')].forEach(function (n) {
+    applyKeyboardCssVars(n, kbCss);
+  });
   var L = curLayout();
   if (!L) {
     host.appendChild(h('div', { class: 'kb-empty' }, '当前没有布局，请在“布局编辑”中添加。'));
@@ -2689,16 +3165,17 @@ function renderPreview() {
   }
   var rawW = host.clientWidth;
   var W = rawW || 380;
-  // 分体 = 横屏宽键盘：容器本身已放宽（kb-split），按键靠 flex 自动拉宽；
+  // 分体/横屏 = 宽键盘：容器本身已放宽（kb-split），按键靠 flex 自动拉宽；
   // 这里只求一个"竖屏口径"的 unit（行高、字号、提示全用它），几何自然不动。
   // 注意：.kb 的 max-width 不能加 transition，否则切回竖屏那一帧量到的还是
   // 收缩中的宽值，portraitW 被污染后字和行高一起变大。另这里只在真实可见
   // （rawW>0）时记忆竖屏宽度，避免隐藏面板时的 0/回退值污染。
-  if (!state.splitMode) {
+  var wide = state.splitMode || state.landscapeMode;
+  if (!wide) {
     if (rawW > 0) state.portraitW = rawW;
     else if (state.portraitW == null) state.portraitW = 380;
   } else if (state.portraitW == null) {
-    // 首次打开就处在分体模式（草稿恢复）：宽容器约是竖屏 2 倍，反推回去。
+    // 首次打开就处在宽模式（草稿恢复）：宽容器约是竖屏 2 倍，反推回去。
     // 注意只做这一次：不能每帧都 W/2，否则窗口/面板每次重排都会抖。
     state.portraitW = W / 2;
   }
@@ -2738,6 +3215,11 @@ function renderMeta() {
       parts.push(' · 高度 ' + (Math.round(usS * 100) / 100) + ' 单位（常规 ' + (Math.round(usN * 100) / 100) + '）');
     } else {
       parts.push(' · 高度 ' + (Math.round(FE.layoutHeightUnits(L) * 100) / 100) + ' 单位');
+      /* 横屏预览：明确写出来，否则用户会以为"怎么键忽然变宽了/是不是切了分体"。
+       * 强调**仍是常规布局**，与「分体」复选（会切到 split 片段）区分开。 */
+      if (state.landscapeMode) {
+        parts.push(h('span', { class: 'st-split' }, ' · 横屏宽屏预览（仍渲染常规布局，未切 split 片段）'));
+      }
     }
     /* 键数直接由编译产物统计，避免再遍历一遍原始 sections */
     var keyCount = 0;
@@ -2749,6 +3231,41 @@ function renderMeta() {
   }
   meta.appendChild(h('span', null, parts));
   appendValidationDetails(meta);
+}
+
+/* 符号面板预览的状态行（对应 renderMeta 在键盘预览里的位置）。
+ * 不显示布局信息 —— 符号面板与布局无关，硬塞布局高度/键数只会误导。
+ *
+ * ⚠️ 这里同时承载**面板的说明文字**：它刻意画在键盘预览区**之外**
+ * （#preview-meta 在 .preview-stage 之后）。理由：键盘区只该呈现"手机的样貌"，
+ * 说明文字挤进去既挡观感、又会把面板盒子撑高，破坏「尺寸 = 布局预览尺寸」。
+ * 这与键盘预览把「角标说明」放进 .preview-legend（同样在键盘区外）是同一套做法。 */
+function renderSymbolPreviewMeta(res) {
+  var meta = $('preview-meta');
+  if (!meta) return;
+  clearEl(meta);
+  var parts = [];
+  var kindLabel = FE.symbolKindMeta ? FE.symbolKindMeta(state.symbolKind).label : state.symbolKind;
+  parts.push(h('b', null, '符号面板预览'));
+  parts.push(' · ' + kindLabel);
+  if (res) {
+    parts.push(' · 分组 ' + res.groups.length + ' 个');
+    var cur = res.groups[res.selected];
+    if (cur) parts.push(' · 当前「' + (cur.name || '（未命名）') + '」' + cur.count + ' 条');
+    parts.push(' · 每行 ' + res.columns + ' 格');
+    parts.push(h('span', { class: 'st-split' },
+      ' · multiLine=' + (res.multiLine ? 'true' : 'false')));
+  }
+  meta.appendChild(h('span', null, parts));
+  /* 详细说明（模块返回的 notes）：放在状态行下方、仍是键盘区之外。
+   * 用 .sym-pv-note 保持原有样式，只是位置从"面板里"挪到了"面板外"。 */
+  if (res && Array.isArray(res.notes) && res.notes.length) {
+    var note = h('div', { class: 'sym-pv-note status dim' });
+    res.notes.forEach(function (n) { note.appendChild(n); });
+    meta.appendChild(note);
+  }
+  /* 符号页没有布局校验，故**不**调 appendValidationDetails
+   * （那会把键盘布局的校验问题混进符号预览的状态行）。 */
 }
 
 /* defKind → profile 里的定义容器名。校验 issue 与引用索引共用这套名字。 */
@@ -4549,6 +5066,9 @@ function renderAll() {
   renderOps();
   updateUndoButtons();
   if (FE.renderPopupTab) FE.renderPopupTab();
+  /* 主题页与符号页（各自模块未加载时静默跳过，与 popup 同一套守卫写法） */
+  if (FE.renderThemeTab) FE.renderThemeTab();
+  if (FE.renderSymbolsTab) FE.renderSymbolsTab();
 }
 
 function renderOps() {
@@ -5192,12 +5712,25 @@ function initToolbar() {
   $('pt-composing').addEventListener('change', function () { state.status.composing = this.checked; renderPreview(); });
   $('pt-ascii').addEventListener('change', function () { state.status.ascii_mode = this.checked; renderPreview(); });
   $('pt-disabled') && $('pt-disabled').addEventListener('change', function () { state.status.disabled = this.checked; renderPreview(); });
+  /* 深浅键盘：**与主题页的槽位（light/dark）是同一个状态**，双向联动。
+   * 语义上就是主题文件里的两套槽位，所以这里必须同时写 state.theme（决定键盘/编辑区
+   * 的 CSS 档位）与 state.themeSlot（决定主题取哪套配色），两者本是一件事的两面。
+   * 拆开写过一次，后果是"预览切了深色、主题页还在编辑浅色槽"，用户看到的值对不上。 */
+  function setPreviewSlot(slot) {
+    var s = (slot === 'dark') ? 'dark' : 'light';
+    state.theme = s;
+    state.themeSlot = s;
+  }
+  FE.setPreviewSlot = setPreviewSlot;
   $('pt-theme').addEventListener('change', function () {
-    state.theme = this.value;
+    setPreviewSlot(this.value);
     renderPreview();
     /* 布局编辑与弹出菜单页按键即时跟随配色：只切父容器主题类，无需整块重渲染 */
     syncEditorTheme();
     if (FE.renderPopupTab) FE.renderPopupTab();
+    /* 主题页若正在显示/已渲染，槽位表单也要跟着切（联动是双向的） */
+    if (FE.syncThemeSlotUI) FE.syncThemeSlotUI();
+    autosave();
   });
   $('pt-status-text').addEventListener('input', function () { state.statusSample = this.value; renderPreview(); });
   /* 高度比滑杆：百分比 → 系数 → 只重渲染预览（宽/字不动）。值跟布局草稿一起持久化。 */
@@ -5227,6 +5760,69 @@ function initToolbar() {
       if (hv) hv.textContent = (hr ? hr.value : 31) + '%';
     }
     FE.applyPreviewHeight = applyHeight;
+  })();
+  /* 按键外观三项滑杆（圆角 / 水平间隙 / 垂直间隙）。
+   * 对应 Foxy「设置 → 键盘外观」的同名设置，只影响**预览**建模，不写进任何文件。
+   * 取值范围与默认值照 App（foxy-render-spec.md §2.7）：
+   *   圆角 0–24 默认 6；水平 0–16 默认 3；垂直 0–16 默认 4。
+   * 拖 `input` 只重渲染预览（不动布局数据、不进撤销栈）—— 这是"看效果"的旋钮，不是数据编辑。 */
+  (function () {
+    var binds = [
+      ['pt-corner', 'pt-corner-val', 'cornerRadius', 'dp'],
+      ['pt-gap-h', 'pt-gap-h-val', 'gapHorizontal', 'dp'],
+      ['pt-gap-v', 'pt-gap-v-val', 'gapVertical', 'dp']
+    ];
+    function applyAppearance() {
+      var spec = FE.KEY_APPEARANCE_SPEC, app = FE.keyAppearance();
+      binds.forEach(function (b) {
+        var el = $(b[0]), lab = $(b[1]);
+        var sp = spec[b[2]];
+        var v = sp.key === 'keyCornerRadiusDp' ? app.cornerDp
+          : (sp.key === 'keyGapHorizontalDp' ? app.gapHDp : app.gapVDp);
+        if (el && String(el.value) !== String(v)) el.value = String(v);
+        if (lab) lab.textContent = v + b[3];
+      });
+      autosave();
+      renderPreview();
+      /* ⚠️ **不要**在这里调 renderLayoutTab()：布局编辑区的 chip 与网格画布走的是
+       * applyEditorKeyColors → applyKeyColors，**只管颜色、不消费几何**（圆角/间距
+       * 由 CSS 的 .chip / .gedit-cell 固定），所以它们本来就不跟随这三项滑杆；
+       * 而拖动滑杆每帧重建整个区段编辑器会明显卡顿。两者都不划算，故不调。 */
+    }
+    binds.forEach(function (b) {
+      var el = $(b[0]);
+      if (!el) return;
+      var sp = FE.KEY_APPEARANCE_SPEC[b[2]];
+      /* 范围由 index.html 的 min/max 给；这里再兜一层，防手改 HTML 后越界 */
+      el.min = String(sp.min); el.max = String(sp.max);
+      el.addEventListener('input', function () { state[sp.key] = Number(el.value); applyAppearance(); });
+      el.addEventListener('change', function () { state[sp.key] = Number(el.value); applyAppearance(); });
+    });
+    FE.applyKeyAppearance = applyAppearance;
+    applyAppearance();
+  })();
+  /* 横屏预览：只加宽容器（kb-split 的 1228px），**仍渲染当前常规布局**。
+   * 与「分体」的区别就在这里 —— 分体会把编译目标换成 L.split 片段，本项不会。
+   * 区段编辑器也不跟着切（仍在编辑常规布局），所以刻意**不**调 renderLayoutTab()。 */
+  $('pt-landscape') && $('pt-landscape').addEventListener('change', function () {
+    state.landscapeMode = this.checked;
+    state.sel = null;
+    /* 与分体同理：类名立即生效，但浏览器 layout 未必同步完成 ——
+     * 等一帧再按最终宽度渲染，否则切回竖屏那一帧会量到收缩中的宽值、
+     * portraitW 被污染后字和行高一起变大且回不来。 */
+    renderPreview();
+    requestAnimationFrame(function () { renderPreview(); });
+  });
+  /* 分体与横屏互斥：同时开会让"渲染哪个片段"产生歧义（分体切片段、横屏不切），
+   * 两个复选都亮着而屏幕只有一个结果，用户必然困惑。开一个就关另一个。 */
+  $('pt-split') && $('pt-landscape') && (function () {
+    var sp = $('pt-split'), ls = $('pt-landscape');
+    sp.addEventListener('change', function () {
+      if (sp.checked && ls.checked) { ls.checked = false; state.landscapeMode = false; }
+    });
+    ls.addEventListener('change', function () {
+      if (ls.checked && sp.checked) { sp.checked = false; state.splitMode = false; state.sel = null; }
+    });
   })();
   $('pt-split') && $('pt-split').addEventListener('change', function () {
     state.splitMode = this.checked;
@@ -5416,13 +6012,47 @@ function boot() {
         state.popupProfile = d2.popupProfile;
         state.popupFileName = d2.popupFileName || 'popups.json';
       }
+      /* 主题 / 符号草稿：**只在草稿里确实有值时才赋值**，
+       * 保持「未导入 = null」—— 否则刷新后一份没导入过的主题会凭空出现。 */
+      if (d2 && d2.themeProfile) {
+        state.themeProfile = d2.themeProfile;
+        state.themeFileName = d2.themeFileName || 'theme.json';
+      }
+      if (d2 && (d2.themeSlot === 'light' || d2.themeSlot === 'dark')) state.themeSlot = d2.themeSlot;
+      /* 符号按**复数槽**恢复：三类 catalog 各自独立。旧草稿（单数 symbolProfile）
+       * 兼容迁移到 profiles 里，别让老用户的草稿白丢。 */
+      if (d2 && FE.isPlainObject(d2.symbolProfiles)) {
+        state.symbolProfiles = d2.symbolProfiles;
+        state.symbolFileNames = FE.isPlainObject(d2.symbolFileNames) ? d2.symbolFileNames : null;
+        state.symbolLegacy = FE.isPlainObject(d2.symbolLegacy) ? d2.symbolLegacy : null;
+      } else if (d2 && d2.symbolProfile) {
+        var legacyKind = d2.symbolKind || 'symbols';
+        state.symbolProfiles = {};
+        state.symbolProfiles[legacyKind] = d2.symbolProfile;
+        state.symbolFileNames = {};
+        if (d2.symbolFileName) state.symbolFileNames[legacyKind] = d2.symbolFileName;
+      }
+      if (d2 && d2.symbolKind) state.symbolKind = d2.symbolKind;
       if (d2 && d2.splitMode) state.splitMode = !!d2.splitMode;
       if (d2 && d2.includeType === false) state.includeType = false;
       if (d2 && isFinite(Number(d2.previewHeightPct))) {
         state.previewHeightPct = Math.max(15, Math.min(60, Number(d2.previewHeightPct)));
       }
+      /* 按键外观三项：只接受**合法范围内**的值，越界/非法一律保持 state 里的默认
+       * （与 App 端 `a60.e/f/g` 判定非法后回落默认同口径）；
+       * 真正兜底在 FE.appearanceValue 里，这里只是不让脏值进 state。 */
+      if (d2) {
+        var apSpec = FE.KEY_APPEARANCE_SPEC;
+        ['cornerRadius', 'gapHorizontal', 'gapVertical'].forEach(function (k) {
+          var sp = apSpec[k], v = Number(d2[sp.key]);
+          if (isFinite(v) && v >= sp.min && v <= sp.max) state[sp.key] = v;
+        });
+      }
     }
   } catch (e2) { /* 忽略 */ }
+  /* 草稿恢复后对齐三项外观滑杆（initToolbar 已在其之前跑过一遍，值为默认）。
+   * 复用 FE.applyKeyAppearance —— 它同时回填滑杆文字与重渲染，别在这里手写一遍。 */
+  if (FE.applyKeyAppearance) FE.applyKeyAppearance();
   /* 草稿恢复后对齐高度滑杆：initToolbar 跑在恢复之前，滑杆还是默认值，
    * 这里按恢复出的百分比回填并换算 K（否则刷新后高度回到 31%）。 */
   try {
@@ -5434,6 +6064,9 @@ function boot() {
     }
   } catch (e3) { /* 忽略 */ }
   state.validation = FE.validateProfile(state.profile);
+  /* 首屏对齐预览面板外壳：默认页签是「布局编辑」，但草稿恢复或将来改默认页时
+   * 这里保证标题/开关组/图例与 state.activeTab 一致（幂等，重复调无害）。 */
+  syncPreviewPanelChrome();
   renderAll();
   setOpStatus('就绪。修改会实时渲染并自动保存到浏览器。', 'ok');
 }

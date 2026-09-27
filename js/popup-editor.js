@@ -751,24 +751,72 @@ function renderPopupPreview() {
   }
 
   var cands = FE.popupCandidates(P, state.popupSchema, pk, state.popupShifted);
-  /* 弹出效果预览跟随上面键盘颜色：
-   * · 预览区背景（舞台）用键盘底色（kb-dark/kb-light，与键盘预览容器同款）；
-   * · 气泡/候选随键盘明暗主题；
-   * · 模拟按键额外套该 popupKey 对应布局按键的 keyType 配色 + colors 覆盖。
+  /* 弹出效果预览**全链路跟随主题**（依据 foxy/foxy-render-spec.md §7）：
+   *
+   * 此前这里只有 kb-dark/kb-light 两档硬编码 CSS，主题里 popup 系与 candidate 系字段
+   * 在预览中「零消费」—— 于是「改了主题、键盘预览变了、弹出菜单预览没变」，
+   * 两者并排可见不一致。现在按 App 端语义逐元素取主题色：
+   *
+   *   · 舞台底   = 键盘容器底色（m00.f：key_border_enabled ? altKeyboardColor : keyboardColor）
+   *   · 气泡底/字 = popupBackgroundColor / popupTextColor（App 的按键气泡，pt.java:30/39）
+   *   · 候选字    = candidateTextColor；候选底 = candidateBackgroundColor
+   *   · 首选候选   = candidateHighlightColor 作高亮底（App 里高亮/选中用它，sc.java:1074）
+   *   · 空提示    = candidateCommentColor（次要文字）
+   *
+   * ⚠️ `popupBorderColor` **刻意不画边框**：App 端未找到该字段的消费点
+   *   （spec §7.3），为它画框会与手机显示不一致。
+   *
+   * ⭐ 未导入主题时按 **App 内置默认主题**取色（传 includeBuiltin:true）——
+   *   用户要求：预览默认用 App 内置默认主题的深浅色，而不是编辑器自己那套预置色。
+   *   App 端没自定义时用的就是内置默认（xw0.java:158-160/189-191），所以这样才像手机。
    * 实时性：主题切换由 pt-theme 联动 renderPopupTab；改按键 colors 经
-   * renderAll→renderPopupTab，均立即反映。 */
+   *   renderAll→renderPopupTab，均立即反映。 */
   var themeCls = (state.theme === 'light') ? 'kb-light' : 'kb-dark';
   var keyType = (mockEff && mockEff.keyType) ? String(mockEff.keyType).toLowerCase() : 'letter';
+
+  /* 主题字段 → CSS 色串；取不到时返回 null（调用方跳过写样式，交由 CSS 兜底） */
+  function themeCss(field) {
+    if (!FE.resolveThemeField) return null;
+    var r = FE.resolveThemeField(field, { includeBuiltin: true });
+    return (r && r.value) ? FE.colorToCss(r.value) : null;
+  }
+  /* 舞台底：优先用「键盘容器底色」（含 key_border_enabled 联动），
+   * 取不到再退回 keyboardColor，最后交给 CSS 类。 */
+  var stageBg = null;
+  if (FE.resolveKeyboardColor) {
+    var kbCol = FE.resolveKeyboardColor(state.keyBorderEnabled, { includeBuiltin: true });
+    if (kbCol && kbCol.value) stageBg = FE.colorToCss(kbCol.value);
+  }
+  if (!stageBg) stageBg = themeCss('keyboardColor');
+
   var stage = h('div', { class: 'pp-stage ' + themeCls });
+  if (stageBg) stage.style.background = stageBg;
+
   var bubble = h('div', { class: 'pp-bubble' });
+  var bubbleBg = themeCss('popupBackgroundColor');
+  if (bubbleBg) bubble.style.background = bubbleBg;
+  var bubbleFg = themeCss('popupTextColor');
+  if (bubbleFg) bubble.style.color = bubbleFg;
+
   if (!cands || !cands.length) {
-    bubble.appendChild(h('span', { class: 'pp-empty-hint' }, used[pk] ? '（弹出菜单未定义该键的候选）' : '（未定义候选）'));
+    var emptyEl = h('span', { class: 'pp-empty-hint' }, used[pk] ? '（弹出菜单未定义该键的候选）' : '（未定义候选）');
+    var emptyFg = themeCss('candidateCommentColor');
+    if (emptyFg) emptyEl.style.color = emptyFg;
+    bubble.appendChild(emptyEl);
   } else {
     cands.forEach(function (c, idx) {
-      bubble.appendChild(h('span', {
+      var candEl = h('span', {
         class: 'pp-cand' + (idx === 0 ? ' pp-cand-first' : ''),
         title: (idx === 0 ? '首选（大）· ' : '') + FE.popupCandidateSummary(c)
-      }, FE.popupCandidateLabel(c) || '？'));
+      }, FE.popupCandidateLabel(c) || '？');
+      /* 首选用高亮底，其余用候选底；候选字统一用 candidateTextColor */
+      var candBg = (idx === 0)
+        ? (themeCss('candidateHighlightColor') || themeCss('candidateBackgroundColor'))
+        : themeCss('candidateBackgroundColor');
+      if (candBg) candEl.style.background = candBg;
+      var candFg = themeCss('candidateTextColor');
+      if (candFg) candEl.style.color = candFg;
+      bubble.appendChild(candEl);
     });
   }
   var keyMock = h('div', { class: 'pp-key kt-' + keyType }, mockLabel);
@@ -783,6 +831,57 @@ function renderPopupPreview() {
   host.appendChild(h('div', { class: 'status' },
     '状态回退：schema[' + (state.popupShifted ? 'shifted' : 'normal') + '] → default[' + (state.popupShifted ? 'shifted' : 'normal') + '] → schema.normal → default.normal' +
     (used[pk] ? ' · 布局使用 ' + used[pk].length + ' 处' : ' · 布局未使用该键')));
+
+  /* ---------------- 模拟按键的颜色引用来源 ----------------
+   * 用户要求：「弹出菜单那边的按键颜色引用」不能只是写死颜色值，
+   * 要真正全链路与主题配置对应。这里把模拟按键每个角色色的**生效值与来源**列出来，
+   * 让用户看清「这个颜色是布局按键自己给的，还是主题哪一级给的」。
+   *
+   * ⚠️ 与按键编辑对话框的区别：**这里只读、不可编辑** ——
+   *   模拟按键的颜色属于**布局文件**（该 popupKey 对应的那个布局按键），
+   *   要改请到布局页编辑那个按键（下面给跳转按钮）。
+   *   而 popup 文件本身**没有**颜色字段（foxy.popup-profile 不含 colors）。 */
+  if (FE.resolveKeyColors) {
+    var srcBox = h('div', { class: 'pp-color-src status' });
+    if (!mockEff) {
+      srcBox.appendChild(h('div', null,
+        '布局未使用该 popupKey → 无法确定它的键类型与颜色，按键按 LETTER 兜底显示。'));
+    } else {
+      var st = FE.keyStateOpts ? FE.keyStateOpts(mockEff, state.status, false) : {};
+      var res = FE.resolveKeyColors(mockEff, st);
+      var rows = [
+        ['background', '背景'], ['text', '文字'],
+        ['border', '边框'], ['shadow', '阴影']
+      ];
+      var lines = rows.map(function (r) {
+        var info = res.roles[r[0]];
+        if (!info || info.value == null) return r[1] + '：未定义（Foxy 端不绘制）';
+        return r[1] + '：' + info.value + '　← ' +
+          FE.colorSourceLabel(info.source, info.detail);
+      });
+      if (res.textFromAccent) {
+        lines.push('（当前 Shift 激活 → 文字色改用主题 accentColor）');
+      }
+      srcBox.appendChild(h('div', null, '模拟按键的颜色来源（只读，改主题或改布局按键即同步）：'));
+      lines.forEach(function (t) { srcBox.appendChild(h('div', { class: 'pp-color-line' }, t)); });
+      srcBox.appendChild(h('button', {
+        type: 'button', class: 'mini-button',
+        title: '到布局编辑页编辑这个按键的颜色',
+        onclick: function () {
+          /* 跳到布局页并选中该按键。
+           * `used[pk]` 的元素形如 `{label, loc}`，`loc` 就是 FE.jumpToUsage
+           * 直接吃的那个对象（布局坐标，或 {defKind, defName} 的定义坐标）——
+           * 见 collectLayoutPopupKeys 的 add()。别自己拼 loc，会跳错地方。 */
+          var hit = used[pk] && used[pk].length ? used[pk][0] : null;
+          if (hit && hit.loc && FE.jumpToUsage) {
+            try { FE.jumpToUsage(hit.loc); return; } catch (e) { /* 落回下面的兜底 */ }
+          }
+          if (FE.activateTab) FE.activateTab('tab-layout');
+        }
+      }, '到布局页改这个按键的颜色…'));
+    }
+    host.appendChild(srcBox);
+  }
 }
 
 /* Shift 下单字符“大写化”（Unicode 感知，不止 a-z）。
