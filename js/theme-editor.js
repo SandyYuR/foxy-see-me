@@ -880,18 +880,37 @@ function initThemeTab() {
   });
   $('th-export').addEventListener('click', exportTheme);
 
-  /* 示例 / 模板：主题文件不进 examples（build-examples.js 的类型判定不认它），
-   * 所以这里只提供内置默认主题作为「新建」初值；若将来 examples 里有主题类文件
-   * （kind 为 theme），一并列出来。 */
+  /* 示例 / 模板：内置默认主题（「新建」初值）+ examples/ 里的真实主题文件
+   * （`主题配色/` 那 18 份已入库，与符号文件同一套做法 —— 打包器认 type 里的
+   * `foxy.keyboard-theme`，故 kind 为 theme）。
+   *
+   * ⚠️ 显示名优先用主题内部的 `name` 字段（`FE.EXAMPLE_META[n].desc`）而不是文件名：
+   * 文件名是给人看的标签，`name` 才是 App 用来定位文件的那个字段，
+   * 两者不一致时（如 isGboard-WeChatDark.json 的 name 是 "isGboard-WeChatDark copy"）
+   * 让用户看到真实 name 更有用。文件名仍作为 value（它才是 EXAMPLE_FILES 的键）。 */
   var ex = $('th-example');
   if (ex) {
     clearEl(ex);
     ex.appendChild(h('option', { value: '' }, '选择主题模板…'));
     ex.appendChild(h('option', { value: '__builtin__' }, '内置默认主题色（App 内置）'));
-    if (FE.EXAMPLE_META) {
-      Object.keys(FE.EXAMPLE_META).sort().forEach(function (n) {
-        if (FE.EXAMPLE_META[n].kind !== 'theme') return;
-        ex.appendChild(h('option', { value: n }, n));
+    if (FE.THEME_EXAMPLE_FILES) {
+      /* 按显示名排序：用户是按"哪个主题好看"挑的，不是按文件名找 */
+      var themeNames = Object.keys(FE.THEME_EXAMPLE_FILES);
+      var metaOf = function (n) {
+        return (FE.EXAMPLE_META && FE.EXAMPLE_META[n]) || {};
+      };
+      themeNames.sort(function (a, b) {
+        var da = metaOf(a).desc || a, db = metaOf(b).desc || b;
+        return da.localeCompare(db, 'zh');
+      });
+      themeNames.forEach(function (n) {
+        var d = metaOf(n).desc;
+        var base = n.replace(/\.json$/i, '');
+        /* name 与文件名相同时只显示一个（中文主题基本都是这种情况，
+         * 写成「爱马仕橙（爱马仕橙.json）」纯属噪音）；不同时才并列，
+         * 让用户看得出"文件叫这个、主题自称那个"。 */
+        ex.appendChild(h('option', { value: n },
+          (d && d !== base) ? (d + '（' + n + '）') : n));
       });
     }
     $('th-load-example').addEventListener('click', function () {
@@ -901,10 +920,18 @@ function initThemeTab() {
       if (v === '__builtin__') text = FE.serializeThemeProfile(FE.themeNewProfile());
       else text = FE.EXAMPLE_FILES ? FE.EXAMPLE_FILES[v] : null;
       if (text == null) { setThemeStatus('模板未找到: ' + v, 'error'); return; }
-      if (FE.loadThemeProfileText(text, v === '__builtin__' ? 'theme.json' : v)) {
+      /* 文件名用主题自己的 name（App 端就是按 name 定位文件的），取不到才退回原文件名 */
+      var outName = v;
+      if (v !== '__builtin__') {
+        try {
+          var nm = FE.normalizeThemeProfile(JSON.parse(text));
+          if (nm && typeof nm.name === 'string' && nm.name.trim() !== '') outName = nm.name.trim() + '.json';
+        } catch (e) { /* 保持原文件名 */ }
+      }
+      if (FE.loadThemeProfileText(text, v === '__builtin__' ? 'theme.json' : outName)) {
         setThemeStatus(v === '__builtin__'
           ? '已以内置默认主题色新建（方向提示色留空，导出前请填写 name）'
-          : '已加载 ' + v, 'ok');
+          : '已加载 ' + v + '（导出文件名：' + outName + '）', 'ok');
       }
     });
   }

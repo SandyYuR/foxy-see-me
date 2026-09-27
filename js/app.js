@@ -5519,12 +5519,15 @@ function initToolbar() {
   });
 
   /* 示例（已打包进 js/examples-bundle.js，file:// 直开无需服务器）。
-   * 列表由 EXAMPLE_META 动态生成，弹出菜单类文件只在弹出菜单页出现 */
+   * 列表由 EXAMPLE_META 动态生成，**只列布局类** —— 弹出菜单、符号、主题
+   * 各归各页，混进布局下拉会在加载时解析失败（它们是不同文档类型）。
+   * 用白名单（kind === 'layout'）而不是黑名单：将来再加文档类型时，
+   * 默认就"不会被误列进来"，比逐个排除更安全。 */
   var ex = $('op-example');
   ex.appendChild(h('option', { value: '__builtin__' }, '内置默认布局（layout-variant）'));
   if (FE.EXAMPLE_META) {
     Object.keys(FE.EXAMPLE_META).sort().forEach(function (n) {
-      if (FE.EXAMPLE_META[n].kind === 'popup') return;
+      if (FE.EXAMPLE_META[n].kind !== 'layout') return;
       ex.appendChild(h('option', { value: n }, n));
     });
   }
