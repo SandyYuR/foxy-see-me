@@ -274,8 +274,13 @@ data.js → default-profile.js → examples-bundle.js → app.js
   `gridEditor`（网格单元格）——它们**只读编译产物，不再自行解析**。新增渲染处请照此接入。
 - **按键项字段**：`placement / eff / s,r,k / group / weight / grow / label / hints /
   summaries / isBroken / unresolved / popupKey / lpLabel / holdLabel`。
-  其中 `grow` 只取**放置位**的 `weight`（定义链上的 weight 不参与行宽分配，见
-  `FE.rowWeights`）；`weight` 则是解析后的有效权重，供检查器展示。
+  其中 `grow` 取**解析后的有效 weight（含定义链，与 App 的 base < override <
+  直接字段优先级一致）**；`"auto"` 按行 `totalWeight` 分剩余；`weight` 字段同样是
+  解析后的有效权重，供检查器展示。
+- **行渲染是槽位口径（与 App 对齐）**：`buildRowsSection` 给每键包 `.kb-slot`，
+  槽按 `grow` 分整行宽（行内无 gap），键在槽内左右各留 `FE.ROW_GAP/2`。
+  键数不同的行同权重点边界重合；若间隙参与 flex 分配，键数少的行每份权重会
+  多分像素，对不齐。`FE.ROW_GAP`（=5）是行间隙的唯一来源，可调间距时改它。
 - **索引对齐**：`s` 是区段索引（对应源 `sections` 下标）；网格 `keys[i]` 与源
   `sections[i].keys[i]` **一一对应**——非法项以 `null` 占位而非跳过，否则索引错位。
   区段编辑器与「点击错误定位」都依赖这个对应关系。

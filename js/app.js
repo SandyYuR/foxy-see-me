@@ -422,19 +422,9 @@ FE.rowsOfSection = function (section) {
   });
 };
 
-FE.rowWeights = function (row) {
-  var keys = row.keys || [];
-  var ws = keys.map(function (k) {
-    if (isPlainObject(k) && k.weight != null) return k.weight;
-    return 1;
-  });
-  var hasTotal = typeof row.totalWeight === 'number' && row.totalWeight > 0;
-  var fixedSum = 0, autoCount = 0;
-  ws.forEach(function (w) { if (w === 'auto') autoCount++; else fixedSum += (Number(w) || 0); });
-  if (autoCount === 0) return ws.map(function (w) { return Number(w) || 0; });
-  var autoVal = hasTotal ? Math.max(0, row.totalWeight - fixedSum) / autoCount : 1;
-  return ws.map(function (w) { return w === 'auto' ? autoVal : (Number(w) || 0); });
-};
+/* 行宽分配已并入 compileSections（见「四之二」）：flex 权重取解析后的有效
+ * weight（含定义链），"auto" 按 totalWeight 分剩余。这里不再保留独立函数，
+ * 避免两套口径漂移。 */
 
 /* 网格编辑器的渲染护栏：**上限作用于真正生成 DOM 的单元格数**（按键起点 +
  * 未被跨距键覆盖的空格），不是网格面积。
@@ -1609,7 +1599,6 @@ FE.compileSections = function (sections, status, scope) {
     if (s.type === 'rows') {
       var rows = [], total = 0;
       FE.rowsOfSection(s).forEach(function (row, ri) {
-        var weights = FE.rowWeights(row);
         var maxKH = 1;
         row.keys.forEach(function (kk) {
           var kh = isPlainObject(kk) && typeof kk.height === 'number' && kk.height > 0 ? kk.height : 1;
@@ -1617,9 +1606,22 @@ FE.compileSections = function (sections, status, scope) {
         });
         var items = row.keys.map(function (kk, ki) {
           var it = compileKeyItem(kk, { s: si, r: ri, k: ki, group: 'rows' }, status, scope);
-          it.grow = Number(weights[ki]) || 0;
           it.maxKeyHeight = maxKH;
           return it;
+        });
+        /* flex 权重 = 解析后的有效 weight（含定义链），与 App 的
+         * base < override < 直接字段优先级一致；"auto" 按 totalWeight 分剩余。 */
+        var effWs = items.map(function (it) {
+          var pw = isPlainObject(it.placement) ? it.placement.weight : null;
+          if (pw != null) return pw;
+          return (it.weight != null ? it.weight : 1);
+        });
+        var hasTotal = typeof row.totalWeight === 'number' && row.totalWeight > 0;
+        var fixedSum = 0, autoCount = 0;
+        effWs.forEach(function (w) { if (w === 'auto') autoCount++; else fixedSum += (Number(w) || 0); });
+        var autoVal = hasTotal ? Math.max(0, row.totalWeight - fixedSum) / autoCount : 1;
+        items.forEach(function (it, ki) {
+          it.grow = effWs[ki] === 'auto' ? autoVal : (Number(effWs[ki]) || 0);
         });
         rows.push({ heightUnits: row.heightUnits, width: row.width, totalWeight: row.totalWeight, keys: items, rowIndex: ri });
         total += row.heightUnits;

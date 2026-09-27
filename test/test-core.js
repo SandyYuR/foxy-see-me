@@ -134,11 +134,31 @@ rows = FE.rowsOfSection(section);
 eq(rows[0].heightUnits, 1.2, '对象行显式高度');
 eq(rows[0].width, 0.9, '对象行宽度');
 
-/* weight auto */
-let row = { totalWeight: 10, keys: [{ ref: 'rime.a' }, { ref: 'rime.b', weight: 2 }, { ref: 'rime.c', weight: 'auto' }] };
-eq(FE.rowWeights(row), [1, 2, 7], 'auto 权重获得剩余值');
-row = { keys: [{ ref: 'rime.a' }, { ref: 'rime.b' }] };
-eq(FE.rowWeights(row), [1, 1], '默认权重 1');
+/* weight：行宽按解析后的有效 weight（含定义链）分配；"auto" 按 totalWeight 分剩余 */
+section = { type: 'rows', rows: [{ totalWeight: 10, keys: [{ ref: 'rime.a' }, { ref: 'rime.b', weight: 2 }, { ref: 'rime.c', weight: 'auto' }] }] };
+{
+  const wScope = FE.scopeFrom(FE.normalizeProfile({ keys: {}, layouts: { default: { sections: [section] } } }));
+  const wCmp = FE.compileSections([section], FE.NEUTRAL_STATUS, wScope);
+  eq(wCmp.sections[0].rows[0].keys.map(k => k.grow), [1, 2, 7], 'auto 权重获得剩余值');
+}
+section = { type: 'rows', rows: [[{ ref: 'rime.a' }, { ref: 'rime.b' }]] };
+{
+  const wScope2 = FE.scopeFrom(FE.normalizeProfile({ keys: {}, layouts: { default: { sections: [section] } } }));
+  const wCmp2 = FE.compileSections([section], FE.NEUTRAL_STATUS, wScope2);
+  eq(wCmp2.sections[0].rows[0].keys.map(k => k.grow), [1, 1], '默认权重 1');
+}
+/* 定义链上的 weight 参与行宽分配（与 App 一致）：qwerty.shift 定义 weight=1.5 */
+{
+  const dProfile = FE.normalizeProfile(JSON.parse(FE.DEFAULT_PROFILE_TEXT));
+  const dScope = FE.scopeFrom(dProfile);
+  const dCmp = FE.compileSections(
+    [{ type: 'rows', rows: [[{ ref: 'qwerty.shift' }, { ref: 'rime.a' }]] }], FE.NEUTRAL_STATUS, dScope);
+  eq(dCmp.sections[0].rows[0].keys.map(k => k.grow), [1.5, 1], '定义 weight 进入 flex 分配');
+  /* 放置位显式 weight 覆盖定义 */
+  const oCmp = FE.compileSections(
+    [{ type: 'rows', rows: [[{ ref: 'qwerty.shift', weight: 2 }, { ref: 'rime.a' }]] }], FE.NEUTRAL_STATUS, dScope);
+  eq(oCmp.sections[0].rows[0].keys.map(k => k.grow), [2, 1], '放置位 weight 覆盖定义');
+}
 
 /* 布局高度单位 */
 const units = FE.layoutHeightUnits(profile.layouts.default);
@@ -626,7 +646,7 @@ const item0 = cmp.sections[0].rows[0].keys[0];
 ok(item0.placement === srcRow0[0], '编译项保留原始 placement 引用');
 eq([item0.s, item0.r, item0.k, item0.group], [0, 0, 0, 'rows'], '编译项带区段/行/键坐标与分组');
 eq(item0.label, 'q', '标签在编译期算好');
-/* grow 沿用 FE.rowWeights：只读「放置位」的 weight（定义里的 weight 不参与行宽分配） */
+/* grow 取解析后的有效 weight（含定义链），与 App 的 base < override < 直接字段一致 */
 eq(item0.grow, 1, '编译项带 flex 权重（默认 1）');
 const explicitW = FE.compileSections(
   [{ type: 'rows', rows: [[{ ref: 'rime.a', weight: 2 }]] }], FE.NEUTRAL_STATUS, cmpScope);
