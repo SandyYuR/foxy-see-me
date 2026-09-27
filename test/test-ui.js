@@ -3002,6 +3002,25 @@ await sleep(350);
   ok(/html\.site-light\s+\.st-split\s*\{[^}]*color:\s*#2e8b57/.test(cssSrc), '浅色下分体标记加深');
   /* 浅色下未选中 tab 给浅灰底（否则被 button 白底盖成全白，与选中只差字色字重） */
   ok(/html\.site-light\s+\.tab:not\(\.active\)\s*\{[^}]*background:\s*#eef0f3/.test(cssSrc), '浅色下未选中标签浅灰底（选中白底，对比拉开）');
+  /* 浅色下主按钮蓝底必须赢回白底覆盖：`html.site-light button` 权重 (0,1,2)
+   * 高过 `button.primary` 的 (0,1,1)（多一个 html tag），不单独写就是白字浮白底、
+   * 对比度 1.0 完全隐形（应用/新建按键定义/新建动作/新建宏全中招，与 pill 同病） */
+  ok(/html\.site-light\s+button\.primary[^}]*background:\s*var\(--accent\)/.test(cssSrc), '浅色下主按钮蓝底赢回（应用/新建类可辨识）');
+  /* 浅色下对话框折叠子卡标题加深（基本信息/手势/状态变体/按键颜色覆盖等），
+   * 否则浅灰白字浮浅底、看不清 */
+  ok(/html\.site-light\s+\.inner-card\s*>\s*summary\s*\{[^}]*color:\s*#1c1e22/.test(cssSrc), '浅色下对话框折叠标题加深');
+  /* 浅色下手势名（点击/滑动/长按…）加深：#cdd2da 在白底上对比度只有 1.5，几乎隐形 */
+  ok(/html\.site-light\s+\.gesture-name\s*\{[^}]*color:\s*#1c1e22/.test(cssSrc), '浅色下手势名加深');
+  /* 弹出菜单候选 chip 跟随键盘主题：host 打 theme 类（与布局编辑同套规则），
+   * 否则弹出菜单页的 chip 永远是深色基础值，浅色键盘下整块发黑 */
+  FE.state.theme = 'light';
+  FE.renderPopupTab();
+  ok($('popup-keys').classList.contains('theme-light'), '浅色键盘下弹出菜单 host 带 theme-light');
+  FE.state.theme = 'dark';
+  FE.renderPopupTab();
+  ok($('popup-keys').classList.contains('theme-dark'), '深色键盘下弹出菜单 host 带 theme-dark');
+  FE.state.theme = 'light';
+  FE.renderPopupTab();
 
 }   /* 结束 await sleep(350) 后的主体块 */
 

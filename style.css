@@ -77,6 +77,9 @@ html.site-light body, html.site-auto body { color-scheme: light; }
   html.site-auto .topbar { background: linear-gradient(180deg, #ffffff, #eef0f3); }
   html.site-auto button, html.site-auto .mini-button, html.site-auto .repo-link { background: #ffffff; }
   html.site-auto button:hover, html.site-auto .mini-button:hover, html.site-auto .repo-link:hover { background: #eef0f3; border-color: #b9bdc4; }
+  /* 主按钮蓝底赢回（同下方的 site-light 病根：白底 tag 规则权重更高） */
+  html.site-auto button.primary, html.site-auto .mini-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  html.site-auto button.primary:hover, html.site-auto .mini-button.primary:hover { background: #6ba2ff; border-color: #6ba2ff; color: #fff; }
   html.site-auto .mini-input, html.site-auto .mini-select { background: #ffffff; color: #1c1e22; }
   html.site-auto code { background: #e8eaed; }
   html.site-auto .pill { background: #eef0f3; }
@@ -101,6 +104,11 @@ html.site-light body, html.site-auto body { color-scheme: light; }
 html.site-light .topbar { background: linear-gradient(180deg, #ffffff, #eef0f3); }
 html.site-light button, html.site-light .mini-button, html.site-light .repo-link { background: #ffffff; }
 html.site-light button:hover, html.site-light .mini-button:hover, html.site-light .repo-link:hover { background: #eef0f3; border-color: #b9bdc4; }
+/* 浅色下主按钮蓝底必须赢回上面的白底覆盖：`html.site-light button` 权重 (0,1,2)
+ * 高过 `button.primary` 的 (0,1,1)（多一个 html tag），不单独写就是白字浮白底、
+ * 对比度 1.0 完全隐形（应用/新建按键定义/新建动作/新建宏全中招，与 pill 同一病根）。 */
+html.site-light button.primary, html.site-light .mini-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+html.site-light button.primary:hover, html.site-light .mini-button.primary:hover { background: #6ba2ff; border-color: #6ba2ff; color: #fff; }
 html.site-light .mini-input, html.site-light .mini-select { background: #ffffff; color: #1c1e22; }
 html.site-light code { background: #e8eaed; }
 html.site-light .pill { background: #eef0f3; }
@@ -226,6 +234,12 @@ details.card > summary + * { margin-top: 12px; }
   color: #cdd2da;
   user-select: none;
 }
+/* 浅色下折叠子卡标题（基本信息/手势/状态变体/按键颜色覆盖等）加深，
+ * 否则浅灰白字浮浅底、看不清 */
+html.site-light .inner-card > summary { color: #1c1e22; }
+@media (prefers-color-scheme: light) {
+  html.site-auto .inner-card > summary { color: #1c1e22; }
+}
 .inner-card .inner-card-body { padding: 10px 12px; }
 
 .settings-block { padding: 10px 0; }
@@ -314,6 +328,10 @@ label.check { cursor: pointer; white-space: nowrap; }
 .form-row { margin: 6px 0; display: flex; flex-direction: column; gap: 4px; }
 .form-row.form-inline { flex-direction: row; align-items: center; gap: 8px; flex-wrap: wrap; }
 .form-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 14px; }
+/* 布局高度覆盖（竖屏/横屏两个数字框）：列宽按内容收紧、两格靠拢（左对齐不拉满整行），
+ * 输入框给到 130px（原来浏览器默认窄，placeholder「空=跟随全局」都显示不全）。 */
+.height-override-grid { grid-template-columns: auto auto; justify-content: start; gap: 4px 12px; }
+.height-override-grid .mini-input { width: 130px; flex: 0 0 auto; }
 
 /* jscolor 颜色输入框：色块即输入框背景，f5a-see-me 同款点击弹出 */
 .color-input { width: 150px; font-family: var(--mono); cursor: pointer; }
@@ -823,6 +841,11 @@ html.site-light .st-split { color: #2e8b57; }
 .gesture-row:last-child { border-bottom: none; }
 .gesture-name { font-size: 12.5px; min-width: 92px; color: #cdd2da; font-weight: 600; }
 .gesture-sum { font-size: 12px; color: var(--text-dim); flex: 1 1 120px; min-width: 0; word-break: break-all; }
+/* 浅色下手势名（点击/滑动/长按…）加深：#cdd2da 在白底上对比度只有 1.5，几乎隐形 */
+html.site-light .gesture-name { color: #1c1e22; }
+@media (prefers-color-scheme: light) {
+  html.site-auto .gesture-name { color: #1c1e22; }
+}
 
 /* ---------------- 按键定义列表 ---------------- */
 .def-item {
