@@ -717,11 +717,14 @@ var name = await FE.uiPrompt({ title, message, value, placeholder, required }); 
 ### 4.8 示例打包（tools/build-examples.js）
 
 - 读 `examples/*.json`，按内容判断 `kind`：`foxy.popup-profile` → `popup`，
-  `{multiLine, groups}`（无 `layouts`/`schemas`）→ `symbol`，否则 `layout`；
-  生成 `FE.EXAMPLE_FILES`（文件名 → 文本）、`FE.EXAMPLE_META`（文件名 → `{kind, desc}`）
-  与 `FE.SYMBOL_EXAMPLE_FILES`（**按符号类别**索引：`{symbols:{名:文本}, emoji:{}, kaomoji:{}}`）。
-- 布局页与弹出菜单页的示例下拉**各自按 kind 过滤**，所以新增示例只需丢进 `examples/`
-  再跑一次脚本，不用改 UI 代码。
+  `foxy.keyboard-layout` → `layout`，`foxy.keyboard-theme` → `theme`，
+  `{multiLine, groups}`（无 `layouts`/`schemas`）→ `symbol`，否则抛错；
+  生成 `FE.EXAMPLE_FILES`（文件名 → 文本）、`FE.EXAMPLE_META`（文件名 → `{kind, desc}`）、
+  `FE.SYMBOL_EXAMPLE_FILES`（**按符号类别**索引）与 `FE.THEME_EXAMPLE_FILES`（主题类索引）。
+- **四类文档各归各页，下拉只列自己那一类**：布局页列 `layout`、弹出菜单页列 `popup`、
+  符号页按类别列 `symbol`、主题页列 `theme`。
+  ⚠️ 布局下拉用的是**白名单**（`kind === 'layout'`）而不是黑名单排除：
+  将来再加文档类型时默认"不会被误列进来"，比逐个排除安全（混进去会在加载时直接解析失败）。
 - ⚠️ **解析一律走编辑器自己的 `FE.inspectJsonText`，别在本工具里另写正则剥离。**
   踩过的坑：原本用 `text.replace(/(^|[^:\\])\/\/.*$/gm,'$1')` 删行注释，那个正则不认识
   字符串，会把**字符串内部**的 `//` 当注释。颜文字 `(˶///˶)` 正中此枪 —— 该行后半段
@@ -732,6 +735,9 @@ var name = await FE.uiPrompt({ title, message, value, placeholder, required }); 
 - 符号类别的细分**只能靠文件名**（`颜文字`/`kaomoji`、`表情`/`emoji`、否则 `symbols`）：
   三者顶层结构完全一样，内容判不出类别。判不出时按 `symbols` 处理，**不报错**
   （内容合法就该能入库，猜错类别只影响归类）。
+- `desc` 的取值**按类型分**：布局/弹出菜单用 `author`，主题用 **`name`**
+  （主题通常没有 author，而 `name` 才是 App 用来定位那个文件的字段，
+  文件名与 name 不一致时让用户看到真实 name 更有用）。
 - 改了 `examples/` 里的任何文件后**必须**跑：
   ```
   node tools/build-examples.js
@@ -741,34 +747,46 @@ var name = await FE.uiPrompt({ title, message, value, placeholder, required }); 
 - 默认布局也由本脚本顺带产出：`examples/layout-variant.json` → `js/default-profile.js`。
   **换掉 `layout-variant.json` 等于换掉编辑器的内置默认布局**，别无意中动它。
 
-#### 示例源 = 工作区 `布局/`（映射与排除项）
+#### 示例源 = 工作区三个目录（映射与排除项）
 
-`examples/` 是工作区 `布局/` 的镜像（按用户要求做过整体替换）。映射规则与注意点：
+`examples/` 是工作区**三个源目录**的镜像：`布局/`、`符号表情定义文件/`、`主题配色/`。
+映射规则（做整体替换时照这张表）：
 
-| 工作区 `布局/` | → `examples/` |
+| 工作区源 | → `examples/` |
 |---|---|
-| 顶层 `*.json` | 同名保留 |
-| `思无邪@foxy/layouts/X.json` | `X.json`（如 `思无邪.json`）|
+| `布局/` 顶层 `*.json` | 同名保留（布局 + 弹出菜单）|
+| `思无邪@foxy/layouts【编辑大字】/X.json` | `X·大字.json`（如 `思无邪.json` → `思无邪·大字.json`）|
+| `思无邪@foxy/layouts【编辑小字】/X.json` | `X·小字.json` |
 | `思无邪@foxy/popups/X.json` | `X-popup.json`（如 `气泡.json` → `气泡-popup.json`）|
-| `符号表情定义文件/{符号,表情,颜文字}.json` | 同名保留（**符号类示例**）|
+| `思无邪@foxy/themes/X.json` | 同名保留（**主题类**）|
+| `符号表情定义文件/X.json` | 同名保留（**符号类**）|
+| `主题配色/X.json` | 同名保留（**主题类**）|
+
+> ⚠️ **`思无邪@foxy` 下两个 layouts 子目录里是同名文件**，必须加「大字/小字」后缀消歧，
+> 否则在 `examples/` 里直接撞名（镜像脚本会拒绝执行并列出冲突）。
+> 后缀**追加在文件名末尾**（不是插到第一个 `·` 后面）：
+> `思无邪·气泡.json` → `思无邪·气泡·大字.json`。
 
 **排除项（不要入库）**：
 
-- **主题文件**（`foxy.keyboard-theme`，如 `思无邪@foxy/themes/春.json`）—— **不要**入库：
-  类型判定只认 `foxy.popup-profile` / `foxy.keyboard-layout` / `{multiLine,groups}`
-  （或唯一的 `layouts`/`schemas` 结构），主题都不是 → 直接抛「无法判断示例类型」。
-  主题改由「主题」页的**载入内置默认**与单文件导入覆盖，不进 `examples/`。
 - `简易/`（`definitions.json` + `layouts/*.json` + `popups/*.json`）—— **分包**，
   薄布局单独校验有 1.6 万个「ref 无法解析」，必须与 `definitions.json` 合并才有效。
   它保留在工作区里作为「多文件包导入」的实测语料（见 §4.9 / test-core 的 `布局/简易` 用例），
   **不要**拆成单文件塞进 `examples/`。
 
-> 🔄 **修订**：`符号.json` / `表情.json` / `颜文字.json` **已入库**（用户明确要求
-> "预置到示例里面"）。旧记载说它们不能入库，真实原因是**打包器认不出
-> `{multiLine, groups}` 这个类型**（会抛「无法判断示例类型」），并非格式本身不该入库 ——
-> 现已给打包器补上 `symbol` 分支，三份文件正常打包（35/58/15 组）。
-> 连带要同步的地方（**都已改**，别回退）：`test/check-real-files.js` 的符号校验分支、
-> `test/test-core.js` 示例遍历的符号分流、`symbol-editor.js` 的「载入示例」入口。
+> 🔄 **修订（本轮）**：`主题配色/`（17 份）与 `思无邪@foxy/themes/春.json` **已入库**
+> （用户要求"更新网页的预置示例"）。旧记载说主题不能入库，真实原因是**打包器认不出
+> `foxy.keyboard-theme` 这个类型**（会抛「无法判断示例类型」），并非格式本身不该入库 ——
+> 现已给打包器补上 `theme` 分支与 `FE.THEME_EXAMPLE_FILES` 索引。
+> **连带要同步的地方（都已改，别回退）**：
+> `test/check-real-files.js` 的主题校验分支（+ 加载 `theme-editor.js`，
+> 否则 `FE.normalizeThemeProfile` 未定义直接抛）、
+> `test/test-core.js` 示例遍历的主题分流、`theme-editor.js` 的「载入示例」入口。
+
+> 🔄 **修订（上一轮）**：`符号.json` / `表情.json` / `颜文字.json` 已入库，
+> 同理是打包器补上了 `symbol` 分支。**注意预置内容会随源目录更新而变化**
+> （如 `表情.json` 从 58 组变成 10 组）—— 测试里**不要写死某个预置的分组数**，
+> 该动态挑"分组最多的预置"来压那条路径（`test-ui.js` 已这么改，踩过假红一条）。
 
 > 历史：`examples/split.json` 已被 `布局/split2.json` 取代（split2 是超集：
 > 多 `cangjie5` 的 split 片段与 `text_editor` 布局，布局数 3 → 4）。

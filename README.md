@@ -342,7 +342,7 @@ foxy-editor/
 │   ├── theme-editor.js   主题文件编辑（foxy.keyboard-theme）
 │   ├── symbol-editor.js  符号 / emoji / 颜文字面板编辑
 │   └── symbol-preview.js 符号面板预览（对照 App 实机显示；切到符号页时替换键盘预览）
-├── examples/             示例（23 个：16 布局 + 4 弹出菜单 + 3 符号，源自工作区 `布局/`）
+├── examples/             示例（46 个：21 布局 + 4 弹出菜单 + 3 符号 + 18 主题）
 ├── skills/               格式规范（随仓库分发的 skill 文档 + 3 个 JSON Schema）
 ├── AGENT.md              改这个编辑器之前先读（决断 / 约定 / 坑 / 工作流）
 ├── tools/
@@ -367,10 +367,22 @@ node test/check-real-files.js # 用真实示例文件跑一遍体检
 改了 `examples/` 下的文件后，运行 `node tools/build-examples.js` 重新打包。
 该脚本同时用 `examples/layout-variant.json` 生成 `js/default-profile.js`（编辑器内置默认布局）。
 
-`examples/` 是工作区 `布局/` 文件夹的镜像。其中 `符号.json` / `表情.json` / `颜文字.json`
-是**符号面板数据**（`{multiLine, groups}`，不是布局），也已入库并作为符号页的预置示例；
-`布局/简易/` 是分包布局，**不能**拆成单文件入库。映射与排除规则见
-[`AGENT.md`](AGENT.md) §4.8。
+`examples/` 是工作区三个源文件夹的镜像：`布局/`、`符号表情定义文件/`、`主题配色/`。
+共 46 份，分四类，各归各页：
+
+| 类别 | 份数 | 出现在 |
+|---|---|---|
+| 布局 | 21 | 「加载示例」下拉（布局编辑页） |
+| 弹出菜单 | 4 | 「弹出菜单」页 |
+| 符号 / emoji / 颜文字 | 3 | 「符号面板」页（按类别列出） |
+| 主题 | 18 | 「主题」页（显示名用主题自己的 `name`） |
+
+- 主题预置含 17 份配色方案（爱马仕橙、克莱因蓝、dracula、monokai、solarized…）
+  与思无邪的 `春`，可直接当起点改；
+- 符号预置是真实符号表（符号 63 组 / 表情 10 组 / 颜文字 20 组）；
+- `布局/简易/` 是**分包**布局（`definitions.json` + `layouts/` + `popups/`），
+  必须合并导入才有效，**不能**拆成单文件入库。映射与排除规则见
+  [`AGENT.md`](AGENT.md) §4.8。
 
 ## 在电脑上测竖屏
 
