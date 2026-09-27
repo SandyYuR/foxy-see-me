@@ -194,7 +194,9 @@ foxy-editor/
 ├── AGENT.md           本文件（改前必读；工作区根还有一份副本，见开头「本文件有两份」）
 ├── tools/
 │   ├── build-examples.js      重新生成 examples-bundle.js
-│   └── check-agent-sync.js    校验/同步两处 AGENT.md（--write 以外层副本同步）
+│   ├── check-agent-sync.js    校验/同步两处 AGENT.md（--write 以外层副本同步）
+│   ├── mobile-preview.js      手机竖屏实测（需自装 playwright-core，不进仓库）
+│   └── site-theme-preview.js  网页配色实测：顶栏三按钮 + 整站明暗切换（同上，用完即删依赖）
 └── test/
     ├── test-core.js   纯逻辑测试（Node，无 DOM）
     ├── test-ui.js     UI 冒烟测试（Node + 自制 DOM 桩）
@@ -239,9 +241,13 @@ data.js → default-profile.js → examples-bundle.js → app.js
   - `state.profile` 布局文档、`state.popupProfile` 弹出菜单文档
   - `state.status`（composing/ascii_mode/disabled/shift）驱动预览状态变体
   - `state.splitMode` 分体模式；`state.portraitW` 竖屏基准宽度（见 §5.2）
+  - `state.theme` 键盘预览配色（深/浅，只管键盘那块；见 §4.14）
   - `state.compiled` 预览的编译产物（`FE.compileLayout` 结果）。每次 `renderPreview` 重建，
     **是缓存不是事实来源**，随时可丢弃重算（见 §3.3）
   - `state.jsonDirty` 标记布局 JSON 卡片里用户手改未应用的文本
+  - ⚠️ 网页配色（整站明暗）**不在 state 里**：它是纯表现层选择（`foxy-editor-site-theme`），
+    存在独立 localStorage key，由 `applySiteTheme()` 直接写 `<html>` 类（见 §4.14）。
+    不进 state、不进撤销栈、不参与 `renderAll`。
 - **渲染入口**：`renderAll()` 依次调
   `renderPreview / renderLayoutTab / renderKeysTab / renderActionsTab / renderJsonTab
    / renderOps / updateUndoButtons / FE.renderPopupTab()`。
@@ -1067,6 +1073,29 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
 - ⚠️ 测试里比较 DOM 节点**必须用 `ok(a === b)`，不能用 `eq(a, b)`**：
   `eq()` 内部 `JSON.stringify` 两边，而 DOM 节点有循环引用
   （`parentNode` ↔ `children`）会直接抛「Converting circular structure to JSON」。
+
+### 4.14 网页配色（整站明暗主题）与键盘配色的区别
+
+容易混的两套"主题"，管的东西完全不同：
+
+| | 整站网页配色 | 键盘预览配色 |
+|---|---|---|
+| 管什么 | 顶栏/卡片/按钮/输入框等整站 | 只管预览键盘那块（`.kb`） |
+| 状态 | **不在 `FE.state` 里**（纯表现层） | `state.theme`（`dark`/`light`） |
+| 存哪 | `localStorage['foxy-editor-site-theme']` | 布局草稿 `LS_KEY` 的 JSON 里（随草稿走） |
+| 落点 | `<html>` 的 `site-auto/site-light/site-dark` 类 | `#preview-kb` 的 `kb-dark/kb-light` 类 |
+
+- **三档**：`auto`（默认，跟随 `prefers-color-scheme`，系统切换时 CSS 媒体查询自动生效、
+  无需 JS 监听）/ `light` / `dark`。`site-dark` = 暗色基准（`:root` 现状），无覆盖；
+  浅色整套覆盖写在 `html.site-light` 下，`site-auto` 档在浅色系统里复用同一套
+  （`@media (prefers-color-scheme: light) { html.site-auto { ... } }`）。
+- **接线**：顶栏右侧 `.site-theme-group` 三图标按钮（`site-theme-auto/light/dark`，无文字、
+  当前档 `.active` 高亮 + `aria-pressed`），`initSiteTheme()` 在 `boot()` 里先于
+  `initToolbar()` 执行（首屏先落类，避免闪错主题）。非法存值回退 `auto`。
+- **GitHub 按钮位置**：标题后的纯图标按钮（`#repo-link.repo-link-title`，无 `<span>` 文字），
+  与标题链接同处一个 `h1`；顶栏右侧不再放 GitHub。
+- ⚠️ `index.html` 加/删元素必须同步 `buildSkeleton()`（§5.1 表格已有）；`<html>` 的
+  `classList` 桩在 `documentElement` 上（裸对象，需手写 `classList` 访问器，见 dom-stub）。
 
 ---
 

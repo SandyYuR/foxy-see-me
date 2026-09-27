@@ -1714,7 +1714,51 @@ if (typeof document === 'undefined' || typeof window === 'undefined' ||
 }
 
 var LS_KEY = 'foxy-layout-editor-draft-v1';
+var SITE_THEME_KEY = 'foxy-editor-site-theme';   /* 网页配色：auto / light / dark，默认 auto */
 var $ = function (id) { return document.getElementById(id); };
+
+/* ---------------- 网页配色（整站明暗主题） ----------------
+ * 与键盘预览的 state.theme（只管键盘那块）无关：这里管的是整站。
+ * 三档：auto（默认，跟随 prefers-color-scheme）/ light / dark。
+ * 落到 <html> 的 site-auto / site-light / site-dark 三类上，CSS 按类覆盖变量；
+ * auto 档本身无覆盖，靠媒体查询自动跟系统（系统切换时无需 JS 介入）。
+ * 选择进 localStorage（与布局草稿分 key 存，互不干扰）；读到非法值回退 auto。 */
+function siteThemeMode() {
+  var v = null;
+  try { v = localStorage.getItem(SITE_THEME_KEY); } catch (e) { v = null; }
+  if (v === 'light' || v === 'dark' || v === 'auto') return v;
+  return 'auto';
+}
+function applySiteTheme(mode) {
+  var root = (typeof document !== 'undefined' && document.documentElement) || null;
+  if (root && root.classList) {
+    root.classList.remove('site-auto', 'site-light', 'site-dark');
+    root.classList.add(mode === 'light' ? 'site-light' : mode === 'dark' ? 'site-dark' : 'site-auto');
+  }
+  /* 三图标按钮的高亮与 aria-pressed 跟随当前档 */
+  [['site-theme-auto', 'auto'], ['site-theme-light', 'light'], ['site-theme-dark', 'dark']].forEach(function (pair) {
+    var b = $(pair[0]);
+    if (!b || !b.classList) return;
+    var on = (mode === pair[1]);
+    if (on) b.classList.add('active'); else b.classList.remove('active');
+    if (b.setAttribute) b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+function setSiteTheme(mode) {
+  if (mode !== 'light' && mode !== 'dark') mode = 'auto';
+  try { localStorage.setItem(SITE_THEME_KEY, mode); } catch (e) { /* 忽略存储失败 */ }
+  applySiteTheme(mode);
+}
+function initSiteTheme() {
+  applySiteTheme(siteThemeMode());
+  var auto = $('site-theme-auto'), light = $('site-theme-light'), dark = $('site-theme-dark');
+  if (auto) auto.addEventListener('click', function () { setSiteTheme('auto'); });
+  if (light) light.addEventListener('click', function () { setSiteTheme('light'); });
+  if (dark) dark.addEventListener('click', function () { setSiteTheme('dark'); });
+}
+FE.siteThemeMode = siteThemeMode;
+FE.setSiteTheme = setSiteTheme;
+FE.applySiteTheme = applySiteTheme;
 
 /* ---------------- DOM 构建辅助 ---------------- */
 function h(tag, attrs) {
@@ -5219,6 +5263,7 @@ FE.performGridDrop = performGridDrop;
 
 function boot() {
   initTabs();
+  initSiteTheme();   /* 网页配色先落类，避免首屏闪一下错误的主题 */
   initToolbar();
   var loaded = false;
   try {

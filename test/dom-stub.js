@@ -376,7 +376,13 @@ const documentElement = {
   nodeType: 1,
   tagName: 'HTML',
   scrollTop: 0,
-  scrollLeft: 0
+  scrollLeft: 0,
+  /* <html> 的 classList：网页配色（site-auto/site-light/site-dark）挂在这里。
+   * 用 DOMNode 的那套 ClassList 语义，与真实 classList 一致。 */
+  _cls: new ClassList(),
+  get classList() { return this._cls; },
+  get className() { return Array.from(this._cls._set).join(' '); },
+  set className(v) { this._cls._replace(v); }
 };
 
 const documentStub = {
@@ -606,22 +612,27 @@ function buildSkeleton() {
       el('div', { id: 'popup-json-status', class: 'status' })));
 
   main.append(previewPanel, tabs, tabLayout, tabKeys, tabActions, tabPopup);
-  /* 顶栏：标题（本身是仓库链接）+ 右侧仓库链接与常驻撤销/重做按钮（与 index.html 保持同步） */
+  /* 顶栏：标题（项目名 + 其后的仓库图标按钮）+ 右侧网页配色三图标按钮与常驻撤销/重做（与 index.html 保持同步） */
   const header = el('header', { class: 'topbar' });
   header.appendChild(el('div', { class: 'topbar-main' },
     el('div', { class: 'topbar-title' },
-      el('h1', null, el('a', {
-        class: 'brand-link', id: 'repo-title-link',
-        href: 'https://github.com/SandyYuR/foxy-see-me',
-        target: '_blank', rel: 'noopener noreferrer'
-      }, '🦊 小狐狸 see me')),
+      el('h1', null,
+        el('a', {
+          class: 'brand-link', id: 'repo-title-link',
+          href: 'https://github.com/SandyYuR/foxy-see-me',
+          target: '_blank', rel: 'noopener noreferrer'
+        }, '🦊 小狐狸 see me'),
+        el('a', {
+          class: 'repo-link repo-link-title', id: 'repo-link',
+          href: 'https://github.com/SandyYuR/foxy-see-me',
+          target: '_blank', rel: 'noopener noreferrer'
+        }, 'GitHub')),
       el('h2', null, 'Foxy 键盘布局可视化编辑器')),
     el('div', { class: 'topbar-actions' },
-      el('a', {
-        class: 'repo-link', id: 'repo-link',
-        href: 'https://github.com/SandyYuR/foxy-see-me',
-        target: '_blank', rel: 'noopener noreferrer'
-      }, 'GitHub'),
+      el('div', { class: 'site-theme-group' },
+        el('button', { id: 'site-theme-auto', class: 'mini-button icon-only site-theme-btn active' }),
+        el('button', { id: 'site-theme-light', class: 'mini-button icon-only site-theme-btn' }),
+        el('button', { id: 'site-theme-dark', class: 'mini-button icon-only site-theme-btn' })),
       el('span', { class: 'topbar-sep' }),
       el('button', { id: 'top-undo', class: 'mini-button', disabled: 'disabled' }),
       el('button', { id: 'top-redo', class: 'mini-button', disabled: 'disabled' }))));

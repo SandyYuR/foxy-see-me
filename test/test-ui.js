@@ -2111,13 +2111,23 @@ await sleep(350);
   const titleLink = $('repo-title-link');
   const repoLink = $('repo-link');
   const REPO_URL = 'https://github.com/SandyYuR/foxy-see-me';
-  ok(titleLink && repoLink, '顶栏存在两处项目仓库链接（标题 + 右侧）');
+  ok(titleLink && repoLink, '顶栏存在两处项目仓库链接（标题 + 标题后的图标按钮）');
   eq(titleLink.getAttribute('href'), REPO_URL, '标题链接指向本项目仓库');
-  eq(repoLink.getAttribute('href'), REPO_URL, '右侧链接指向本项目仓库');
-  eq(repoLink.getAttribute('target'), '_blank', '右侧链接在新标签页打开');
+  eq(repoLink.getAttribute('href'), REPO_URL, '标题后的图标按钮指向本项目仓库');
+  eq(repoLink.getAttribute('target'), '_blank', '图标按钮在新标签页打开');
   eq(titleLink.getAttribute('rel'), 'noopener noreferrer', '标题链接带 rel=noopener noreferrer');
-  eq(repoLink.getAttribute('rel'), 'noopener noreferrer', '右侧链接带 rel=noopener noreferrer');
+  eq(repoLink.getAttribute('rel'), 'noopener noreferrer', '图标按钮带 rel=noopener noreferrer');
   ok(/小狐狸 see me/.test(titleLink.textContent), '标题链接文本仍含项目名');
+  /* GitHub 按钮已搬到标题后面：图标按钮挂在 h1 内、标题链接之后，且无文字 */
+  ok(repoLink.parentNode === titleLink.parentNode, '图标按钮与标题链接在同一 h1 内');
+  /* 桩里 svg 是 innerHTML 占位（无文本节点），故断言「无 <span> 文字子元素」而非 textContent */
+  ok(!repoLink.querySelector('span'), '标题后的 GitHub 按钮无文字（纯图标，无 span）');
+  ok(repoLink.classList.contains('repo-link-title'), '图标按钮带 repo-link-title 紧凑样式类');
+  /* 顶栏右侧不再有 GitHub 文字按钮，取而代之的是三个网页配色图标按钮 */
+  ok(!q('.topbar-actions .repo-link').length, '顶栏右侧不再放 GitHub 按钮');
+  ok($('site-theme-auto') && $('site-theme-light') && $('site-theme-dark'), '右侧有自动/亮色/暗色三个配色按钮');
+  ok(q('.topbar-actions .site-theme-btn').length === 3, '配色按钮恰好三个（无文字，图标区分）');
+  ok(q('.site-theme-btn').every(b => !b.querySelector('span')), '三个配色按钮都无文字（纯图标，无 span）');
   /* 参照项目的说明链接在 index.html 的副标题里（DOM 桩只还原顶栏骨架，故查源码） */
   const htmlSrc = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   ok(htmlSrc.indexOf('github.com/SandyYuR/f5a-see-me') >= 0, '正文仍保留参照项目 f5a-see-me 的说明链接');
@@ -2125,6 +2135,41 @@ await sleep(350);
   const pageTitle = htmlSrc.match(/<title>([\s\S]*?)<\/title>/)[1];
   ok(pageTitle.indexOf('🦊') < 0, '页面 <title> 不再带狐狸图标（避免与 favicon 重复）');
   ok(pageTitle.indexOf('小狐狸 see me') >= 0, '页面 <title> 仍含项目名');
+
+  console.log('== 网页配色：自动/亮色/暗色 ==');
+  /* 默认自动：<html> 挂 site-auto，自动按钮高亮 */
+  eq(FE.siteThemeMode(), 'auto', '默认网页配色为自动跟随系统');
+  ok(documentStub.documentElement.classList.contains('site-auto'), '默认 <html> 带 site-auto');
+  ok($('site-theme-auto').classList.contains('active'), '默认自动按钮高亮');
+  /* 切亮色：类 + 高亮 + 持久化三处同步 */
+  $('site-theme-light').click();
+  eq(FE.siteThemeMode(), 'light', '点亮色后模式为 light');
+  ok(documentStub.documentElement.classList.contains('site-light'), '亮色下 <html> 带 site-light');
+  ok(!documentStub.documentElement.classList.contains('site-auto'), '亮色下 site-auto 已摘掉');
+  ok($('site-theme-light').classList.contains('active'), '亮色按钮高亮');
+  ok(!$('site-theme-auto').classList.contains('active'), '自动按钮高亮摘掉');
+  eq($('site-theme-light').getAttribute('aria-pressed'), 'true', '亮色按钮 aria-pressed 置 true');
+  /* 切暗色：回落暗色基准（无浅色覆盖），选择同样持久化 */
+  $('site-theme-dark').click();
+  eq(FE.siteThemeMode(), 'dark', '点暗色后模式为 dark');
+  ok(documentStub.documentElement.classList.contains('site-dark'), '暗色下 <html> 带 site-dark');
+  ok($('site-theme-dark').classList.contains('active'), '暗色按钮高亮');
+  /* 切回自动：跟随系统（桩里无媒体查询，只验类与持久化） */
+  $('site-theme-auto').click();
+  eq(FE.siteThemeMode(), 'auto', '点自动后回到 auto');
+  ok(documentStub.documentElement.classList.contains('site-auto'), '自动下 <html> 带 site-auto');
+  ok($('site-theme-auto').classList.contains('active'), '自动按钮重新高亮');
+  /* 非法存值回退自动，不抛错 */
+  global.localStorage.setItem('foxy-editor-site-theme', 'oops');
+  FE.applySiteTheme(FE.siteThemeMode());
+  eq(FE.siteThemeMode(), 'auto', '非法存值回退为 auto');
+  ok(documentStub.documentElement.classList.contains('site-auto'), '非法存值后 <html> 仍是 site-auto');
+  /* 网页配色与键盘预览配色互不干扰：各管各的 state（此轮前面刚把键盘切到深色） */
+  eq(FE.state.theme, 'dark', '（前置）键盘预览仍是深色（上一组刚切的）');
+  $('site-theme-light').click();
+  eq(FE.siteThemeMode(), 'light', '切网页亮色不影响键盘配色 state');
+  eq(FE.state.theme, 'dark', '键盘预览仍是深色（网页配色没动它）');
+  $('site-theme-auto').click();
 
   console.log('== 校验条目点击定位 ==');
   FE.applyProfileText(JSON.stringify({
@@ -2801,6 +2846,17 @@ await sleep(350);
    * 将来整站浅色的 button 白底（tag 选择器）会透进来。桩量不到计算样式，查源码锁规则。 */
   ok(/\.theme-light\s+\.row-block\s+\.icon-button\s*\{[^}]*background:\s*#cfd2d7/.test(cssSrc), '浅色键盘行头按钮底色与行块底同色（融进背景）');
   ok(/\.theme-dark\s+\.row-block\s+\.icon-button\s*\{[^}]*background:\s*#191a1e/.test(cssSrc), '深色键盘行头按钮底色与行块底同色（不受整站浅色影响）');
+  /* 浅色下 pill 选中态蓝底必须赢回浅色 `.pill` 覆盖：`html.site-light .pill`
+   * 权重 (0,2,1) 高过 `.pill.active` 的 (0,2,0)（多一个 html tag），不单独写，
+   * 选中态就是白字浮浅灰底、几乎看不见（常规/分体 pill 与布局 pills 同病） */
+  ok(/html\.site-light\s+\.pill\.active\s*\{[^}]*background:\s*var\(--accent\)/.test(cssSrc), '浅色下 pill 选中态蓝底赢回（常规/分体布局可辨识）');
+  /* 浅色下图例三色与分体标记加深（浅蓝/浅橙/浅绿为深底调的，白底上对比不够） */
+  ok(/html\.site-light\s+\.preview-legend\s+\.lg-lp\s*\{[^}]*color:\s*#1f6fb8/.test(cssSrc), '浅色下图例蓝色加深');
+  ok(/html\.site-light\s+\.preview-legend\s+\.lg-hold\s*\{[^}]*color:\s*#b26a00/.test(cssSrc), '浅色下图例橙色加深');
+  ok(/html\.site-light\s+\.preview-legend\s+\.lg-popup\s*\{[^}]*color:\s*#2e8b57/.test(cssSrc), '浅色下图例绿色加深');
+  ok(/html\.site-light\s+\.st-split\s*\{[^}]*color:\s*#2e8b57/.test(cssSrc), '浅色下分体标记加深');
+  /* 浅色下未选中 tab 给浅灰底（否则被 button 白底盖成全白，与选中只差字色字重） */
+  ok(/html\.site-light\s+\.tab:not\(\.active\)\s*\{[^}]*background:\s*#eef0f3/.test(cssSrc), '浅色下未选中标签浅灰底（选中白底，对比拉开）');
 
 }   /* 结束 await sleep(350) 后的主体块 */
 
