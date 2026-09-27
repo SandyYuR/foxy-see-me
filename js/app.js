@@ -1851,6 +1851,7 @@ function afterChange() {
 FE.mutate = mutate;
 FE.afterChange = afterChange;
 FE.renderAll = function () { renderAll(); };
+FE.syncEditorTheme = syncEditorTheme;
 
 /* ---------------- 页面滚动位置保持 ----------------
  * 重建列表时先 clearEl 再 append，中间那一刻文档变矮；再加上「焦点元素被移除」
@@ -3059,6 +3060,19 @@ function renderLayoutSettings() {
 }
 
 /* ---------------- 区段编辑器 ---------------- */
+/* 键盘主题类（theme-light/theme-dark）同步到编辑区 host：布局编辑、弹出菜单页、
+ * 对话框（openModal 传 dlg 进来）里的 chip 共用同一套跟随规则（见 style.css），
+ * 有 chip 的祖先都要打类。pt-theme 即时切换只切类、不重渲染，重渲染路径走各自 render。 */
+function editorThemeClass() { return state.theme === 'light' ? 'theme-light' : 'theme-dark'; }
+function applyEditorTheme(el) {
+  if (!el || !el.classList) return;
+  el.classList.remove('theme-dark', 'theme-light');
+  el.classList.add(editorThemeClass());
+}
+function syncEditorTheme(extra) {
+  [$( 'layout-sections'), $('popup-keys')].forEach(applyEditorTheme);
+  if (extra) applyEditorTheme(extra);
+}
 function renderSectionsEditor() {
   var host = $('layout-sections');
   /* 重建前记下各网格画布的横向位置，建好后认领回去。**必须在这里做**：
@@ -3068,8 +3082,7 @@ function renderSectionsEditor() {
   var gridScroll = captureGridScroll();
   clearEl(host);
   /* 布局编辑里可点击编辑的按键（chip / gedit-key）跟随预览键盘配色（state.theme） */
-  host.classList.remove('theme-dark', 'theme-light');
-  host.classList.add(state.theme === 'light' ? 'theme-light' : 'theme-dark');
+  syncEditorTheme();
   var L = curLayout();
   var hasSplit = !!(L && isPlainObject(L.split));
 
@@ -5161,9 +5174,8 @@ function initToolbar() {
   $('pt-theme').addEventListener('change', function () {
     state.theme = this.value;
     renderPreview();
-    /* 布局编辑按键即时跟随配色：只切父容器主题类，无需整块重渲染 */
-    var ls = $('layout-sections');
-    if (ls) { ls.classList.remove('theme-dark', 'theme-light'); ls.classList.add(state.theme === 'light' ? 'theme-light' : 'theme-dark'); }
+    /* 布局编辑与弹出菜单页按键即时跟随配色：只切父容器主题类，无需整块重渲染 */
+    syncEditorTheme();
     if (FE.renderPopupTab) FE.renderPopupTab();
   });
   $('pt-status-text').addEventListener('input', function () { state.statusSample = this.value; renderPreview(); });
@@ -5314,6 +5326,13 @@ FE.movePlacement = movePlacement;
 /* 供测试：指针拖动的落点数据变更（目标解析依赖 elementFromPoint，另在浏览器内验证） */
 FE.performChipDrop = performChipDrop;
 FE.performGridDrop = performGridDrop;
+/* 指针拖动基座供 popup-editor.js 复用：候选 chip 拖动排序与布局 chip 同一套手感
+ * （6px 阈值 + ghost 跟随 + drop 高亮 + 拖后 250ms 内压住 click）。 */
+FE.attachPointerDrag = attachPointerDrag;
+FE.elemFromPoint = elemFromPoint;
+FE.findAncestor = findAncestor;
+FE.clearAllDropMarks = clearAllDropMarks;
+FE.pointerDragSuppressClick = pointerDragSuppressClick;
 
 function boot() {
   initTabs();

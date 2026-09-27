@@ -14,6 +14,10 @@ function openModal(opts) {
   opts = opts || {};
   var dlg = document.createElement('dialog');
   dlg.className = 'editor-dialog' + (opts.wide ? ' wide' : '');
+  /* 对话框内的候选 chip（弹出菜单 section 等）跟随键盘主题：
+   * 与 #layout-sections / #popup-keys 同套规则，祖先打类即可（见 app.js syncEditorTheme）。 */
+  if (FE.syncEditorTheme) { try { FE.syncEditorTheme(dlg); } catch (e) { /* 忽略 */ } }
+  else if (state) { dlg.classList.add(state.theme === 'light' ? 'theme-light' : 'theme-dark'); }
   var form = h('form', { method: 'dialog', class: 'editor-form' });
   var titlebar = h('div', { class: 'dialog-titlebar' }, h('h3', null, opts.title || ''));
   var body = h('div', { class: 'dialog-body' });
