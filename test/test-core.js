@@ -340,13 +340,22 @@ console.log('== 工作区示例文件 ==');
 for (const f of fs.readdirSync(exDir)) {
   const raw = fs.readFileSync(path.join(exDir, f), 'utf8');
   const parsed = JSON.parse(FE.sanitizeJsonText(raw));
-  /* ⚠️ examples/ 里现在有**三类**文件，不能一律当布局校验：
+  /* ⚠️ examples/ 里现在有**四类**文件，不能一律当布局校验：
    *   · 弹出菜单  → type foxy.popup-profile / 有 schemas
+   *   · 主题      → type foxy.keyboard-theme
    *   · 符号面板  → {multiLine, groups}（无 layouts/schemas）
    *   · 布局      → 其余
-   * 少了符号这条分支，三个符号文件会被 validateProfile 判成
-   * 「layouts 必须是非空对象」（踩过：新增预置符号后 core 直接红 3 条）。
+   * 少了符号那条，三个符号文件会被 validateProfile 判成「layouts 必须是非空对象」
+   * （踩过：新增预置符号后 core 直接红 3 条）；主题同理，还会多报一条
+   * 「type 必须为 foxy.keyboard-layout」（踩过：新增 18 份主题后红 18 条）。
    * 判定口径与 tools/build-examples.js、test/check-real-files.js 保持一致。 */
+  if (parsed.type === 'foxy.keyboard-theme') {
+    const tp = FE.normalizeThemeProfile(parsed);
+    const r = FE.validateThemeProfile(tp);
+    eq(r.errors, [], f + '（主题）无错误');
+    ok(tp.light || tp.dark, f + '（主题）至少有一个槽位');
+    continue;
+  }
   if (Array.isArray(parsed.groups) && !parsed.layouts && !parsed.schemas) {
     const kind = /颜文字|kaomoji/i.test(f) ? 'kaomoji'
       : (/表情|emoji/i.test(f) ? 'emoji' : 'symbols');

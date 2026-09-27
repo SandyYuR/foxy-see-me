@@ -16,6 +16,10 @@ load('popup-editor.js');
 /* 符号文件（{multiLine, groups}）的校验要用 normalizeSymbolProfile/符号类别元数据，
  * 所以在 symbol-editor.js 之后再取 FE —— 少了它，体检遇到符号文件会直接抛。 */
 load('symbol-editor.js');
+/* 主题文件（foxy.keyboard-theme）的校验要用 normalizeThemeProfile/validateThemeProfile，
+ * 同理必须在取 FE 之前加载 theme-editor.js（这两个函数定义在它的 UI 段**之前**，
+ * 所以本脚本没有 document 也能拿到）。 */
+load('theme-editor.js');
 const FE = global.FE;
 
 /* 收集目标文件 */
@@ -46,9 +50,16 @@ for (const p of files) {
    * 会被 normalizeProfile/validateProfile 当成"缺 layouts 的布局"而误报错误。
    * 判定与 tools/build-examples.js 保持同一套（顶层有 groups 且无 layouts/schemas）。 */
   const isSymbol = parsed && Array.isArray(parsed.groups) && !parsed.layouts && !parsed.schemas;
+  /* 主题文件（foxy.keyboard-theme）也不是布局 —— 同样必须分流：
+   * 否则会被 validateProfile 判「type 必须为 foxy.keyboard-layout」+「layouts 必须是非空对象」，
+   * 一个文件两条假错误（实测加入 18 份主题后体检报 18 个文件存在错误）。 */
+  const isTheme = parsed && parsed.type === 'foxy.keyboard-theme';
 
   let errs = [], warns = [];
-  if (parsed && isSymbol) {
+  if (parsed && isTheme) {
+    const r = FE.validateThemeProfile(FE.normalizeThemeProfile(parsed));
+    errs = r.errors; warns = r.warnings;
+  } else if (parsed && isSymbol) {
     const kinds = ['symbols', 'emoji', 'kaomoji'];
     const kind = kinds.find(k => name.toLowerCase().indexOf(k) >= 0) ||
       (/颜文字|kaomoji/i.test(name) ? 'kaomoji' : (/表情|emoji/i.test(name) ? 'emoji' : 'symbols'));

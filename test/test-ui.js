@@ -3629,6 +3629,83 @@ await sleep(350);
       .forEach(f => ok(allNames.includes(f), 'LETTER 含字段 ' + f));
   }
 
+  /* ================================================================
+   * 预置示例：四类文档各归各页，互不串台
+   *
+   * examples/ 是工作区 `布局/` + `符号表情定义文件/` + `主题配色/` 三个源目录的镜像，
+   * 现在共有**四类**文件（布局/弹出菜单/符号/主题）。这组断言钉住两件事：
+   *   ① 每个下拉只列自己那一类（布局下拉混入主题会在加载时直接解析失败）；
+   *   ② 预置是真的可用（载入后进 state、能过校验），不是只在下拉里挂个名字。
+   * ================================================================ */
+  console.log('== 预置示例：分类与可用性 ==');
+  {
+    const savedThemeProfile = FE.state.themeProfile;
+    const savedThemeFile = FE.state.themeFileName;
+    try {
+      /* ① 打包分类统计：四类都要有（少一类说明 build-examples 的类型判定漏了分支） */
+      const kinds = {};
+      Object.keys(FE.EXAMPLE_META || {}).forEach(n => {
+        const k = FE.EXAMPLE_META[n].kind;
+        kinds[k] = (kinds[k] || 0) + 1;
+      });
+      ok(kinds.layout > 0, '示例含布局类（' + kinds.layout + ' 个）');
+      ok(kinds.popup > 0, '示例含弹出菜单类（' + kinds.popup + ' 个）');
+      ok(kinds.symbol > 0, '示例含符号类（' + kinds.symbol + ' 个）');
+      ok(kinds.theme > 0, '示例含主题类（' + kinds.theme + ' 个）');
+      ok(FE.THEME_EXAMPLE_FILES && Object.keys(FE.THEME_EXAMPLE_FILES).length === kinds.theme,
+        'FE.THEME_EXAMPLE_FILES 与 theme 类数量一致（' +
+        (FE.THEME_EXAMPLE_FILES ? Object.keys(FE.THEME_EXAMPLE_FILES).length : 0) + '）');
+
+      /* ② 布局下拉**只列布局类** —— 这是白名单（kind === 'layout'），
+       *    混进主题/符号/弹出菜单任何一种，加载时都会解析失败。 */
+      tabs[0]._fire('click');
+      const layoutOpts = Array.from($('op-example').children || [])
+        .map(o => o.getAttribute('value'))
+        .filter(v => v && v !== '__builtin__');
+      ok(layoutOpts.length > 0, '布局下拉有 ' + layoutOpts.length + ' 个示例');
+      const leaked = layoutOpts.filter(v => FE.EXAMPLE_META[v] && FE.EXAMPLE_META[v].kind !== 'layout');
+      eq(leaked, [], '★ 布局下拉没有混入非布局类（混入=' + leaked.join(',') + '）');
+      ok(layoutOpts.indexOf('layout-variant.json') >= 0,
+        '布局下拉仍含 layout-variant.json（内置默认布局的来源，不能被镜像清掉）');
+
+      /* ③ 主题下拉列出预置主题，且**显示名用主题自己的 name**（App 端按 name 定位文件，
+       *    文件名只是给人看的标签；两者不一致时让用户看到真实 name 更有用） */
+      tabs.find(t => t.dataset.tab === 'tab-theme')._fire('click');
+      const thOpts = Array.from($('th-example').children || [])
+        .map(o => ({ v: o.getAttribute('value'), t: String(o.textContent || '') }));
+      const presetOpts = thOpts.filter(o => o.v && o.v !== '__builtin__');
+      eq(presetOpts.length, kinds.theme, '★ 主题下拉列出全部 ' + kinds.theme + ' 个预置主题');
+      ok(thOpts[0] && thOpts[0].v === '', '主题下拉首项是占位「选择主题模板…」');
+      ok(thOpts[1] && thOpts[1].v === '__builtin__', '主题下拉次项是「内置默认主题色」');
+      /* 显示名应等于该文件的 name 字段（而非文件名） */
+      const first = presetOpts[0];
+      const tpJson = JSON.parse(FE.EXAMPLE_FILES[first.v]);
+      ok(first.t.indexOf(String(tpJson.name)) >= 0,
+        '主题显示名含 name 字段（' + first.t + ' ← name=' + tpJson.name + '）');
+
+      /* ④ 载入一个预置主题 → 真进 state、能过校验、导出名跟 name */
+      $('th-example').value = first.v;
+      $('th-load-example').click();
+      ok(FE.isPlainObject(FE.state.themeProfile), '★ 载入预置主题后进 state');
+      eq(FE.state.themeProfile.name, tpJson.name, '载入的主题 name 与文件一致');
+      ok(FE.isPlainObject(FE.state.themeProfile[tpJson.light ? 'light' : 'dark']),
+        '载入的主题至少有一个槽位');
+      eq(FE.validateThemeProfile(FE.state.themeProfile).errors, [],
+        '★ 载入的预置主题通过校验（0 错误）');
+      eq(FE.state.themeFileName, tpJson.name + '.json',
+        '导出文件名跟随主题 name（App 端就是这么定位文件的）');
+
+      /* ⑤ 载入后 26 个色框都有取色器实例（否则色块预览又不显示，是上一轮修过的坑） */
+      FE.renderThemeTab();
+      const withPicker = q('#th-colors .color-input').filter(i => !!i.jscolor).length;
+      eq(withPicker, 26, '★ 载入预置主题后 26 个色框都有取色器实例（色块预览可见）');
+    } finally {
+      FE.state.themeProfile = savedThemeProfile;
+      FE.state.themeFileName = savedThemeFile;
+      FE.renderAll();
+    }
+  }
+
   console.log('== 主题页：编辑颜色实时联动预览 ==');
   {
     const host = $('preview-kb');
@@ -4332,22 +4409,33 @@ console.log('== 符号面板预览 ==');
         '隐藏滚动条后仍保留可滚动能力（不是 overflow:hidden）');
     }
 
-    /* ⑦ 分组极多时高度**仍不变**（真实预置示例：emoji 50+ 组）。
-     *    这条是"不要强制拉长预览高度"的直接回归断言。 */
-    const emojiFiles = FE.SYMBOL_EXAMPLE_FILES && FE.SYMBOL_EXAMPLE_FILES.emoji;
-    const emojiName = emojiFiles ? Object.keys(emojiFiles)[0] : null;
-    if (emojiName) {
-      FE.state.symbolProfiles.emoji = FE.normalizeSymbolProfile('emoji', JSON.parse(emojiFiles[emojiName]));
-      FE.state.symbolKind = 'emoji';
+    /* ⑦ 分组极多时高度**仍不变**。
+     *    这条是"不要强制拉长预览高度"的直接回归断言。
+     * ⚠️ 不要写死"某个预置有多少组"：预置文件会随源目录更新而变
+     *    （踩过：表情.json 从 58 组变成 10 组，写死 `> 20` 就假红一条）。
+     *    改成**动态挑分组最多的那类预置**，数据怎么变都能真正压到"多组"这条路径。 */
+    const symKinds = ['symbols', 'emoji', 'kaomoji'];
+    let bestKind = null, bestCount = 0, bestText = null;
+    symKinds.forEach(function (k) {
+      const bucket = FE.SYMBOL_EXAMPLE_FILES && FE.SYMBOL_EXAMPLE_FILES[k];
+      if (!bucket) return;
+      Object.keys(bucket).forEach(function (n) {
+        const p = FE.normalizeSymbolProfile(k, JSON.parse(bucket[n]));
+        if (p.groups.length > bestCount) { bestCount = p.groups.length; bestKind = k; bestText = bucket[n]; }
+      });
+    });
+    ok(bestKind != null, '（前置）预置里有可用的符号示例');
+    ok(bestCount > 20, '（前置）最多的预置有 > 20 组（' + bestKind + '，实际 ' + bestCount + ' 组）');
+    if (bestKind) {
+      FE.state.symbolProfiles[bestKind] = FE.normalizeSymbolProfile(bestKind, JSON.parse(bestText));
+      FE.state.symbolKind = bestKind;
       FE.state.activeTab = 'tab-symbols';
       FE.renderAll();
-      ok(FE.state.symbolProfiles.emoji.groups.length > 20,
-        '（前置）预置 emoji 示例分组数 > 20（实际 ' + FE.state.symbolProfiles.emoji.groups.length + '）');
+      eq(FE.state.symbolProfiles[bestKind].groups.length, bestCount,
+        '已载入分组最多的预置（' + bestKind + '）');
       const pvMany = q('.sym-pv')[0];
       ok(Math.abs(parseFloat(pvMany.style.height) - wantPanelH) < 1,
-        '分组极多时高度仍 = 布局预览高度（' + pvMany.style.height + '，未被撑高）');
-    } else {
-      ok(false, '预置 emoji 示例应存在（FE.SYMBOL_EXAMPLE_FILES.emoji）');
+        '分组极多（' + bestCount + ' 组）时高度仍 = 布局预览高度（' + pvMany.style.height + '，未被撑高）');
     }
 
     /* ⑧ 切回布局页 → 键盘渲染恢复（不能把键盘弄丢） */
