@@ -436,6 +436,10 @@ FE.rowsOfSection = function (section) {
  * （如 columns: 10000）。可在控制台改 FE.MAX_GRID_CELLS 后重渲染。 */
 FE.MAX_GRID_CELLS = 4000;
 
+/* 行内键间隙（px）：槽位对齐口径下从槽内扣，键数不同的行同权重点依然对齐。
+ * 后面做可调间距时改这里（运行时可在控制台改 FE.ROW_GAP 后重渲染）。 */
+FE.ROW_GAP = 5;
+
 /* 网格预览的几何：间隙必须随列/行数缩放，**不能固定 5px**。
  *
  * 固定间隙在列数多时是致命的：48 列时 .kb 内容宽约 414px，47 个 5px 间隙合计
@@ -2576,8 +2580,24 @@ function buildRowsSection(compiledSection, unit) {
       rowEl.style.marginRight = 'auto';
     }
     rowEl.style.height = Math.max(18, row.heightUnits * unit) + 'px';
-    row.keys.forEach(function (item) {
-      rowEl.appendChild(buildKeyEl(item, unit, { grow: item.grow, maxKeyHeight: item.maxKeyHeight }));
+    /* 槽位对齐（与 App 同口径）：槽按 weight 分整行宽（行内无 gap），键在槽内
+     * 左右各留半个间隙。不同键数的行同权重点边界精确重合；若间隙参与 flex
+     * 分配，键数少的行每份权重会多分到像素，对不齐。间隙集中在 FE.ROW_GAP，
+     * 后面做可调间距时只改这一处。 */
+    var n = row.keys.length;
+    row.keys.forEach(function (item, ki) {
+      var slot = h('div', { class: 'kb-slot' });
+      slot.style.flexGrow = String(item.grow != null ? item.grow : 0);
+      slot.style.flexBasis = '0';
+      slot.style.minWidth = '0';
+      var keyEl = buildKeyEl(item, unit, { grow: 1, maxKeyHeight: item.maxKeyHeight });
+      keyEl.style.flexGrow = '1';
+      if (n > 1) {
+        if (ki > 0) keyEl.style.marginLeft = (FE.ROW_GAP / 2) + 'px';
+        if (ki < n - 1) keyEl.style.marginRight = (FE.ROW_GAP / 2) + 'px';
+      }
+      slot.appendChild(keyEl);
+      rowEl.appendChild(slot);
     });
     wrap.appendChild(rowEl);
   });

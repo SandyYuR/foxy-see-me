@@ -130,6 +130,24 @@ ok(q('.kb-hint-up', firstKey)[0].textContent === 'Q', '上滑提示为 Q');
 ok(q('.kb-hint-down', firstKey)[0].textContent === '1', '下滑提示为 1');
 ok($('preview-meta').textContent.indexOf('校验通过') >= 0, '校验通过显示');
 ok($('preview-meta').textContent.indexOf('5 单位') >= 0, '高度单位显示');
+/* ★ 槽位对齐：行内无 gap，槽按 weight 分整行宽，键在槽内留半间隙。
+ * 不同键数的行同权重点边界重合（彩·气泡三四行的场景）。 */
+{
+  const rows0 = q('.kb-row');
+  ok(rows0.every(r => r.style.gap === '' || r.style.gap == null), '行容器无 gap（槽位口径）');
+  const slots0 = rows0[0].querySelectorAll('.kb-slot');
+  eq(slots0.length, 10, '首行 10 个槽位');
+  ok(slots0.every(s => s.style.flexGrow === '1'), '默认权重槽 flexGrow=1');
+  const keyInSlot = slots0[0].querySelectorAll('.kb-key');
+  eq(keyInSlot.length, 1, '每槽一键');
+}
+/* shift 行：定义 weight=1.5 的槽更宽（默认 profile qwerty.shift） */
+{
+  const shiftRow = q('.kb-row')[2];
+  const shiftSlots = shiftRow.querySelectorAll('.kb-slot');
+  eq(shiftSlots[0].style.flexGrow, '1.5', 'shift 槽 flexGrow=1.5（定义链权重）');
+  eq(shiftSlots[1].style.flexGrow, '1', '字母槽 flexGrow=1');
+}
 
 console.log('== 布局切换 ==');
 eq(q('#layout-tabs .pill').length, 3, '3 个布局 pill');
