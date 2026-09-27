@@ -21,7 +21,7 @@
   --mono: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
   /* 中央操作区（内容列）的几何：顶栏与 main 共用，浮动工具也靠它对齐。
    * 改宽度/内边距时请只改这两个变量 —— 浮动按钮的"贴边"完全依赖它们。 */
-  --content-max: 1180px;
+  --content-max: 1298px;
   --content-pad-x: 20px;
 }
 
@@ -359,7 +359,7 @@ label.check { cursor: pointer; white-space: nowrap; }
 
 .kb {
   width: 100%;
-  max-width: 430px;
+  max-width: 614px;   /* 桌面常规预览宽；恰为 .kb-split 的一半，两模式共用同一竖屏口径 unit，切换常规/分体时预览高度不跳变 */
   margin: 0 auto;
   padding: 8px;
   border-radius: 14px;
@@ -369,9 +369,10 @@ label.check { cursor: pointer; white-space: nowrap; }
    * 若宽度是动画收缩的，同一帧内 clientWidth 量到的还是宽值，
    * 竖屏基准宽度会被污染，导致字和行高一起变大。 */
 }
-/* 分体键盘一般在横屏下使用：预览放宽到全宽页面，模拟横屏宽度 */
+/* 分体键盘一般在横屏下使用：预览放宽到占满中央编辑区（≈ content-max 去掉内外边距 = 1298-70），
+ * 是常规宽的 2 倍并等比拉伸；unit 仍取常规竖屏口径，所以拉宽后高度与常规一致、切换不跳变 */
 .kb-split {
-  max-width: 860px;
+  max-width: 1228px;
 }
 .kb-dark { background: #191a1e; box-shadow: inset 0 0 0 1px #26282d; }
 .kb-light { background: #cfd2d7; box-shadow: inset 0 0 0 1px #b9bdc4; }
@@ -920,8 +921,8 @@ dialog.editor-dialog::backdrop { background: rgba(5, 6, 8, 0.6); backdrop-filter
 .float-bottom-right:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* 窄屏兜底：内容列外侧的页边距放不下按钮，按钮会越过视口右缘被裁切，
  * 此时退回贴视口右缘（此宽度下页边距本就很小，贴视口≈贴内容）。
- * 断点 ≈ 内容列 1180px + 两侧各约 170px（按钮组宽 + 间隙 + 余量）。 */
-@media (max-width: 1520px) {
+ * 断点 ≈ 内容列 1298px + 两侧各约 170px（按钮组宽 + 间隙 + 余量）。 */
+@media (max-width: 1638px) {
   .float-top-right { position: fixed; top: 12px; left: auto; right: 12px; }
   .float-bottom-right { position: fixed; bottom: 20px; left: auto; right: 12px; }
 }

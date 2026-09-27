@@ -1041,8 +1041,8 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
   正确写法是 `left: calc(100% - var(--content-pad-x) + 8px)`：
   从 rail 的 padding-box 右缘退回卡片右缘，再留 8px 间隙，
   于是按钮整体落在内容列外侧、间隙恒定且**不需要写死按钮宽度**。
-- **窄屏兜底**：`@media (max-width: 1520px)` 退回贴视口右缘（`left: auto; right: 12px`）。
-  断点是算出来的：内容列 1180px + 两侧各约 170px（按钮组宽 + 间隙 + 余量）≈ 1520px，
+- **窄屏兜底**：`@media (max-width: 1638px)` 退回贴视口右缘（`left: auto; right: 12px`）。
+  断点是算出来的：内容列 1298px + 两侧各约 170px（按钮组宽 + 间隙 + 余量）≈ 1638px，
   低于它页边距放不下按钮，硬贴会被视口右缘裁掉。
 - ⭐ **滚出顶栏后才显示**（`updateFloatTools()`，阈值 `FLOAT_SHOW_AT = 120` ≈ 顶栏高度）。
   为什么不是常驻：顶栏右侧本来就有同款撤销/重做按钮，常驻会与它们**叠在一起**；
@@ -1103,7 +1103,9 @@ if (!state.splitMode) {
 var unit = state.portraitW / 10;          // 全链路单 unit：行高 / 字号 / 图标 / 提示
 ```
 
-- 加宽只靠 CSS `.kb-split { max-width: 860px }` + flex 自动拉伸，**JS 里绝不乘系数**。
+- 加宽只靠 CSS `.kb-split { max-width: 1228px }`（≈ 占满 content-max 1298px 去掉内外边距的中央编辑区，
+  恰为常规 `.kb { max-width: 614px }` 的 2 倍）+ flex 自动拉伸，**JS 里绝不乘系数**。
+  两模式共用同一竖屏口径 `unit`（= 常规 clientWidth / 10），所以分体拉宽后高度与常规一致、切换不跳变。
 - ⚠️ `.kb` 的 `max-width` **不能加 transition** —— 切回竖屏那一帧量到收缩中的宽值会把
   `portraitW` 污染，之后字和行高一起变大且回不来（这正是历史 bug）。
 - 分体开关与横幅切换后要 `requestAnimationFrame(() => renderPreview())` 补一帧，
