@@ -394,14 +394,30 @@ FE.installJscolor = function (input, opts) {
   function emitInput(v) { if (typeof opts.onInput === 'function') opts.onInput(v); }
   function emitDone(v) { if (typeof opts.onDone === 'function') opts.onDone(v); }
 
+  /* 输入框里的值 → picker 内部颜色。**这是「面板色与输入框色一致」的唯一正确
+   * 入口**：Foxy 存 #AARRGGBB（alpha 在前），而本仓库 vendor 版 jscolor 的
+   * parseColorString 把 8 位串按 AABBGGRR 解析（RGB 反序，见 jscolor.js:822-831）。
+   * 所以**绝不能让 jscolor 自己去读 input.value** —— 必须经 FE.argbToPickerHex
+   * 换成本仓库约定后再 fromString 送进去，否则面板里 R/B 互换，显示的就不是
+   * 输入框那个颜色。宽容输入（#RGB / #ARGB / #RRGGBB）先展开成 8 位。 */
+  function toArgbTolerant(v) {
+    var n = FE.normalizeColorHex(v);
+    if (n) return n;
+    if (typeof FE.normalizeThemeColor === 'function') return FE.normalizeThemeColor(v);
+    return null;
+  }
   function syncPickerFromInput() {
     /* 手输后把值同步进 picker（f5a 的 syncInlinePickerFromArgbInput 同款） */
     var p = input.jscolor;
     if (!p) return;
-    var pickerHex = FE.argbToPickerHex(input.value);
+    var argb = toArgbTolerant(input.value);
+    if (!argb) return;
+    var pickerHex = FE.argbToPickerHex(argb);
     if (!pickerHex) return;
     try { p.fromString(pickerHex); } catch (e) { /* 忽略 */ }
   }
+  /* 供「值在实例创建之后被别处改写」的路径主动同步（渲染、JSON 应用、清除按钮…） */
+  input._foxySyncPicker = syncPickerFromInput;
   function syncInputFromPicker() {
     /* 面板拖动后把值写回输入框（f5a 的 syncArgbInputFromInlinePicker 同款）。
      * 面板不透明时输出 6 位（hexaColor 的 a==1 分支）；若输入框当前是 8 位
@@ -421,8 +437,12 @@ FE.installJscolor = function (input, opts) {
   var api = {
     el: input,
     syncFromValue: function (v) {
+      /* 宽容输入（#RGB / #ARGB / #RRGGBB / #AARRGGBB）都要能正确回显：
+       * 先按 8 位归一化，失败再走主题色归一化（含 3/4 位展开）。 */
       var n = FE.normalizeColorHex(v);
+      if (n == null) n = toArgbTolerant(v);
       input.value = n || '';
+      /* 实例可能还没建出来（未挂载）——那就等 ensurePicker 里那次同步 */
       syncPickerFromInput();
     },
     destroy: function () {
@@ -430,44 +450,30 @@ FE.installJscolor = function (input, opts) {
     }
   };
 
-  /* 真正创建实例：必须在元素已进入 DOM 之后调用（要能查到祖先 <dialog>） */
-  function ensurePicker() {
-    if (input.jscolor) return input.jscolor;
-    if (!window.jscolor) return null;    /* 降级：纯文本输入 */
-    /* jscolor 的面板 CSS 与"点目标即弹出"的文档级 mousedown 监听都在 init()
-     * 里注册（正常由 DOMContentLoaded 触发）。这里幂等补一次，确保脚本加载
-     * 时机异常（如 DOMContentLoaded 已过）时点击依然能弹出面板。 */
-    if (typeof window.jscolor.init === 'function' && document.readyState !== 'loading') {
-      try { window.jscolor.init(); } catch (e) { /* 忽略 */ }
-    }
-    var picker = null;
-    try {
-      picker = new window.jscolor(input, {
-        hash: true,
-        closeButton: true,
-        closeText: '✓',
-        showOnClick: true,
-        format: 'hexa',
-        alphaChannel: true,
-        valueElement: null,
-        /* 挂进对话框（顶层），否则会被 dialog 与 ::backdrop 盖住 */
-        container: nearestDialog(input) || undefined,
-        onInput: function () {
-          syncInputFromPicker();
-          activeColorInput = input;
-          positionColorWrap(input);
-          emitInput(FE.normalizeColorHex(input.value));
-        }
-      });
-    } catch (e) {
-      if (window.console && typeof window.console.warn === 'function') {
-        console.warn('[foxy-editor] jscolor 初始化失败，颜色框降级为文本输入：', e);
-      }
-      return null;
-    }
+  /* 面板拖动/选色时 jscolor 触发的实时回调。
+   * 真实 jscolor 经 triggerCallback 读**实例属性** thisObject['onInput']，
+   * 而我们既把它作为构造选项传入、又挂到实例上（见 wirePicker），两条路径都通。 */
+  function handlePickerInput() {
+    syncInputFromPicker();
+    activeColorInput = input;
+    positionColorWrap(input);
+    emitInput(FE.normalizeColorHex(input.value));
+  }
+
+  /* 给实例装上本编辑器的回调与面板摆位。**幂等**（_foxyWired 标记）：
+   * 我们自己建的实例、以及 jscolor 全局自动安装抢先建出来的实例，都要能补装。 */
+  function wirePicker(picker) {
+    if (!picker || picker._foxyWired) return picker;
+    picker._foxyWired = true;
+    picker.onInput = handlePickerInput;
     /* show 之后按输入框位置摆好面板（dialog 容器内 jscolor 只做 relative 0,0） */
     var origShow = picker.show.bind(picker);
     picker.show = function () {
+      /* ⭐ 弹出前再同步一次：输入框的值可能在上次关闭后被别处改过（清除按钮、
+       * 表单重建回填、JSON 应用、撤销…）。面板只认 picker 内部通道，不重新
+       * 喂一次就会继续显示上一次的颜色 —— 这是"有时对有时不对"的另一半。
+       * 放在 origShow 之前，面板首帧就是对的（也省掉一次重绘）。 */
+      syncPickerFromInput();
       var r = origShow();
       activeColorInput = input;
       positionColorWrap(input);
@@ -483,6 +489,96 @@ FE.installJscolor = function (input, opts) {
       return r;
     };
     bindColorReposition();
+    return picker;
+  }
+
+  /* 接管一个「不是我们建出来的」实例。
+   *
+   * ⭐ 这就是「取色面板有时显示的颜色不是输入框里那个」的**真实成因**：
+   * jscolor 在 DOMContentLoaded 会跑 jsc.pub.init() → installBySelector('[data-jscolor]')，
+   * 把页面上所有带 data-jscolor 的输入框**用默认选项**建一遍实例。我们的颜色输入框
+   * 都带 'data-jscolor': '{}'，只要它们在 DOMContentLoaded 之前就已进入 DOM
+   * （主题页的 26 个字段就是在页面加载期渲染进 DOM 的），就会被这样抢先建出来。
+   * 那条路径上：
+   *   · format 默认 'auto'、valueElement 默认指向输入框本身；
+   *   · 构造时 jsc 会读输入框的 value 交给 parseColorString，而 vendor 版对该串
+   *     是**按 AABBGGRR（RGB 反序）**解析的（jscolor.js:822-831），Foxy 存的却是
+   *     #AARRGGBB → 面板里 R 与 B 互换，显示的压根不是输入框那个颜色；
+   *   · 而且它没有我们的 onInput / show / hide 包装。
+   * 一旦它抢先建好，本函数原先的 `if (input.jscolor) return input.jscolor;`
+   * 会直接把坏的实例返回，连同步都不做 —— 现象因此时有时无（取决于加载时序）。
+   * 这里把它改造回我们的配置，并用 FE.argbToPickerHex 重新同步一次颜色。 */
+  function adoptExisting(picker) {
+    if (!picker) return null;
+    try {
+      picker.valueElement = null;   /* 别让它把 vendor 格式的串直接写回输入框 */
+      picker.format = 'hexa';
+      /* _currentFormat 才是真正参与 toString()/getFormat() 的那个字段，
+       * 只改 .format 不改它，输出格式仍会是构造时的 'hex'（6 位无 alpha）。 */
+      if (typeof picker._setFormat === 'function') picker._setFormat('hexa');
+      else picker._currentFormat = 'hexa';
+      picker.hash = true;
+      picker.uppercase = true;
+      picker.alphaChannel = true;
+      /* 面板容器也要抢回来：自动安装那条路容器是 document.body，挂 body 的
+       * 面板会被顶层 <dialog> 与 ::backdrop 盖住（测试里已锁住这条）。
+       * 两处都写：真实 jscolor 的 drawPicker 读实例属性 THIS.container，
+       * 而 options 里那份是构造时的配置留档。 */
+      var dlg = nearestDialog(input);
+      if (dlg) {
+        picker.container = dlg;
+        if (picker.opts) picker.opts.container = dlg;
+      }
+    } catch (e) { /* 降级实现可能只读，忽略 */ }
+    wirePicker(picker);
+    syncPickerFromInput();          /* ★ 关键：按 Foxy 的 ARGB 语义重新喂给 picker */
+    return picker;
+  }
+
+  /* 真正创建实例：必须在元素已进入 DOM 之后调用（要能查到祖先 <dialog>） */
+  function ensurePicker() {
+    if (input.jscolor) return adoptExisting(input.jscolor);
+    if (!window.jscolor) return null;    /* 降级：纯文本输入 */
+    /* jscolor 的面板 CSS 与"点目标即弹出"的文档级 mousedown 监听都在 init()
+     * 里注册（正常由 DOMContentLoaded 触发）。这里幂等补一次，确保脚本加载
+     * 时机异常（如 DOMContentLoaded 已过）时点击依然能弹出面板。 */
+    if (typeof window.jscolor.init === 'function' && document.readyState !== 'loading') {
+      try { window.jscolor.init(); } catch (e) { /* 忽略 */ }
+    }
+    /* ⚠️ init() 会把页面上**所有**带 data-jscolor 的元素（**包括我们这一个**）
+     * 用默认选项建一遍实例（jscolor.js:3435-3439 的 installBySelector）。
+     * 必须在它之后再确认一次：否则下面那句 new 会因"实例已存在"抛错，被 catch
+     * 成"降级为纯文本"，而实际留在元素上的是一个默认配置（format auto、
+     * valueElement 指向输入框、容器 body）的**错误实例** —— 面板既串色又被遮挡。 */
+    if (input.jscolor) return adoptExisting(input.jscolor);
+    var picker = null;
+    try {
+      picker = new window.jscolor(input, {
+        hash: true,
+        closeButton: true,
+        closeText: '✓',
+        showOnClick: true,
+        format: 'hexa',
+        alphaChannel: true,
+        valueElement: null,
+        /* 挂进对话框（顶层），否则会被 dialog 与 ::backdrop 盖住 */
+        container: nearestDialog(input) || undefined,
+        /* 实时回调同时以「构造选项」和「实例属性」两种形态存在（wirePicker 里再赋
+         * 一次实例属性）：真实 jscolor 经 triggerCallback 读实例属性触发，而调用方
+         * / 测试也可能直接调 opts.onInput()。两者指向同一个函数，重复触发无害
+         * （emitInput → apply 是幂等的）。 */
+        onInput: handlePickerInput
+      });
+    } catch (e) {
+      if (window.console && typeof window.console.warn === 'function') {
+        console.warn('[foxy-editor] jscolor 初始化失败，颜色框降级为文本输入：', e);
+      }
+      return null;
+    }
+    wirePicker(picker);
+    /* ⭐ 实例建好后**立刻**同步一次：构造期 jsc 会自己按 vendor 约定去解析
+     * input.value（若它读了），而且我们从不让它承担"读输入框"的职责 —— 颜色
+     * 一律由 FE.argbToPickerHex 换算后再喂进来，保证首次弹出面板就对。 */
     syncPickerFromInput();
     return picker;
   }
@@ -503,7 +599,9 @@ FE.installJscolor = function (input, opts) {
   input.addEventListener('change', function () {
     var raw = input.value.trim();
     if (raw === '') { emitInput(null); emitDone(null); return; }
-    var n = FE.normalizeColorHex(raw);
+    /* 走宽容归一化：除 #RRGGBB / #AARRGGBB 外，#RGB / #ARGB 简写也要能回显
+     * （App 端同样宽容）。仍不合法的才提示并保留原值。 */
+    var n = toArgbTolerant(raw);
     if (n == null) {
       FE.uiAlert('颜色格式无效，应为 #RRGGBB 或 #AARRGGBB');
       return;
@@ -1617,9 +1715,127 @@ FE.openKeyDialog = function (opts) {
       }
       if (!Object.keys(c).length) delete draft.colors;
     }
-    /* 单个颜色行：jscolor 输入框 + 「清除」按钮。
-     * get/set 用于读写 draft 中对应位置的值（支持 states.xxx.role 嵌套）。 */
-    function colorRow(label, get, set) {
+    /* ---------------- 全链路回显（当前生效色 + 它来自哪一级） ----------------
+     * 为什么只能做在 UI 层：Foxy 布局 JSON **不支持**「颜色引用主题字段」
+     * （skills/foxy-keyboard-layout.schema.json:115 的 colors 是自由对象；
+     *  SKILL.md:892-893 规定值只能是 #RRGGBB / #AARRGGBB 字面量）。
+     * 所以值仍写字面量，但每一行都要让用户看见：
+     *   · 当前实际生效的是哪个色、由哪一级给出（① 状态色 > ② 本键 colors > ③ 主题 keyTypes > ④ 主题全局）；
+     *   · 留空（清除）后会继承/回落到哪一个色；
+     *   · 若来源是主题 → 给一个「到主题页改」入口。
+     * 解析全部复用 js/color-source.js（FE.resolveRole / FE.colorSourceLabel）。 */
+    var effectRefreshers = [];
+    function hasColorSource() { return typeof FE.resolveRole === 'function'; }
+    function roleOpts() { return { includeBuiltin: true }; }
+    /* 内联样式小工具：本任务不允许改 style.css，所以回显块的排版只用内联样式。
+     * 字号取 11.5px 与 .status（12.5px）同档，在 ≤640px 手机宽度下也读得清。 */
+    function st(o) { return o; }
+    var ST_BOX = st({ margin: '0 0 8px 0', padding: '0 0 0 2px' });
+    var ST_TEXT = st({ fontSize: '11.5px', lineHeight: '1.5', margin: '2px 0', color: '#9aa0a8', wordBreak: 'break-all' });
+    var ST_FALLBACK = st({ fontSize: '11.5px', lineHeight: '1.5', margin: '0', color: '#8a8f98', wordBreak: 'break-all' });
+    var ST_ROW = st({ margin: '6px 0 0 0' });
+    var ST_JUMP = st({ fontSize: '11.5px', padding: '1px 6px' });
+    function effSafe() {
+      try { return effObj(); } catch (e) { return null; }
+    }
+    /* 剥掉「本行自己那一个值」的轻量 eff，用来算「清空后会回落到哪一级」。
+     * 只保留 resolveRole 真正读取的字段（colors / keyType / spacer），避免深克隆。
+     * 非状态行剥 colors[role]；状态行剥 colors.states[state][role]。 */
+    function effWithout(eff, role, stateName) {
+      if (!FE.isPlainObject(eff)) return eff;
+      var out = { keyType: eff.keyType, spacer: eff.spacer, colors: null };
+      var c = FE.isPlainObject(eff.colors) ? eff.colors : null;
+      if (!c) return out;
+      var nc = {};
+      Object.keys(c).forEach(function (k) {
+        if (k === 'states') return;
+        if (!stateName && k === role) return;
+        nc[k] = c[k];
+      });
+      if (FE.isPlainObject(c.states)) {
+        var ns = {};
+        Object.keys(c.states).forEach(function (st) {
+          var so = c.states[st];
+          if (!FE.isPlainObject(so)) return;
+          var no = {};
+          Object.keys(so).forEach(function (k) {
+            if (stateName === st && k === role) return;
+            no[k] = so[k];
+          });
+          if (Object.keys(no).length) ns[st] = no;
+        });
+        if (Object.keys(ns).length) nc.states = ns;
+      }
+      out.colors = nc;
+      return out;
+    }
+    /* 一行「色值 ← 来源」文案。own 为真 = 这个值就是本行（本键）自己写的那一个。 */
+    /* 一行「色值 ← 来源」文案。kind 说明这个值在继承链里的身份，措辞必须跟着变：
+     *   'own'   本行自己写的那一个（本键自己的设置）
+     *   'base'  状态行留空时回落到的**本键基础角色**（colors[role]，同为布局 values）
+     *   'chain' 其余情况（引用链上级 / 主题 / 内置默认）
+     * ⚠️ 别把 base 写成「引用链上级」：状态行的基础色就是本键自己的 colors[role]。 */
+    function roleText(r, kind) {
+      kind = kind || 'chain';
+      if (!r || r.value == null) return '未定义（该键与主题都未给出此颜色 → Foxy 端不绘制）';
+      var from = FE.colorSourceLabel(r.source, r.detail);
+      var tail;
+      if (r.source === FE.COLOR_SOURCES.LAYOUT_STATE) {
+        tail = '（本键自己的状态色设置）';
+      } else if (r.source === FE.COLOR_SOURCES.LAYOUT_KEY) {
+        tail = (kind === 'own') ? '（本键自己的设置）'
+          : (kind === 'base') ? '（本键基础角色的 colors）'
+            : '（引用链上级的布局 colors）';
+      } else if (r.source === FE.COLOR_SOURCES.BUILTIN) {
+        /* ⚠️ 必须区分两种口径，别一律写成「未导入主题」：
+         *   · 主题**确实没导入** → 内置默认就是 Foxy 端的实际取值；
+         *   · 主题已导入、但③ keyTypes 与④ 全局都没给这个字段 → 落到 App 内置默认色，
+         *     这是编辑器的兜底显示（预览在已导入主题时不写内联色）。
+         * 「清空后」的语义由调用方的「清空后 → 」前缀表达，这里不重复。 */
+        tail = themeImported()
+          ? '（主题未给此级 → 按 App 内置默认色兜底显示）'
+          : '（未导入主题 → 按 App 内置默认配色）';
+      } else {
+        tail = '（来自主题，改主题即同步）';
+      }
+      return r.value + '　← ' + from + tail;
+    }
+    /* 主题是否已导入（决定回显口径：主题值 vs App 内置默认兜底） */
+    function themeImported() {
+      var p = FE.state && FE.state.themeProfile;
+      return !!p && typeof p === 'object';
+    }
+    function themeSourced(r) {
+      return !!r && typeof r.source === 'string' && r.source.indexOf('theme.') === 0;
+    }
+    /* 「到主题页改」入口。⚠️ 主题页与对话框不能同时开着：必须走 leaveThen
+     * （无未保存改动时同步放行，有改动则先确认），确认后再 close() + 切标签页。
+     * 直接用 requestClose() 会在有改动时只关框、不跳转（用户看到「点了没反应」）。 */
+    function themeJumpBtn(extraClass) {
+      return h('button', {
+        type: 'button', class: 'mini-button color-theme-jump' + (extraClass ? ' ' + extraClass : ''),
+        title: '此颜色由主题文件决定；去主题页修改（未保存的改动会先确认）',
+        onclick: function () {
+          modal.leaveThen(function () {
+            modal.close();
+            if (FE.activateTab) FE.activateTab('tab-theme');
+          });
+        }
+      }, '到主题页改 →');
+    }
+    function refreshColorEffects(eff) {
+      var e = eff === undefined ? effSafe() : eff;
+      effectRefreshers.forEach(function (fn) {
+        try { fn(e); } catch (err) { /* 单行回显出错不影响其它行 */ }
+      });
+    }
+
+    /* 单个颜色行：jscolor 输入框 + 「清除」按钮 + **全链路回显块**。
+     * get/set 用于读写 draft 中对应位置的值（支持 states.xxx.role 嵌套）；
+     * rowOpts.state 非空表示这是 colors.states[state][role] 行。 */
+    function colorRow(label, role, get, set, rowOpts) {
+      rowOpts = rowOpts || {};
+      var stateName = rowOpts.state || null;
       var cur = get();
       var inp = h('input', {
         type: 'text', class: 'mini-input color-input', spellcheck: 'false',
@@ -1627,45 +1843,91 @@ FE.openKeyDialog = function (opts) {
         'data-jscolor': '{}'
       });
       var committed = cur != null ? String(cur) : '';
+      /* ⭐ 唯一的提交入口，且必须**幂等**（照 theme-editor.js 的 colorRow 写法）：
+       * FE.installJscolor 在输入框上自挂 change（依次发 onInput + onDone），本函数
+       * 自己也挂 change 处理手输 —— jscolor 那个先注册所以先跑，一次手输会被提交
+       * 两次（连带压两条历史 / 写两次 draft）。先比 committed，同值即空操作。
+       * 注意本对话框是「点保存才落盘」，所以这里只写 draft，不碰 profile。 */
+      function apply(nv) {
+        var key = nv == null ? '' : String(nv);
+        if (key === committed) return false;
+        committed = key;
+        set(nv);
+        /* 只刷新回显文本，不重建表单 —— 拖动取色时重建会把正在拖的面板拆掉 */
+        refreshColorEffects();
+        return true;
+      }
       FE.installJscolor(inp, {
-        onInput: function (nv) {
-          /* jscolor 面板拖动实时回调：先写 draft，非法（null）则不动 */
-          if (nv == null) return;
-          committed = nv;
-          set(nv);
-        },
-        onDone: function (nv) {
-          if (nv == null) return;
-          committed = nv;
-          set(nv);
-        }
+        onInput: function (nv) { if (nv != null) apply(nv); },
+        onDone: function (nv) { if (nv != null) apply(nv); }
       });
       inp.addEventListener('change', function () {
         var raw = inp.value.trim();
-        if (raw === '') { committed = ''; set(null); cleanupColors(); return; }
+        if (raw === '') { apply(null); cleanupColors(); return; }
         var n = FE.normalizeColorHex(raw);
         if (n == null) {
           /* 非法格式：提示并回退到上次提交值（installJscolor 内已 alert，这里只回退） */
           inp.value = committed;
           return;
         }
-        committed = n;
         inp.value = n;
-        set(n);
+        apply(n);
       });
       var clearBtn = h('button', {
         type: 'button', class: 'mini-button',
-        title: '清除此颜色（恢复继承）',
+        title: '清除此颜色（恢复继承：留空后由下一级给出）',
         onclick: function () {
-          committed = '';
           inp.value = '';
           try { if (inp.jscolor && typeof inp.jscolor.hide === 'function') inp.jscolor.hide(); } catch (e) { /* 忽略 */ }
-          set(null);
+          apply(null);
           cleanupColors();
           refreshStateBadges();
         }
       }, '清除');
-      return h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, label), inp, clearBtn);
+      var row = h('div', { class: 'form-row form-inline', style: ST_ROW }, h('label', { class: 'mini-label' }, label), inp, clearBtn);
+      /* 回显块放在行**下面**（form-inline 是 flex row，塞进去会挤同一行） */
+      var box = h('div', { class: 'color-effect-box', style: ST_BOX });
+      var jump = themeJumpBtn();
+      Object.assign(jump.style, ST_JUMP);
+      box.appendChild(jump);
+      var l1 = h('div', { class: 'status color-effect', style: ST_TEXT });
+      var l2 = h('div', { class: 'status color-fallback', style: ST_FALLBACK });
+      box.appendChild(l1);
+      box.appendChild(l2);
+      var wrap = h('div', {
+        class: 'color-row-wrap' + (stateName ? ' color-row-wrap-state' : ''),
+        'data-color-role': role + (stateName ? '.' + stateName : '')
+      }, row, box);
+      /* 本行回显：留空 → 写出「当前生效色 + 它来自哪一级」；有本键值 → 另写清空后会回落到什么。
+       * 状态行额外说明 ① > ②（状态色优先于基础角色）。 */
+      function refreshEffect(eff) {
+        clearEl(l1);
+        clearEl(l2);
+        if (!hasColorSource()) { jump.style.display = 'none'; return; }
+        var opts = roleOpts();
+        var own = get() != null;
+        var rCur = FE.resolveRole(role, eff, opts);
+        var rBase = FE.resolveRole(role, effWithout(eff, role, stateName), opts);
+        /* 剥掉本行值之后取到的来源身份：落在本键 colors 上就是「基础角色」，
+         * 落在主题/内置上就照 chain 措辞（roleText 内部按 source 再细分）。 */
+        var baseKind = (rBase.source === FE.COLOR_SOURCES.LAYOUT_KEY) ? 'base' : 'chain';
+        if (stateName) {
+          var ownVal = own ? FE.colorNorm(get()) : null;
+          l1.append('命中 ' + stateName + ' 时生效 ' + (ownVal != null
+            ? ownVal + '　← ' + FE.colorSourceLabel(FE.COLOR_SOURCES.LAYOUT_STATE, stateName) + '（本键自己的设置）'
+            : roleText(rBase, baseKind) + '（该状态留空，直接走基础链）'));
+          l2.append('状态色优先于基础角色（① > ②）；未命中该状态时用 ' + roleText(rBase, baseKind)
+            + (own ? '。清空后同上' : ''));
+        } else {
+          l1.append('当前生效 ' + roleText(rCur, own ? 'own' : 'chain'));
+          if (own) l2.append('清空后 → ' + roleText(rBase, baseKind));
+          else l2.append('本行留空：Foxy 端将用上面这个当前生效值。');
+        }
+        jump.style.display = (themeSourced(rCur) || themeSourced(rBase)) ? '' : 'none';
+      }
+      effectRefreshers.push(refreshEffect);
+      refreshEffect(effSafe());
+      return wrap;
     }
     function roleGetSet(role) {
       return [
@@ -1717,13 +1979,33 @@ FE.openKeyDialog = function (opts) {
         }
       });
     }
+    /* 主题导入状态：决定每一行「留空后回落」到底落成主题色还是 App 内置默认色。
+     * 未导入时必须当面讲清楚，否则用户会以为留空 = 没颜色。 */
+    var themeStateLine = h('div', { class: 'status color-theme-state' });
+    function refreshThemeStateLine() {
+      clearEl(themeStateLine);
+      if (themeImported()) {
+        var slot = (FE.state && FE.state.themeSlot) || 'light';
+        themeStateLine.append('已导入主题（当前槽位 ' + slot + '）：每行「当前生效」里来自主题的色，改主题即同步；'
+          + '清空本键覆盖后会回落到该行标注的那一级。');
+      } else {
+        themeStateLine.append('未导入主题：每行「当前生效」显示的是 App 内置默认配色（includeBuiltin 兜底）；'
+          + '清空后 Foxy 端将用内置默认配色，而不是「没有颜色」。导入主题后这些值会自动变成主题给出的色。');
+      }
+    }
+    refreshThemeStateLine();
+    cb.appendChild(themeStateLine);
     var colorRoles = [['text', '文字'], ['background', '背景'], ['border', '边框'], ['hint', '提示文字']];
-    var cbox = h('div', { class: 'form-grid-2' });
+    var cbox = h('div', { class: 'form-grid-2 color-role-grid' });
     colorRoles.forEach(function (cr) {
       var gs = roleGetSet(cr[0]);
-      cbox.appendChild(colorRow(cr[1], gs[0], gs[1]));
+      cbox.appendChild(colorRow(cr[1] + ' ' + cr[0], cr[0], gs[0], gs[1]));
     });
     cb.appendChild(cbox);
+    cb.appendChild(h('div', { class: 'status color-legend' },
+      '每一行都回显「当前生效色 ← 它来自哪一级」：'
+      + '① 布局 colors.states[状态][角色] > ② 布局每键 colors[角色] > ③ 主题 keyTypes[键类型][角色] > ④ 主题 26 色全局默认。'
+      + '留空即清除本键覆盖，回落给下一级；来源是主题时可用「到主题页改 →」跳过去（主题页与本对话框不能同时开，跳转会先确认未保存改动）。'));
     /* 高级颜色：shadow + pressed + hint 四边 + states（pressed / modifierActive / modifierLocked），
      * 同卡内子卡点选。角色清单与 FOXY 文档一致：
      * text / background / pressed / border / shadow / hint / hintTop / hintBottom / hintLeft / hintRight */
@@ -1731,18 +2013,18 @@ FE.openKeyDialog = function (opts) {
     cadv.appendChild(h('summary', null, '高级颜色（shadow、pressed、hint 四边、按下/修饰状态）'));
     var cadvBody = h('div', { class: 'inner-card-body' });
     var sgs = roleGetSet('shadow');
-    cadvBody.appendChild(colorRow('阴影 shadow', sgs[0], sgs[1]));
+    cadvBody.appendChild(colorRow('阴影 shadow', 'shadow', sgs[0], sgs[1]));
     var pgs = roleGetSet('pressed');
-    cadvBody.appendChild(colorRow('按下背景 pressed', pgs[0], pgs[1]));
-    cadvBody.appendChild(h('div', { class: 'status' }, 'shadow 为按键阴影色（通常半透明，如 #40000000）；pressed 为按住时的背景色。'));
+    cadvBody.appendChild(colorRow('按下背景 pressed', 'pressed', pgs[0], pgs[1]));
+    cadvBody.appendChild(h('div', { class: 'status' }, 'shadow 为按键阴影色（通常半透明，如 #40000000）；pressed 为按住时的背景色。pressed 是「基础角色」，若下方 states.pressed 也配了色，按住时以 states.pressed 为准（① > ②）。'));
     var hintEdges = [['hintTop', '提示·上 hintTop'], ['hintBottom', '提示·下 hintBottom'], ['hintLeft', '提示·左 hintLeft'], ['hintRight', '提示·右 hintRight']];
-    var hgrid = h('div', { class: 'form-grid-2' });
+    var hgrid = h('div', { class: 'form-grid-2 color-role-grid' });
     hintEdges.forEach(function (he) {
       var hgs = roleGetSet(he[0]);
-      hgrid.appendChild(colorRow(he[1], hgs[0], hgs[1]));
+      hgrid.appendChild(colorRow(he[1], he[0], hgs[0], hgs[1]));
     });
     cadvBody.appendChild(hgrid);
-    cadvBody.appendChild(h('div', { class: 'status' }, 'hint 四边为各方向滑动提示的文字色；基础角色的「提示文字 hint」作用于全部方向，四边角色优先。'));
+    cadvBody.appendChild(h('div', { class: 'status' }, 'hint 四边为各方向滑动提示的文字色；基础角色的「提示文字 hint」作用于全部方向，四边角色优先。注意主题侧方向回落有一条反直觉规则：keyTypes[键类型].hint 优先于「主题槽位自己的方向色」，本行回显已按 App 端真实顺序解析。'));
     var STATES = [
       ['pressed', '按下 pressed', '手指按住按键时；优先级最高'],
       ['modifierLocked', '修饰锁定 modifierLocked', 'Shift 等修饰键处于锁定态时'],
@@ -1756,11 +2038,11 @@ FE.openKeyDialog = function (opts) {
         h('span', { class: 'color-state-dot' }),
         sd[1] + (so ? '（已配置）' : '')));
       var body = h('div', { class: 'inner-card-body' });
-      body.appendChild(h('div', { class: 'status' }, sd[2] + '。状态配色优先于上方基础角色。'));
-      var grid = h('div', { class: 'form-grid-2' });
+      body.appendChild(h('div', { class: 'status' }, sd[2] + '。状态配色优先于上方基础角色（① > ②）：这些行只在命中该状态时生效，留空则回落基础角色 → 主题。'));
+      var grid = h('div', { class: 'form-grid-2 color-role-grid' });
       [['background', '背景'], ['text', '文字'], ['shadow', '阴影']].forEach(function (rr) {
         var gs2 = stateGetSet(sd[0], rr[0]);
-        grid.appendChild(colorRow(rr[1], gs2[0], gs2[1]));
+        grid.appendChild(colorRow(rr[1] + ' ' + rr[0], rr[0], gs2[0], gs2[1], { state: sd[0] }));
       });
       body.appendChild(grid);
       card.appendChild(body);
@@ -1887,6 +2169,50 @@ FE.openKeyDialog = function (opts) {
     pcard.appendChild(pb);
     formHost.appendChild(pcard);
 
+    /* 弹出气泡配色说明（③ 的关键补充）。
+     * App 端「按键上方的单标签气泡」（foxy-render-spec.md §7.1 / pt.java:30,39）：
+     *   文字 = popupTextColor、背景 = popupBackgroundColor；圆角 6dp、高 44dp、
+     *   字号 24sp（受 fontSizeCap 限制为该键键字号）。
+     * 这两个色**属于主题文件，不在布局里**，而且**布局按键的 colors 不影响气泡**
+     * ——所以这里刻意不提供可填颜色框，只如实显示当前生效值与来源 + 跳转入口，
+     * 让用户明白「为什么这里不能填颜色」。
+     * ⚠️ popupBorderColor 在 App 端**未找到消费点**（§7.3 / m00.x），
+     * 所以不为它画边框、也不假装它生效，只标注它不参与绘制。 */
+    function popupColorInfo() {
+      var box = h('div', { class: 'popup-color-info' });
+      box.appendChild(h('div', { class: 'status' },
+        '气泡配色属于主题文件（不在布局里）：布局按键的 colors 只影响键盘上的按键，'
+        + '不影响长按弹出的候选气泡。所以这里没有颜色输入框 —— 要改请到主题页。'));
+      if (typeof FE.resolveThemeField !== 'function') return box;
+      var fields = [
+        ['popupTextColor', '气泡文字 popupTextColor'],
+        ['popupBackgroundColor', '气泡背景 popupBackgroundColor']
+      ];
+      fields.forEach(function (f) {
+        var r = FE.resolveThemeField(f[0], { includeBuiltin: true });
+        var line = h('div', { class: 'status popup-color-line', 'data-theme-field': f[0] });
+        var txt = (r.value == null)
+          ? '未定义（主题未给此字段 → Foxy 端不绘制）'
+          : r.value + '　← ' + FE.colorSourceLabel(r.source, r.detail)
+            + (r.source === FE.COLOR_SOURCES.BUILTIN
+              ? '（未导入主题 → 用 App 内置默认色）'
+              : '（来自主题，改主题即同步）');
+        line.append(h('code', null, f[0]), ' ', txt);
+        box.appendChild(line);
+      });
+      /* popupBorderColor：如实说明未找到消费点，不画边框、也不假装它生效 */
+      var rb = FE.resolveThemeField('popupBorderColor', {});
+      box.appendChild(h('div', { class: 'status popup-color-line popup-border-note', 'data-theme-field': 'popupBorderColor' },
+        h('code', null, 'popupBorderColor'),
+        ' ',
+        (rb.value == null ? '主题未给此字段' : rb.value + '（主题里已有值）')
+        + ' —— App 端未找到消费点，气泡不画边框；这里照实说明，不假装它生效。'));
+      box.appendChild(h('div', { class: 'status' },
+        '气泡固定几何（不受布局控制）：圆角 6dp、高 44dp、字号 24sp（受 fontSizeCap 限制为该键键字号）。'));
+      if (typeof themeJumpBtn === 'function') box.appendChild(themeJumpBtn('popup-theme-jump'));
+      return box;
+    }
+
     /* 从 draft（含直接字段与继承链）解析出此按键的 popupKey */
     function resolvePopupKey() {
       var g = draft.longPress;
@@ -1901,6 +2227,10 @@ FE.openKeyDialog = function (opts) {
     }
     function refreshPopupSection() {
       clearEl(pb);
+      /* 先放「气泡配色属于主题」的说明：**无论有没有 popupKey 都要显示** ——
+       * 用户正是在这里困惑「为什么不能填颜色」。这段由本函数重建时一并重挂，
+       * 否则 clearEl(pb) 会把它清掉。 */
+      pb.appendChild(popupColorInfo());
       /* draft 可能在手势编辑后变化，每次重建时重算 */
       var pk = resolvePopupKey();
       if (!pk) {
