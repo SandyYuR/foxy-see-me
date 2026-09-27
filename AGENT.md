@@ -422,6 +422,9 @@ tooltip 由 `itemTooltip(item, shift)` 生成（读 `item.summaries` / `item.hin
 与 `states.{modifierActive,modifierLocked,pressed}.{background,text,shadow}`，
 优先级 `modifierActive < modifierLocked < pressed`；按下或修饰激活时默认 `box-shadow: none`，
 只有该状态显式给了 `shadow` 才画。`applyHintColors` 处理 `hint` + 四边 `hintTop/Bottom/Left/Right`。
+Foxy 布局色是 `#AARRGGBB`（alpha 在前），CSS 8 位 hex 是 `#RRGGBBAA`（alpha 在后），
+写入行内样式前一律经 `foxyColorToCss` 重排（6 位原样，8 位把 alpha 移到末尾，非法值不写样式），
+否则预览与手机显示错位（如 `#FF52F7BD`）；预览与手机对的都是同一份 `colors` 数据。
 `applyKeyColors` / `displayLabel` 的 `status` 参数可省略（回落 `state.status`），
 但**显式传入才能对任意状态渲染**（无头测试 / 将来的导出）。
 

@@ -2316,6 +2316,20 @@ function keyFontPx(eff, unit) {
   return clamp(unit * 0.42 * scale, 8, 42);
 }
 
+/* Foxy 布局颜色是 #AARRGGBB（alpha 在前），浏览器 CSS 的 8 位 hex 是
+ * #RRGGBBAA（alpha 在后）。原样透传会让 R 通道吃掉 alpha（如 #FF52F7BD
+ * 在网页上显示为不透明品红，而手机上是粉蓝），所以预览写入行内样式前
+ * 必须把 8 位色转成 CSS 语义；6 位色两边一致，原样返回。
+ * 非法值返回 null（调用方回落，即不写该行内样式）。 */
+function foxyColorToCss(v) {
+  if (typeof v !== 'string') return null;
+  var m = v.trim().match(/^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
+  if (!m) return null;
+  var hex = m[1];
+  if (hex.length === 6) return '#' + hex;
+  return '#' + hex.slice(2) + hex.slice(0, 2);
+}
+
 /* 阴影色 → CSS box-shadow（shadow 角色只给颜色，偏移/模糊沿用主题口径） */
 function shadowCss(color) { return '0 1px 2px ' + color; }
 
@@ -2325,12 +2339,19 @@ function applyKeyColors(el, eff, pressed, status) {
   var c = eff.colors;
   if (!isPlainObject(c)) return;
   var col = {};
-  if (typeof c.background === 'string') col.background = c.background;
-  if (typeof c.text === 'string') col.color = c.text;
-  if (typeof c.border === 'string') { col.borderColor = c.border; el.classList.add('kb-key-hasborder'); }
-  if (typeof c.shadow === 'string') col.boxShadow = shadowCss(c.shadow);
+  var bg = typeof c.background === 'string' ? foxyColorToCss(c.background) : null;
+  if (bg) col.background = bg;
+  var tx = typeof c.text === 'string' ? foxyColorToCss(c.text) : null;
+  if (tx) col.color = tx;
+  var bd = typeof c.border === 'string' ? foxyColorToCss(c.border) : null;
+  if (bd) { col.borderColor = bd; el.classList.add('kb-key-hasborder'); }
+  var sh = typeof c.shadow === 'string' ? foxyColorToCss(c.shadow) : null;
+  if (sh) col.boxShadow = shadowCss(sh);
   /* 基础 pressed 角色：手指按住该键时的背景色（优先级低于 states.pressed） */
-  if (pressed && typeof c.pressed === 'string') col.background = c.pressed;
+  if (pressed && typeof c.pressed === 'string') {
+    var pr = foxyColorToCss(c.pressed);
+    if (pr) col.background = pr;
+  }
 
   /* 运行时状态色：优先级 modifierActive < modifierLocked < pressed，按序叠加 */
   var modifierOn = !pressed && eff.modifier === 'SHIFT' && status.shift;
@@ -2344,9 +2365,18 @@ function applyKeyColors(el, eff, pressed, status) {
   }
   var stateShadow = null;
   chain.forEach(function (st) {
-    if (typeof st.background === 'string') col.background = st.background;
-    if (typeof st.text === 'string') col.color = st.text;
-    if (typeof st.shadow === 'string') stateShadow = st.shadow;
+    if (typeof st.background === 'string') {
+      var sbg = foxyColorToCss(st.background);
+      if (sbg) col.background = sbg;
+    }
+    if (typeof st.text === 'string') {
+      var stx = foxyColorToCss(st.text);
+      if (stx) col.color = stx;
+    }
+    if (typeof st.shadow === 'string') {
+      var ssh = foxyColorToCss(st.shadow);
+      if (ssh) stateShadow = ssh;
+    }
   });
   /* 按下与修饰锁定的键默认隐藏普通阴影；只有该状态显式给出 shadow 才绘制（含透明值） */
   if (pressed || modifierOn) col.boxShadow = stateShadow ? shadowCss(stateShadow) : 'none';
@@ -2371,7 +2401,8 @@ function applyHintColors(el, eff) {
       if (hel.classList.contains('kb-hint-' + dj)) { dir = dj; break; }
     }
     var hc = (dir && typeof hintEdge[dir] === 'string') ? hintEdge[dir] : hintBase;
-    if (hc) hel.style.color = hc;
+    var hcc = typeof hc === 'string' ? foxyColorToCss(hc) : null;
+    if (hcc) hel.style.color = hcc;
   }
 }
 
@@ -5217,8 +5248,9 @@ FE.scrollToDefItem = scrollToDefItem;
 FE.curSections = curSections;
 FE.getRowKeys = function (section, ri) { return getRowKeys(section, ri); };
 /* 弹出菜单页的弹出效果预览复用：模拟按键直接套对应布局按键的 colors
- * 覆盖（与键盘预览同款语义）。纯导出，不改逻辑。 */
+ * 覆盖（与键盘预览同款语义，8 位色同样经 foxyColorToCss 转 CSS）。纯导出，不改逻辑。 */
 FE.applyKeyColors = applyKeyColors;
+FE.foxyColorToCss = foxyColorToCss;
 
 function placementContainer(loc) {
   /* 只读解析：不做数组行 → 对象行的转换，避免打开对话框时改动结构 */

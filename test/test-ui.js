@@ -1317,7 +1317,7 @@ FE.renderAll();
   };
   FE.renderAll();
   const key2 = q('.kb-key').find(k => String(k.getAttribute('title') || '').indexOf('qwerty.q') >= 0);
-  ok(String(key2.style.boxShadow).indexOf('#40000000') >= 0, '未按下时基础 shadow 生效');
+  ok(String(key2.style.boxShadow).indexOf('#00000040') >= 0, '未按下时基础 shadow 生效（转 CSS 语义）');
   key2._fire('pointerdown');
   eq(key2.style.background, '#2E7D32', 'states.pressed 优先于基础 pressed');
   eq(key2.style.boxShadow, 'none', '按下时默认隐藏普通阴影');
