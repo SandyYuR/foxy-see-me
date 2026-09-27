@@ -4,7 +4,8 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 461 / UI 829 / 真实文件体检 20 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 537 / UI 1062 / 颜色解析 63（`test-color-source.js`）
+/ 真实文件体检 20 个示例 0 错误。
 
 ### ⚠️ 本文件有两份，必须保持一致
 
@@ -51,14 +52,23 @@ node tools/check-agent-sync.js           # 只校验，不一致则退出码 1
 当成 Foxy 的字段。取色面板那几个坑（必须挂进 `<dialog>`、ARGB 字节序）是对着
 参照项目的做法复刻验证过的，见 §4.5。
 
-#### D2 · 主题编辑**明确排除**，不要再加
+#### D2 · 主题文件编辑**已纳入**（2026-09 修订；全局主题设置仍不做）
 
-原始任务里用户就点明"主题部分的编辑可以去除"。理由：**主题是 Foxy 的全局设置，
-不属于布局文件**。布局文件里只有每键 `colors` 覆盖（`text/background/border/hint/
-pressed/shadow` + `states.*`），那个已完整支持。
+原始任务里曾点明"主题部分的编辑可以去除"，理由是"主题是 Foxy 的全局设置，
+不属于布局文件"。2026-09 用户明确要求增加**主题文件编辑**
+（`foxy.keyboard-theme`，放 `<外部存储>/foxy/frontend/themes/<name>.json`，
+用户约定，待 App 端确认）与符号/emoji/颜文字面板编辑，D2 据此修订：
 
-> 后续代理常见误判："预览有深浅配色开关，但没有主题编辑器，是不是缺功能？"
-> **不是。** 预览的深浅开关只是**预览辅助**（`state.theme`），不写进布局数据。
+- 允许编辑**主题文件本身**（`type/name/light/dark` + 26 色字段 +
+  `keyTypes.FUNCTION/ACTION`），含校验、导入导出、键盘预览实时联动；
+- **仍不做** Foxy 全局主题设置界面（主题列表选择、跟随系统等 App 端行为）；
+- 布局文件里的每键 `colors` 覆盖不受影响，仍属布局数据；
+- 预览的深浅开关（`state.theme`）仍是预览辅助，不写进任何文件；
+  主题 `light/dark` 是两套配色槽位（样本 `春.json` 的 dark 实为浅色），
+  不得与预览深浅开关混为一谈。
+
+> 主题格式的唯一仓内样本是 `布局/思无邪@foxy/themes/春.json`；
+> skill 无 theme schema、无运行时路径依据，路径约定以用户决定为准。
 
 #### D3 · 纯前端 / 零构建 / 零依赖是**硬约束**
 
@@ -134,7 +144,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **462 core + 824 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **531 core + 1062 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -171,7 +181,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 ```
 foxy-editor/
-├── index.html        页面骨架：预览面板 + 4 个标签按钮 + 4 个 tabpanel 区块
+├── index.html        页面骨架：预览面板 + 6 个标签按钮 + 6 个 tabpanel 区块
 ├── style.css         全部样式（含 ≤640px 手机竖屏优化）
 ├── js/
 │   ├── data.js        内置按键注册表 rime.* / foxy.*、KeyCode 分组、App 命令表
@@ -184,6 +194,16 @@ foxy-editor/
 │   ├── key-dialog.js  对话框：按键 / 手势 / 动作 / 变体 / 按键选择器 / jscolor 取色
 │   ├── macro-editor.js 「动作与宏」页的图形化编辑（纯逻辑 + UI；**依赖 key-dialog.js，须排其后**）
 │   ├── popup-editor.js 弹出菜单编辑（纯逻辑 + 该标签页 UI）
+│   ├── theme-editor.js 主题文件编辑（foxy.keyboard-theme：纯逻辑 + 该标签页 UI +
+│   │                   预览联动取值 FE.themeKeyColors / FE.themeKeyboardColor）
+│   ├── color-source.js ⭐ 颜色「全链路解析 + 来源标注」纯逻辑（无 UI）：
+│   │                   FE.resolveRole / resolveKeyColors / resolveThemeField /
+│   │                   resolveKeyboardColor / resolveCandidateBarColor / colorEffectText。
+│   │                   预览与三处颜色编辑面共用；**须排在 theme-editor.js 之后**
+│   │                   （要用 FE.themeBuiltinSlot / FE.normalizeThemeColor）
+│   ├── symbol-editor.js 符号 / emoji / 颜文字 catalog 编辑（纯逻辑 + 该标签页 UI）
+│   ├── symbol-preview.js 符号面板预览（对照 App 端 `ly` 视图；**须排在 symbol-editor 之后**
+│   │                    —— 用 FE.symbolKindMeta / FE.symbolGroupLabel / state.symbolProfiles）
 │   └── jscolor/jscolor.js  vendor 取色器（GPLv3，**不要改**）
 ├── examples/          示例源文件（20 个：16 布局 + 4 弹出菜单；源自工作区 `布局/`）
 ├── skills/            格式规范（随仓库分发的 skill 文档副本，**只读参考，别改**）
@@ -200,6 +220,8 @@ foxy-editor/
 └── test/
     ├── test-core.js   纯逻辑测试（Node，无 DOM）
     ├── test-ui.js     UI 冒烟测试（Node + 自制 DOM 桩）
+    ├── test-color-source.js  颜色全链路解析测试（Node；**逐条对照 App 源码**，
+    │                  依据见工作区 `foxy/foxy-render-spec.md`）
     ├── dom-stub.js    极简 DOM 桩（含 jscolor 桩）
     └── check-real-files.js  用真实示例跑体检
 ```
@@ -209,13 +231,23 @@ foxy-editor/
 ```
 data.js → default-profile.js → examples-bundle.js → app.js
   → folder-import.js → jscolor/jscolor.js → key-dialog.js → popup-editor.js
+  → theme-editor.js → color-source.js → symbol-editor.js → symbol-preview.js
 ```
+
+> `color-source.js` 必须排在 `theme-editor.js` **之后**：它要复用
+> `FE.themeBuiltinSlot`（内置默认主题）与 `FE.normalizeThemeColor`（颜色归一化）。
+> 它自身是纯逻辑、无 UI 段，因此在 Node 测试里也能直接加载（不依赖 DOM 桩）。
 
 - `app.js` 的 UI 段在加载时**立刻执行 `boot()`**（初始化标签、工具栏、渲染一次）。
 - `folder-import.js` 复用 `FE.sanitizeJsonText` / `FE.normalizeProfile`，**必须在 app.js 之后**加载。
-- `key-dialog.js` / `popup-editor.js` 是 IIFE，**加载时自行初始化**（绑事件 + 首次渲染），
-  依赖 app.js 已导出的 `FE.h / FE.clearEl / FE.$ / FE.state`。
-- 因此：**不要**把 key-dialog.js 或 popup-editor.js 移到 app.js 前面。
+- `key-dialog.js` / `popup-editor.js` / `theme-editor.js` / `symbol-editor.js` 都是 IIFE，
+  **加载时自行初始化**（绑事件 + 首次渲染），依赖 app.js 已导出的 `FE.h / FE.clearEl / FE.$ / FE.state`。
+- 因此：**不要**把 key-dialog.js / popup-editor.js / theme-editor.js / symbol-editor.js
+  移到 app.js 前面。
+- 新增 `js/*.js` 模块要**三处同步**：`index.html` 的 `<script>` 顺序、
+  `test-core.js` 与 `test-ui.js` 的 `load()` 列表（见 §5.1）。
+  两个测试文件的 `load()` 都对**缺失文件静默跳过**，这样另一模块尚未落地时
+  不会把整套测试拖红、掩盖真正的失败。
 
 ---
 
@@ -606,6 +638,26 @@ var name = await FE.uiPrompt({ title, message, value, placeholder, required }); 
   click 会冒泡到 dialog。面板 `pointerdown/mousedown` 打标 `FE._colorDragGuard`，
   `openModal` 的遮罩判定对 800ms 内的 click 豁免；普通遮罩点击照常关闭。
 
+- ⭐ **「取色框有时不显示已选颜色预览」—— 每个渲染色框的地方都必须补装实例**
+  （`theme-editor.js` 的 `installThemePickers()`，踩过两次，别再漏）：
+  jscolor 的"已选颜色预览"是它画在**输入框自身 `background-image`** 上的色块
+  （vendor `jscolor.js:2336` 的 `setPreviewElementBg`，构造期
+  `processValueInput → exposeColor` 触发）。**没有实例就没有色块。**
+  而 `colorRow` 里那句 `FE.installJscolor(inp, ...)` 执行时输入框**还没进 DOM**，
+  走的是"挂起、待挂载后补装"分支 —— 也就是说：**光调用 installJscolor 是不够的，
+  谁渲染了色框，谁就必须在元素 append 之后补一次 `FE.installPendingColorPickers(host)`。**
+  症状因此是"**有时**"而不是"全都没有"：只有用户点过的那个框才建出实例、才有预览；
+  而选完色会触发 `afterChange → renderAll` 重建表单，实例随旧元素一起丢弃，
+  预览又消失 —— 表现为"选完颜色，色块反而不见了"。
+  已踩过的两处：按键对话框（`key-dialog.js` 的 `buildForm` 末尾，已有）与
+  **主题页**（原先漏了 → 刚渲染完 46 个色框 0 个实例；已修）。
+  新增任何渲染 `.color-input` 的面板时，照抄 `installThemePickers()` 的写法。
+  回归断言在 `test/test-theme-colors.js` 第 ⑥ 块（刚渲染完 / 选完色 / 切页往返 /
+  重渲染后，四处都要求"缺实例数 = 0"）。
+  > 断言实例配置时注意：DOM 桩只把构造选项留在 `picker.opts` 上，**不会**像真实
+  > jscolor 那样把 `format`/`valueElement`/`alphaChannel` 落到实例属性
+  > （真实版由 `setOption` 逐个赋值，`jscolor.js:3135-3145`）；用实例属性断言会误红。
+
 ### 4.6 弹出菜单（popup-editor.js）
 
 - 纯逻辑：`normalizePopupProfile` / `popupSchemaName` / `serializePopupProfile` /
@@ -664,10 +716,22 @@ var name = await FE.uiPrompt({ title, message, value, placeholder, required }); 
 
 ### 4.8 示例打包（tools/build-examples.js）
 
-- 读 `examples/*.json`，按内容判断 `kind`：`foxy.popup-profile` → `popup`，否则 `layout`；
-  生成 `FE.EXAMPLE_FILES`（文件名 → 文本）与 `FE.EXAMPLE_META`（文件名 → `{kind, desc}`）。
+- 读 `examples/*.json`，按内容判断 `kind`：`foxy.popup-profile` → `popup`，
+  `{multiLine, groups}`（无 `layouts`/`schemas`）→ `symbol`，否则 `layout`；
+  生成 `FE.EXAMPLE_FILES`（文件名 → 文本）、`FE.EXAMPLE_META`（文件名 → `{kind, desc}`）
+  与 `FE.SYMBOL_EXAMPLE_FILES`（**按符号类别**索引：`{symbols:{名:文本}, emoji:{}, kaomoji:{}}`）。
 - 布局页与弹出菜单页的示例下拉**各自按 kind 过滤**，所以新增示例只需丢进 `examples/`
   再跑一次脚本，不用改 UI 代码。
+- ⚠️ **解析一律走编辑器自己的 `FE.inspectJsonText`，别在本工具里另写正则剥离。**
+  踩过的坑：原本用 `text.replace(/(^|[^:\\])\/\/.*$/gm,'$1')` 删行注释，那个正则不认识
+  字符串，会把**字符串内部**的 `//` 当注释。颜文字 `(˶///˶)` 正中此枪 —— 该行后半段
+  （含闭合引号）被整段删掉，于是字符串里露出裸换行，打包直接抛
+  「Bad control character in string literal」，而**文件本身是合法 JSON**。
+  复用 `inspectJsonText`（逐字符状态机，字符串内的 `//` 当内容）= 打包器与运行期
+  **同一套解析语义**，不会各自漂移，也顺带享有注释/尾逗号/全角标点的宽容修复。
+- 符号类别的细分**只能靠文件名**（`颜文字`/`kaomoji`、`表情`/`emoji`、否则 `symbols`）：
+  三者顶层结构完全一样，内容判不出类别。判不出时按 `symbols` 处理，**不报错**
+  （内容合法就该能入库，猜错类别只影响归类）。
 - 改了 `examples/` 里的任何文件后**必须**跑：
   ```
   node tools/build-examples.js
@@ -686,20 +750,32 @@ var name = await FE.uiPrompt({ title, message, value, placeholder, required }); 
 | 顶层 `*.json` | 同名保留 |
 | `思无邪@foxy/layouts/X.json` | `X.json`（如 `思无邪.json`）|
 | `思无邪@foxy/popups/X.json` | `X-popup.json`（如 `气泡.json` → `气泡-popup.json`）|
+| `符号表情定义文件/{符号,表情,颜文字}.json` | 同名保留（**符号类示例**）|
 
 **排除项（不要入库）**：
 
-- `符号.json` / `表情.json` / `颜文字.json` —— 顶层 `{multiLine, groups}`，是符号面板数据，
-  **不是** keyboard-layout（入库会让本脚本与体检器双双报错）。
+- **主题文件**（`foxy.keyboard-theme`，如 `思无邪@foxy/themes/春.json`）—— **不要**入库：
+  类型判定只认 `foxy.popup-profile` / `foxy.keyboard-layout` / `{multiLine,groups}`
+  （或唯一的 `layouts`/`schemas` 结构），主题都不是 → 直接抛「无法判断示例类型」。
+  主题改由「主题」页的**载入内置默认**与单文件导入覆盖，不进 `examples/`。
 - `简易/`（`definitions.json` + `layouts/*.json` + `popups/*.json`）—— **分包**，
   薄布局单独校验有 1.6 万个「ref 无法解析」，必须与 `definitions.json` 合并才有效。
   它保留在工作区里作为「多文件包导入」的实测语料（见 §4.9 / test-core 的 `布局/简易` 用例），
   **不要**拆成单文件塞进 `examples/`。
 
+> 🔄 **修订**：`符号.json` / `表情.json` / `颜文字.json` **已入库**（用户明确要求
+> "预置到示例里面"）。旧记载说它们不能入库，真实原因是**打包器认不出
+> `{multiLine, groups}` 这个类型**（会抛「无法判断示例类型」），并非格式本身不该入库 ——
+> 现已给打包器补上 `symbol` 分支，三份文件正常打包（35/58/15 组）。
+> 连带要同步的地方（**都已改**，别回退）：`test/check-real-files.js` 的符号校验分支、
+> `test/test-core.js` 示例遍历的符号分流、`symbol-editor.js` 的「载入示例」入口。
+
 > 历史：`examples/split.json` 已被 `布局/split2.json` 取代（split2 是超集：
 > 多 `cangjie5` 的 split 片段与 `text_editor` 布局，布局数 3 → 4）。
 > 同步时 `test-core.js` / `test-ui.js` 里对 `split.json` 的硬引用、
 > 以及「布局 pill 数 = 3」的断言都已改为 4 —— 这类计数断言会被示例替换连带打破，**要一起改**。
+> ⚠️ 同理，向 `examples/` 加文件会让"遍历全部示例做校验"的断言连带变化
+> （本次加 3 个符号文件就让 core 红了 3 条）。
 
 ### 4.9 多文件布局包导入（folder-import.js）⭐ 单入口，别退回单文件假设
 
@@ -943,15 +1019,21 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
 - **摘要行内的按钮**（动作/宏条目）：都在 `<summary>` 里，**必须 `stopEv(e)`**
   （`preventDefault` + `stopPropagation`），否则点按钮会连带展开/收起。
 
-### 4.12 定义列表的工具条（搜索 + 新建）⭐ 四张列表必须同构
+### 4.12 定义列表的工具条（搜索 + 新建）⭐ 列表必须同构
 
-按键定义 / 动作 / 宏 / **弹出菜单键** 四张列表共用同一套工具条，
+按键定义 / 动作 / 宏 / **弹出菜单键** 这四张列表共用同一套工具条，
 **外观与行为完全一致**（用户明确要求同步；弹出菜单键是后补的第四张列表）。
+后来新增的**符号分组列表**（`sym-filter`，见 §4.16）也照同一套接线，
+所以现在**工具条共 5 处**。
 
 ⚠️ **「列表」与「页签」不是一回事**（措辞别混，曾把「四张列表」写成「四个页签」）：
-四张列表落在**三个页签**里 —— 按键定义 1 张、**动作与宏 2 张**（动作 + 宏）、
-弹出菜单 1 张。而顶部共 4 个页签（多一个「布局编辑」，它不是列表页、没有搜索框）。
-搜索框因此也是 **3 个页签里的 4 个**：`keys-` / `actions-` / `macros-` / `popup-filter`。
+- 上面四张列表落在**三个页签**里 —— 按键定义 1 张、**动作与宏 2 张**（动作 + 宏）、
+  弹出菜单 1 张。
+- 符号分组列表在第五个页签（「符号面板」）。
+- 顶部共 **6 个页签**，其中「布局编辑」不是列表页、没有搜索框；「主题」页也没有
+  （它的 26 色网格是表单，不是可搜索列表）。
+- 搜索框因此是 **4 个页签里的 5 个**：`keys-` / `actions-` / `macros-` / `popup-filter`
+  / `sym-filter`。
 
 ```
 .def-toolbar                  ← 一行，可换行
@@ -1110,6 +1192,344 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
 
 ---
 
+### 4.15 主题文件编辑（theme-editor.js）⭐ 字段面与预览优先级最容易做窄/做反
+
+格式依据是 `foxy/foxy-app-format-baseline.md` §1.2（App 反编译核对结果），
+**不是**仓内唯一样本 `布局/思无邪@foxy/themes/春.json` —— 样本只写了子集，
+照它实现会把用户数据**静默丢弃**。
+
+- **字段面 = 26 色 + `keyTypes` 3 类 × 10 字段**：
+  - 26 个颜色字段的权威顺序见 `FE.THEME_COLOR_FIELDS`（勿改序，导出按它排）。
+  - `keyTypes` 是 **3 类** `LETTER` / `FUNCTION` / `ACTION`（**样本只写了 2 类**，
+    漏掉 `LETTER` 会让字母键永远只能回落全局字段）。
+  - 每类 **10 个字段** `text/background/pressed/border/shadow/hint/hintUp/hintDown/
+    hintLeft/hintRight`（**样本只写了 4 个**，只做 4 个的话用户编辑
+    `border/shadow/hintXxx` 会被静默丢弃）。键名大小写必须与枚举完全一致。
+- **颜色值宽容读入、统一导出** `FE.normalizeThemeColor`：接受 `#RGB` / `#ARGB` /
+  `#RRGGBB` / `#AARRGGBB`，一律规范化成 `#AARRGGBB`（App 端同样宽容，导出固定 8 位）。
+- **`light` / `dark` 是两套配色槽位**，与 `state.theme`（预览深浅开关）**不是一回事**，
+  别混（见 D2 修订；样本 `春.json` 的 `dark` 看上去是浅色，正因槽位无"深色外观"语义）。
+  槽位为空时回退 **App 内置默认主题**（`FE.themeBuiltinSlot`）。
+- ⭐ **预览着色优先级（与直觉相反，最易改错）**：
+  ```
+  ① 布局 colors.states.*  >  ② 布局每键 colors  >  ③ 主题 keyTypes[键类型]
+  >  ④ 主题 26 色全局默认
+  ```
+  **布局每键覆盖高于主题 keyTypes**。实现方式：`applyKeyColors` 先用
+  `FE.themeKeyColors(eff.keyType)`（已把 ③④ 合成好）铺一层内联样式做兜底，
+  再让 ② `eff.colors` 逐项盖上去，最后按 ① 叠加运行时状态色。
+  `applyHintColors` 同理（布局的 `hint`/`hintXxx` 盖住主题值）。
+  > ⭐ **未导入主题时按 App 内置默认主题上色**（用户明确要求：「网页键盘预览默认使用
+  > App 内置默认主题的深浅颜色，不再使用现有的网页编辑器之前预置的颜色」）。
+  > 落点是 `FE.themeSlotColors()` —— 它在 `themeProfile` 为空**或该槽位不是对象**时
+  > 回退 `FE.themeBuiltinSlot(slot)`，于是键面/提示/容器/keyTypes/阴影/边框**全部**
+  > 自动拿到内置默认色，不必在每个分支重复兜底。
+  > App 端本就是这样：用户没自定义时用的就是内置默认主题（`xw0.java:158-160/189-191`）。
+  > **旧口径已反转**：从前是"未导入主题 → `themeKeyColors` 返回 null → 一个内联色都不写、
+  > 走 CSS 预置色"，那是为了"与改动前逐像素一致"；现在改为比照手机，
+  > 所以 `test-ui.js` / `test-core.js` 里相关的十几条断言都已同步改写（别再按旧口径"修回去"）。
+  > ⚠️ **`color-source.js` 的 `themeSlot()` 仍返回 null**（语义是"**没有导入主题**"，
+  > 供 UI 提示 / 校验判断用）。**不要**给它也加内置回退，否则界面再也说不清
+  > "当前到底有没有导入主题"。两者分工不同，别混。
+  > ⚠️ `builtinSlot()` 必须**自己归一化槽位**（缺省取 `state.themeSlot`、非 dark 归 light）：
+  > 调用点通常不传 `slot`，直接透传 undefined 会让 `FE.themeBuiltinSlot` 按 light 处理，
+  > 于是 dark 槽下拿到浅色内置默认色（踩过：未导入主题 + dark 槽时面板底亮成 `#EEEEEE`）。
+- **`key_border_enabled` 影响容器底色**（基线 §1.4）：为真 → `altKeyboardColor`，
+  为假 → 回落 `keyboardColor`。用 `FE.themeKeyboardColor(borderEnabled)` 取值，
+  `renderPreview()` 把它写进 `#preview-kb` 的行内 `background`。
+  ⚠️ 这是 App 的**全局设置**（`state.keyBorderEnabled`，默认 true），
+  **不写进主题 JSON**，只做预览建模。
+- ⚠️ `themeKeyboardColor` / `themeKeyColors` 返回的都是**原始 ARGB**（纯逻辑段拿不到
+  UI 段的转换函数）。**写入样式前必须经 `foxyColorToCss`** —— 8 位色是
+  `#AARRGGBB`（alpha 在前）→ CSS `#RRGGBBAA`（alpha 在后），不转就是"取色串色"。
+- **取色手势分组**（拖动面板会连发几十次回调，逐次压栈会冲爆撤销栈、
+  且拖动中重渲染会拆掉正在拖的面板）：
+  - `beginGesture()` 在首次改动时用 `FE.snapshotState()` 记一次快照；
+  - 手势中只改 `state` + `FE.renderPreviewOnly()`（**不重建表单**）；
+  - `endGesture()` 才 `FE.pushHistorySnapshot()` 压栈并 `FE.afterChange()`。
+  - ⭐ `colorRow` 的 `apply()` 必须**幂等**（先比 `committed`，同值即空操作）：
+    同一个值会被**两条路径**送达 —— `FE.installJscolor` 自挂的 `change` 监听
+    （依次发 `onInput` 与 `onDone`）与本函数自挂的 `change`（处理手输），
+    jscolor 那个先注册所以先跑。不幂等就会一次手输压**两条**历史（实测过）。
+- ⭐ **方向提示色是「逐层」回落，且有一条反直觉的优先级**（对齐 App 端
+  `m00.java:265-291`）：
+  ```
+  keyTypes[方向] → keyTypes.hint → 槽位[方向] → 槽位.hint(keyHintTextColor)
+  ```
+  ⚠️ 关键在于 **`keyTypes.hint` 优先于「槽位自己的方向色」**：
+  直觉上"更具体的槽位方向色"该赢，实际 App 端是先取 `keyTypes.hint`。
+  **只做单层回落（`方向色 || 槽位 hint`）就会做错**——这是本页最容易漏的一处，
+  已由 `test-core.js` 的「主题：方向提示色的逐层回落」区块四条断言锁住。
+- **「新建主题」的初值 = App 内置默认色**（`FE.themeNewProfile` / §1.6），
+  ⚠️ **四个方向提示色留空**（内置默认里是 `null`，表示继承 `keyHintTextColor`），
+  不要填死值。
+- **校验只断能确证的事**（D7）：`type` 不对、槽位不是对象、颜色值不合正则 → `err`；
+  `name` 空、槽位缺失、`keyTypes` 缺分组/缺字段/含未识别键名 → `warn`。
+  归一化**不补 `type`**、**不丢非法颜色**（丢掉用户就再也看不到自己哪写错了），
+  也不吃未知字段。
+- ⚠️ 主题文件**不入库 `examples/`**：`tools/build-examples.js` 的类型判定只认
+  `foxy.popup-profile` / `foxy.keyboard-layout`（或 `layouts`/`schemas` 结构），
+  主题两者都不是 → 直接抛「无法判断示例类型」。所以「新建」用内置默认色，
+  不走 examples。
+
+### 4.16 符号 / emoji / 颜文字面板（symbol-editor.js）
+
+格式依据基线 §2（顶层 `{multiLine, groups}`，**无 `type` 字段**）。
+
+- ⭐ **三类按复数槽存取**（这是最容易漏的接线点）：
+  - 事实来源 = `state.symbolProfiles = { kind: profile }`，另有
+    `state.symbolFileNames = { kind: 文件名 }`、`state.symbolLegacy = { kind: bool }`；
+  - `state.symbolProfile` **只是 `symbolProfiles[kind]` 的镜像**；
+  - `state.symbolKind` 为当前类别（`symbols` / `emoji` / `kaomoji`）。
+  > ⚠️ **app.js 必须按复数槽存 `snapshot()` / `restoreSnapshot()` / `autosave()` / `boot()`**。
+  > 曾经只接线单数 `symbolProfile`：切过类别后撤销按钮可点、历史也变长，
+  > **但符号数据根本没回退**（只写回单数镜像，`symbolProfiles[kind]` 不动）。
+  > `test-ui.js` 的「符号面板页：复数槽撤销与草稿」区块专门钉住这个缺口。
+- **`multiLine` 语义**（基线 §2.5）：`true` → 每行 **1** 格、行高 `WRAP_CONTENT`
+  （自适应、不裁切）；`false` → 每行 **6** 格、固定 `40dp` 高、**会裁切长条目**。
+  所以**颜文字这类多字符条目必须 `multiLine: true`**；校验器对
+  `multiLine=false` + 多字符条目给出**裁切警告**。缺省 `false`。
+  字符宽度用 `FE.symbolGraphemeCount`（**按字形簇**，优先 `Intl.Segmenter`）——
+  别用 `String.length`，否则 `❤️`（2 码元）之类会把内置数据全判成多字符而误报刷屏。
+- **旧格式兼容**：顶层直接是数组时按 `{multiLine:false, groups:[…]}` 处理，
+  并给出提示（基线 §2.5）；`symbolLegacy[kind]` 记录该类别是否来自旧格式。
+- ⚠️ **读取优先级与 layouts 相反**（最易搞错的一点）：符号 / emoji / 颜文字
+  **默认只读 APK `assets/`**；放到 `<外部存储>/foxy/frontend/{symbols,emoji,kaomoji}/`
+  的外部文件，**必须在「设置 → 符号布局」里显式选中才生效** ——
+  放同名文件**不会**自动覆盖内置。且这三个目录开机后是**空的**（只 `mkdirs` 不写内容）。
+  解析为空抛 `empty catalog`，读/解析异常回退 assets。
+- **保留名**：`symbols` / `emoji` / `kaomoji` 作为 `switch_layout` 目标时会被
+  下游识别为**符号面板**而非布局名，所以**不能用作自定义布局名**。
+- **与既有列表同构**：复用 `FE.wireSearch` / `FE.collapsibleDefItem` /
+  `FE.ensureOpenSet('openSymbolGroups')`（默认全部折叠、懒建正文）。
+  ⚠️ **已去掉「使用数」按钮**（用户明确要求）—— 别照 §4.12 那四张列表顺手加回来。
+- 内置**极小样例** `FE.SYMBOL_SAMPLES` 仅供「载入内置样例」上手，
+  **刻意不入库 `examples/`**（同 §4.8：顶层 `{multiLine,groups}` 会让
+  `build-examples.js` 抛「无法判断示例类型」）。
+- 分组名的语言回退（基线 §2.3）：`names[完整标签]` → 主标签 → `zh-Hant` →
+  `names` 的第一个值；**空 `names` 或空 `symbols` 的组会被 App 静默丢弃**，校验器报警。
+
+### 4.17 颜色「全链路解析 + 来源标注」（color-source.js）⭐ 预览与三处颜色面共用
+
+**为什么需要它**：用户要求「三处颜色编辑面不能只写死颜色值，要真正全链路与主题对应」。
+但 Foxy 布局格式**不支持**「颜色引用主题字段」——`skills/foxy-keyboard-layout.schema.json`
+里 `colors` 就是 `{"type":["object","null"]}`，`SKILL.md` 明确值只能是 `#RRGGBB`/`#AARRGGBB`
+字面量。所以**全链路只能在编辑器层面做**：值照旧写字面量，
+但解析出「**当前生效色 + 它来自哪一级**」，让 UI 能如实展示、并在改主题时同步。
+
+**权威依据**：工作区 `foxy/foxy-render-spec.md`（基于 App 反编译逐行核对）。
+改这个模块**必须先读它**，尤其是 §1（解析链）、§1.2（方向回落）、§1.4（修饰激活）、§3（容器）。
+
+**导出**（纯逻辑，无 UI 段，Node 直接加载）：
+
+| 接口 | 作用 |
+| --- | --- |
+| `FE.resolveRole(role, eff, opts)` | 解析单个角色 → `{value, source, detail}` |
+| `FE.resolveKeyColors(eff, opts)` | 解析整键 10 角色 + `textFromAccent` |
+| `FE.resolveThemeField(field, opts)` | 取主题 26 色里任意字段 |
+| `FE.resolveKeyboardColor(borderEnabled, opts)` | 键盘容器底色（`m00.f`） |
+| `FE.resolveCandidateBarColor(borderEnabled, opts)` | 候选栏底色（`m00.e`） |
+| `FE.colorEffectText(role, eff, opts)` | 现成的「生效值 ← 来源」中文文案（编辑面用） |
+| `FE.colorToCss` / `FE.colorNorm` / `FE.colorSourceLabel` | 转换与文案 |
+
+`opts` 支持 `slot`（light/dark）与 `includeBuiltin`
+（**未导入主题时是否按 App 内置默认主题兜底**）。
+
+> ⭐ **预览侧的三个取色入口都传 `includeBuiltin: true`**（app.js 的 `themeAccentCss`、
+> `popup-editor.js` 的 `themeCss`/`resolveKeyboardColor`、`symbol-preview.js` 的
+> `themeCss`/`panelBgCss`），以落实"预览默认用 App 内置默认主题色"。
+> **编辑面**（如按键对话框的「生效值 ← 来源」）也传 `includeBuiltin: true`，
+> 因为它要如实显示"清空后会落到内置默认色"。**不传**的是需要区分
+> "用户是否真的配过这个色"的语义判断。
+
+**解析链（必须与 App 一致，别自己发明）**：
+```
+① 布局 colors.states[状态][角色]  >  ② 布局 colors[角色]
+>  ③ 主题 keyTypes[键类型][角色]  >  ④ 主题 26 色全局默认
+```
+⚠️ **② 高于 ③**（布局每键覆盖胜过主题 keyTypes）——与直觉相反。
+⚠️ **方向提示色另有逐层回落**：`keyTypes[方向] → keyTypes.hint → 槽位[方向] → 槽位.hint`，
+其中 **`keyTypes.hint` 优先于「槽位自己的方向色」**（最易做错，spec §1.2）。
+⚠️ **命名差异**：布局侧叫 `hintTop/hintBottom`，主题 keyTypes 侧叫 `hintUp/hintDown`
+（App 内部枚举是 UP/DOWN）。`FE.KEYTYPE_ROLE_FIELD` 负责这层映射，别写混。
+
+**未传 `includeBuiltin` 时的语义**：未导入主题且非布局来源一律返回 `null`
+（表示"没有用户配置的颜色"）。这一层仍需保留 —— 编辑面要靠它区分
+"布局自己给的色"与"主题/内置兜底给的色"。**预览**则一律传 `includeBuiltin`，
+所以预览不会再出现"零内联色"那种状态（见 §4.15 的说明）。
+
+**测试**：`node test/test-color-source.js`（96 通过）——逐条对照 App 源码行号，
+比 `test-core.js` 里的主题断言更细，改解析链**必须**同步它。
+
+### 4.18 符号面板预览（symbol-preview.js）⭐ 与键盘预览**共用一个容器**
+
+**为什么存在**：App 端符号 / emoji / 颜文字面板（`ly`）**不是弹层**，
+而是一块**整块替换键盘区域**的横排面板（`cv.java:2433` 显示它后键盘隐藏）。
+编辑符号时看不到它的样子，就没法判断格子密度、组名长度、`multiLine` 是否合适。
+
+**关键设计：它是渲染分支，不是叠加层。** `renderPreview()` 开头按
+`state.activeTab === 'tab-symbols'` 分流 —— 同一个 `#preview-kb` 容器，
+要么画键盘、要么画符号面板。**别改成"在键盘上再叠一层"**（那是错的还原）。
+
+**结构**（规范 `foxy/foxy-render-spec.md` §8 有完整证据表）：
+
+```
+┌──────┬──────────────────────────┐
+│ 分组 │ 符号格子区（可滚动）      │
+│ 列表 │ multiLine=false → 6 格/行 │
+│(可滚)│ multiLine=true  → 1 格/行 │
+├──────┤                          │
+│ ⌨  ⌫ │                          │
+└──────┴──────────────────────────┘
+  84dp           剩余宽度
+```
+
+**几何换算**：App 用 dp，预览用 px。键盘预览的 `unit = portraitW / 10` 等价于
+"360dp 宽屏"，故 `1dp ≈ unit / 36`（`FE.symbolPreviewDp`）。
+**别写死 px** —— 预览宽度随窗口变，写死会让面板与键盘比例失调。
+
+**配色全部走 `color-source.js`**（与键盘同一个解析入口）：面板底 = `f()
+= key_border_enabled ? altKeyboardColor : keyboardColor`；格子底 `keyBackgroundColor`、
+字 `candidateTextColor`；分组项未选中 = 字 `keyHintTextColor` + 底透明，
+选中 = 字 `toolTextColor` + 底 `candidateHighlightColor`；格子描边仅当
+B(键边框) 与 C(描边) 同时开启才画（C 默认 false → 默认不画）。
+
+**⚠️ 左列底部「⌨」「⌫」也是带底色的圆角色块，不是纯文字**（踩过，别再漏）：
+创建它们的 `a()`（`ly.java:159-171`）与创建符号格子那段（`ly.java:202-218`）
+调的是**同一个 `f()`**（`ly.java:326-341`），所以三者外观完全同款 ——
+底 = `keyBackgroundColor`、圆角 = 6dp 且 clamp 到 `min(w,h)/2`、
+描边 = 仅当 B(键边框) 与 C(描边) 同时开启；字色同为 `candidateTextColor`
+（`:166` 与 `:208`）。
+编辑器**曾只给这两个键字色、漏了底色**，看起来像浮在面板上的纯文字，与实机不符
+（用户指出）。实现时直接复用格子的 `bgCell` / `fgCell` / `strokeCss` / `cellCornerDp`，
+别另起一套。回归断言：`test-ui.js`「符号面板预览」②b 块（导入主题 / dark 槽 /
+未导入主题三种情形下都要求热键与格子的底、字、圆角、高**逐项相同且非空**）。
+
+**「最近」分组刻意不显示**：App 会在最前面插一个运行时生成的「最近」
+（`ly.java:228-257`，来自 SharedPreferences）。编辑器没有该状态，
+凭空造一个会让人误以为文件里有这组 —— 已在预览说明里注明。
+
+**外壳同步 `syncPreviewPanelChrome()`**：符号页隐藏键盘状态开关组、角标图例、
+布局 pill，并把标题换成「符号面板预览…」；**深浅配色下拉保留**（面板底跟它走）。
+⚠️ 该函数必须在 `renderPreview()` **入口**调用（不只 `activateTab`）——
+`renderAll`/resize/`details` 展开 都会直接调 `renderPreview`，只在切页时同步会错配。
+
+**尺寸：面板与布局预览严格同尺寸**（用户要求）。高度 = 常规布局总单位数 × unit ×
+`FE.PREVIEW_HEIGHT_K`，与布局预览各区段高度之和一致；宽度取 `100%`（.kb 的内容宽）。
+这样两边切换时预览盒子大小完全相同 —— 用户看符号面板想判断的正是"它在真机那块屏
+会不会挤"，尺寸不同就失去意义。⚠️ 用**常规**布局的 units（不看 `splitMode`/
+`landscapeMode`）：符号面板与分体无关，宽模式在符号页不该被继承。
+
+**说明文字移出键盘预览区**（用户要求）：`renderSymbolPreview` 不再把说明画进 `host`，
+而是随返回值以 `notes[]` 交出，由 `renderSymbolPreviewMeta` 放进 `#preview-meta`
+（在 `.preview-stage` **之外**）。理由：键盘区只该呈现"手机的样貌"，说明文字挤进去
+既挡观感、又会把面板盒子撑高、破坏"尺寸 = 布局预览尺寸"。这与键盘预览把角标说明
+放进 `.preview-legend`（同样在键盘区外）是同一套做法。
+
+**分组区与符号区各自滚动，绝不拉长面板**（用户要求，也对齐 App）：
+App 端两列各是一个 ScrollView（`ly.java:66-71` / `149-153`），条目多时滚动而非撑高。
+所以面板 `overflow:hidden` + 高度钉死，两列分别 `overflow-y:auto`。
+⚠️ 两列都必须写 `min-height:0` —— flex 子项默认 `min-height:auto` 会按内容撑高，
+滚动直接失效（CSS flex 滚动的经典坑，踩过）。历史上符号区用的固定 `maxHeight:180dp` 也已移除。
+
+**预置示例**：「载入示例」优先用 `FE.SYMBOL_EXAMPLE_FILES`（`examples/` 里的真实
+符号文件，见 §4.8），没有才回退内置极小样例。下拉 option 的 `value` 保持**类别 id**
+（`symbols`/`emoji`/`kaomoji`）而不是文件名 —— 文件名是给人看的标签，类别才是程序的键，
+改名也不该断掉既有调用方（测试就按 `symEx.value = 'symbols'` 选类别）。
+
+**测试**：`test-ui.js` 的「符号面板预览」区块（结构 / 列数随 multiLine / **尺寸与布局
+预览一致** / **说明不在键盘区内** / **两列可滚且 min-height:0** / **分组极多时高度不变** /
+切回布局页键盘恢复 / 空 catalog 给提示）。
+> 写这类断言时注意：`activateTab` 只在**跨符号页边界**才重渲染预览，
+> 所以测试里要**显式** `FE.state.activeTab = 'tab-symbols'` 再 `renderAll()`，
+> 否则会断言到上一块遗留的 DOM（踩过：拿到 emoji 的 6 格而非 symbols 的 12 格）。
+
+### 4.20 预览工具栏：横屏预览、两行布局、深浅与主题槽位联动
+
+**横屏预览（`pt-landscape` / `state.landscapeMode`）** —— 用户要求"增加宽度到分体布局的
+宽度但不切换到分体键盘布局"。它与 `splitMode` 的**唯一区别**就在这里：
+
+| | 容器宽 | 编译目标 | 区段编辑器 |
+|---|---|---|---|
+| `pt-split`（分体） | `.kb-split`（1228px） | **`L.split` 片段** | 切到 split |
+| `pt-landscape`（横屏） | `.kb-split`（1228px） | **仍是 `L.sections`** | 仍是常规 |
+
+实现：`renderPreview` 里 `var wide = state.splitMode || state.landscapeMode` 决定是否加
+`kb-split` 类与是否记住竖屏宽；但 `FE.compileLayout({split: state.splitMode})` **只认
+`splitMode`** —— 这是"加宽不切片段"的落点，别顺手把它改成 `wide`。
+`renderMeta` 会显式标出「横屏宽屏预览（仍渲染常规布局，未切 split 片段）」，
+否则用户会以为"键怎么忽然变宽了 / 是不是切了分体"。
+
+⚠️ **两条复选互斥**：同时开会让"渲染哪个片段"产生歧义（`splitMode` 切片段、
+`landscapeMode` 不切），两个都亮着而屏幕只有一个结果必然困惑。开一个就自动关另一个。
+
+**工具栏两行**（用户要求"滑杆与深浅键盘单独起一行"）：
+
+- 第一行 `.preview-toggles` → `#pt-state-group`：Shift/组字/ASCII/停用/分体/横屏/状态标签。
+  这是"**模拟键盘状态**"的开关，切到符号页**整组隐藏**。
+- 第二行 `.preview-toggles.preview-toggles-geom`：高度 + 圆角 + 水平间隙 + 垂直间隙
+  + 深浅键盘下拉。这是"**改预览怎么画**"的旋钮。
+- ⚠️ 深浅下拉 `#pt-theme` **必须留在第二行、不能进 `pt-state-group`**：
+  符号面板底也跟它走，进了状态组就会在符号页被一起隐藏掉（`syncPreviewPanelChrome`）。
+
+**深浅与主题槽位联动**（用户要求）：`state.theme`（预览 CSS 档位）与
+`state.themeSlot`（主题取哪套槽位）**是同一件事的两面**，统一由 `FE.setPreviewSlot(slot)`
+同时写两者。反向由 `theme-editor.js` 的 `FE.syncThemeSlotUI()` 把槽位回填到
+`#pt-theme` 与表单。拆开写过一次，后果是"预览切了深色、主题页还在编辑浅色槽"、
+用户看到的值对不上。
+> ⚠️ 测试里凡是"设置干净起点"的地方，`theme` 与 `themeSlot` **两个都要摆正** ——
+> 只写 `theme` 会让 `themeSlot` 停在前一块留下的值（踩过：LETTER 分组被写进 dark 槽，
+> 而断言查 light 槽，直接红一条）。
+
+### 4.19 按键外观（圆角 / 水平间隙 / 垂直间隙）⭐ 间隙是「每键四周内缩」
+
+**对应 App「设置 → 键盘外观」的三项同名设置**，只影响**预览**建模，
+**不写进任何 Foxy 文件**（App 把它们存在 SharedPreferences `foxy_size`，
+纵/横屏各一份；编辑器只做纵屏那套）。权威依据：`foxy/foxy-render-spec.md` §2.7。
+
+| 项 | `state` 字段 | 范围 | 默认 |
+| --- | --- | --- | --- |
+| 按键圆角 | `keyCornerRadiusDp` | 0–24 | **6** |
+| 水平间隙 | `keyGapHorizontalDp` | 0–16 | **3** |
+| 垂直间隙 | `keyGapVerticalDp` | 0–16 | **4** |
+
+范围与默认值**双重佐证**（`c50.java:16` 滑块 + `a60.e/f/g` 校验 + 设置页 `a0()` 回落），
+**别随手改**。越界/非法值一律回落默认（`FE.KEY_APPEARANCE_SPEC` / `appearanceValue`）。
+
+#### ⭐ 最易做错的一条：间隙语义是「每键四周内缩」
+
+App 是 `v40.setPadding(gapH, gapV, gapH, gapV)` + 背景 `InsetDrawable` 同量内缩
+（`v40.java:92-94`、`115/287/293`）。所以：
+
+- 相邻两键的**可见间隙 = 2 × 设置值**（各内缩一半）；
+- **行的首尾键也内缩**（不是贴边）；
+- 键面高 = 行高 − 2 × gapV。
+
+⚠️ 把它当"相邻留空"（只给非首尾键半个间隙）会**少一半**且首尾不内缩 —— 与手机不一致。
+实现上用**槽内 margin**（`buildRowsSection`），不用 flex gap：
+槽位必须继续按 weight 分整行宽，间隙若参与 flex 分配会让不同键数的行对不齐。
+
+**网格区段**用的是 CSS `gap`（本身表达"相邻间距"），所以取 **2 × 设置值**
+才是同一视觉口径。计算抽在 `FE.gridGaps()`，**渲染与测试共用同一份** ——
+别在测试里重算一遍，否则期望值与实际值会悄悄漂开。大网格下仍受
+`gridMetrics` 的安全上限约束（照搬 16dp 会让间隙总和吃掉整个宽度、格子压成负数）。
+
+**圆角 clamp**（`v40.java:397-404`）：`clamp(cornerDp×density, 0, min(键面宽,键面高)/2)`。
+行区段只知键面高（传 `faceH`）、网格知宽高（传 `faceW/faceH`）；未传则不夹。
+大圆角在小键上会被夹住，否则会圆成胶囊。
+
+**`.kb-row` 不带自己的 `margin-bottom`**：上下相邻键的间隙由两侧键的 margin 合成；
+早先 CSS 里写死的 `margin-bottom: 5px` 属"固定间隙"时代遗留，会在内缩之外**再加一份**。
+
+**滑杆接线**：拖 `input` 只 `autosave() + renderPreview()`，**不进撤销栈**
+（这是"看效果"的旋钮，不是数据编辑）；**不要**顺手调 `renderLayoutTab()` ——
+布局编辑区的 chip / 网格画布走 `applyEditorKeyColors → applyKeyColors`，
+**只管颜色、不消费几何**，本就不跟随这三项，而每帧重建区段编辑器会明显卡顿。
+
+**不作用于符号面板**：`ly` 用自己固定的 40dp 格高与 6dp 圆角（§4.18 / 规范 §8）。
+
+---
+
 ## 5. 已知的坑（都踩过，别重蹈）
 
 ### 5.1 修改后必须同步的东西
@@ -1179,10 +1599,14 @@ var unit = state.portraitW / 10;          // 全链路单 unit：行高 / 字号
   要写就用 `getRowKeys`。
 - **布局 JSON 卡片**（`#json-editor`）现在**在布局编辑页最下方**，不是独立标签页。
   `state.jsonDirty` 为真或焦点在其中时 `renderJsonTab` 不覆盖文本。
-- **标签页只有 4 个按钮 / 4 个 tabpanel 区块**：布局编辑 / 按键定义 / 动作与宏 / 弹出菜单
-  （弹出菜单带 `.tab-popup` 类做视觉分隔）。`tab-layout-json` 已被移除，**别再引用它**；
+- **标签页有 6 个按钮 / 6 个 tabpanel 区块**：布局编辑 / 按键定义 / 动作与宏 / 弹出菜单 /
+  主题 / 符号面板
+  （弹出菜单带 `.tab-popup` 类、主题带 `.tab-theme`、符号面板带 `.tab-symbols` 做视觉分隔）。
+  `tab-layout-json` 已被移除，**别再引用它**；
   布局 JSON 卡片现在就在 `#tab-layout` 里的最下方。`dom-stub.js` 的 `buildSkeleton()`
-  同样是 4 按钮 4 区块，两边要一致。
+  同样是 6 按钮 6 区块，两边要一致。
+  ⚠️ 新增页签会连带打破 `test-ui.js` 里 `eq(tabs.length, N)` 这类计数断言
+  （以及 `tabs[i]` 的索引假设——新页签请追加在 `tab-popup` **之后**，否则索引全乱）。
 - **手机竖屏**：`style.css` 的 `@media (max-width: 640px)` 两段（jscolor 色块尺寸段 +
   文末"竖屏手机优化"段）做单列 + 大触摸目标 + 近全屏弹窗；改布局时留意别把这两段覆盖掉。
 - **列表重建必须保持滚动位置**（`afterChange` 里的 `captureScroll` / `restoreScroll`）：
@@ -1211,8 +1635,11 @@ cd foxy-editor
 node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
-node test/test-core.js       # 期望：462 通过, 0 失败
-node test/test-ui.js         # 期望：824 通过, 0 失败
+node test/test-core.js       # 期望：537 通过, 0 失败
+node test/test-ui.js         # 期望：1062 通过, 0 失败
+
+# 3b) 改过颜色解析（color-source.js）时加跑这一条
+node test/test-color-source.js   # 期望：63 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
 node test/check-real-files.js   # 期望：共 20 个文件，0 个存在错误
@@ -1235,6 +1662,6 @@ node tools/check-agent-sync.js --write
 
 ### 版本信息（改动可能影响这些对外说法）
 
-- 测试基线：core **461** / UI **829** / 示例 **20**（16 布局 + 4 弹出菜单）
+- 测试基线：core **531** / UI **1062** / 示例 **20**（16 布局 + 4 弹出菜单）
 - 仓库 `README.md` 里的功能描述与 `index.html` 的图例，与实现同步维护；
   新增用户可见功能时一并更新，避免文档漂移。
