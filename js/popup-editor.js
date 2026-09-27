@@ -366,6 +366,9 @@ function popupUsageOf(refs) {
 function renderPopupKeys() {
   var host = $('popup-keys');
   if (!host) return;
+  /* 候选 chip 跟随键盘主题（与布局编辑同套规则）：host 打类，见 app.js syncEditorTheme */
+  if (FE.syncEditorTheme) FE.syncEditorTheme();
+  else { host.classList.remove('theme-dark', 'theme-light'); host.classList.add(FE.state.theme === 'light' ? 'theme-light' : 'theme-dark'); }
   clearEl(host);
   var P = pp();
   var schema = P.schemas[state.popupSchema];
@@ -489,34 +492,64 @@ function candidateChip(P, schemaName, pk, st, ci, c, arr) {
   var chip = h('div', {
     class: 'chip popup-cand' + (kind === 'text' ? '' : ' chip-fn'),
     title: FE.popupCandidateSummary(c),
-    onclick: function () { openCandidateDialog(P, schemaName, pk, st, ci, c); }
+    onclick: function () {
+      if (FE.pointerDragSuppressClick && FE.pointerDragSuppressClick()) return;   /* 刚拖动完，不当作点击 */
+      openCandidateDialog(P, schemaName, pk, st, ci, c);
+    }
   },
     h('span', { class: 'chip-label' }, FE.popupCandidateLabel(c) || '？'),
     kindBadge ? h('span', { class: 'chip-badges' }, kindBadge) : null,
     h('span', { class: 'cand-idx' }, String(ci + 1)));
-  /* 顺序调整 */
-  var ctrls = h('span', { class: 'cand-order' },
-    h('button', {
-      class: 'icon-button', title: '左移', onclick: function (e) {
-        e.stopPropagation();
-        if (ci <= 0) return;
-        pmutate(function () {
-          var t = arr[ci - 1]; arr[ci - 1] = arr[ci]; arr[ci] = t;
-        });
-      }
-    }, '◀'),
-    h('button', {
-      class: 'icon-button', title: '右移', onclick: function (e) {
-        e.stopPropagation();
-        if (ci >= arr.length - 1) return;
-        pmutate(function () {
-          var t = arr[ci + 1]; arr[ci + 1] = arr[ci]; arr[ci] = t;
-        });
-      }
-    }, '▶'));
-  chip.appendChild(ctrls);
+  /* 拖动排序（与布局 chip 同一套手感）：同一 popupKey 下常规/Shift 两行之间可互拖，
+   * 落到另一候选前；`+` 添加键不认（它没有 __candLoc）。顺序调整直接拖动，不再设 ◀ ▶ 按钮 */
+  chip.__candLoc = { schema: schemaName, pk: pk, st: st, ci: ci };
+  if (FE.attachPointerDrag) {
+    try {
+      FE.attachPointerDrag(chip, {
+        dropTarget: function (x, y) { return candDropTarget(x, y, schemaName, pk); },
+        onDrop: function (target) { performCandDrop({ schema: schemaName, pk: pk, st: st, ci: ci }, target); }
+      });
+    } catch (e) { /* 拖动基座异常不影响点击编辑 */ }
+  }
   return chip;
 }
+
+/* 候选拖动落点：命中同一 popupKey 下的另一候选 → 插入其前（含跨常规/Shift 行）。
+ * 只认带 __candLoc 且 schema/pk 相同的 chip；`+` 添加键与别处的不认。 */
+function candDropTarget(x, y, schemaName, pk) {
+  if (!FE.elemFromPoint || !FE.findAncestor) return null;
+  var from = FE.elemFromPoint(x, y);
+  if (!from) return null;
+  var chip = FE.findAncestor(from, function (n) { return n.__candLoc != null; });
+  if (chip && chip.__candLoc.schema === schemaName && chip.__candLoc.pk === pk) {
+    return { kind: 'before', loc: chip.__candLoc, el: chip, markClass: 'drop-before' };
+  }
+  return null;
+}
+
+/* 执行候选拖动：从源数组取出插入目标位置。跨行时目标索引要按目标数组算；
+ * 同行且从前往后拖时扣除取出的一位（与 performChipDrop 同一套换算）。 */
+function performCandDrop(from, target) {
+  if (!target || target.kind !== 'before') return;
+  var to = target.loc;
+  if (to.schema !== from.schema || to.pk !== from.pk) return;
+  if (to.st === from.st && to.ci === from.ci) return;
+  pmutate(function () {
+    var schema = pp().schemas[from.schema];
+    if (!FE.isPlainObject(schema)) return;
+    var entry = schema[from.pk];
+    if (!FE.isPlainObject(entry)) return;
+    var src = entry[from.st], dst = entry[to.st];
+    if (!Array.isArray(src) || !Array.isArray(dst)) return;
+    var item = src.splice(from.ci, 1)[0];
+    if (item === undefined) return;
+    var idx = to.ci;
+    if (to.st === from.st && from.ci < to.ci) idx = to.ci - 1;
+    idx = Math.max(0, Math.min(idx, dst.length));
+    dst.splice(idx, 0, item);
+  });
+}
+FE.performCandDrop = performCandDrop;
 
 /* ---------------- 候选编辑对话框 ---------------- */
 function openCandidateDialog(P, schemaName, pk, st, ci, cand) {

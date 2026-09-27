@@ -2119,6 +2119,45 @@ await sleep(350);
   const anyChip = q('#layout-sections .chip')[0];
   ok(anyChip && anyChip.getAttribute('draggable') == null, 'chip 不再设 draggable 属性（改用 Pointer Events，触屏可拖）');
 
+  console.log('== 指针拖动：弹出菜单候选排序（performCandDrop，含跨行） ==');
+  $('popup-example').value = '气泡-popup.json';
+  $('popup-load-example').click();
+  tabs[3]._fire('click');
+  ok(typeof FE.performCandDrop === 'function', '导出 performCandDrop 供候选拖动使用');
+  const candLabels = (pk, st) => (FE.state.popupProfile.schemas.default[pk][st] || []).map(c => FE.popupCandidateLabel(c));
+  /* 同行：把首个候选拖到第 3 个之前 */
+  const before0 = candLabels('q', 'normal').slice(0, 3);
+  FE.performCandDrop(
+    { schema: 'default', pk: 'q', st: 'normal', ci: 0 },
+    { kind: 'before', loc: { schema: 'default', pk: 'q', st: 'normal', ci: 2 } });
+  const after0 = candLabels('q', 'normal').slice(0, 3);
+  eq(after0, [before0[1], before0[0], before0[2]], '同行拖动重排：首候选移到第 3 个之前');
+  /* 跨行：把常规首个拖到 Shift 行首 */
+  const shiftBefore = candLabels('q', 'shifted').slice();
+  const moving = candLabels('q', 'normal')[0];
+  FE.performCandDrop(
+    { schema: 'default', pk: 'q', st: 'normal', ci: 0 },
+    { kind: 'before', loc: { schema: 'default', pk: 'q', st: 'shifted', ci: 0 } });
+  eq(candLabels('q', 'shifted')[0], moving, '跨行拖动：候选落到 Shift 行首');
+  ok(candLabels('q', 'normal').indexOf(moving) < 0 || candLabels('q', 'normal').length === after0.length - 1, '跨行拖动：候选离开原行');
+  /* 拖动经 pmutate 记录历史，可撤销 */
+  $('top-undo').click();
+  eq(candLabels('q', 'shifted'), shiftBefore, '撤销恢复跨行拖动');
+  /* 候选 chip 同布局 chip 一套手感：无 draggable，点按阈值内仍是点击编辑 */
+  const anyCand = q('#popup-keys .popup-cand')[0];
+  ok(anyCand && anyCand.getAttribute('draggable') == null, '候选 chip 同样无 draggable（Pointer Events 统一）');
+  ok(!!anyCand.__candLoc && anyCand.__candLoc.pk === 'q', '候选 chip 带拖动定位标记');
+  /* 顺序调整改拖动后不再有 ◀ ▶ 按钮 */
+  ok(q('#popup-keys .cand-order').length === 0, '候选 chip 无移动箭头（拖动排序替代）');
+  /* 对话框与页签数据同源：页签侧拖动后，对话框重建即同步（同一份 popupProfile） */
+  tabs[0]._fire('click');
+  documentStub._openDialogs.length = 0;
+  q('.kb-key').find(k => String(k.getAttribute('title') || '').indexOf('qwerty.q') >= 0).click();
+  const linkDlg = documentStub._openDialogs[0];
+  const linkCands = linkDlg.querySelectorAll('.popup-section .popup-cand').map(c => c.textContent);
+  const tabCands = q('#popup-keys .popup-cand').slice(0, linkCands.length).map(c => c.textContent);
+  eq(linkCands.slice(0, 3), tabCands.slice(0, 3), '对话框与页签候选内容一致（同源联动）');
+
   console.log('== 顶栏撤销/重做按钮 ==');
   FE.applyProfileText(FE.DEFAULT_PROFILE_TEXT, {});
   ok($('top-undo') && $('top-redo'), '顶栏存在撤销/重做按钮');

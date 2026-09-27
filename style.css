@@ -675,8 +675,6 @@ html.site-light .st-split { color: #2e8b57; }
 .popup-cand { position: relative; }
 .popup-cand .chip-label { max-width: 96px; }
 .popup-cand .cand-idx { position: absolute; top: -6px; left: -6px; font-size: 9px; background: #4a4f58; color: #cfd3da; border-radius: 999px; padding: 0 4px; }
-.cand-order { display: flex; gap: 0; margin-left: 2px; }
-.cand-order .icon-button { font-size: 9px; padding: 0 3px; }
 .popup-missing { margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
 /* 主按键对话框里内嵌的弹出菜单整键编辑（与键定义卡片同构） */
 .popup-section .popup-key-editor .section-head { margin-bottom: 6px; }
