@@ -1777,6 +1777,32 @@ await sleep(350);
   eq(q('.kb-label', q('.kb-key')[0])[0].style.fontSize, portraitLabelFs, '切回竖屏后字号恢复');
   ok(q('.kb-key.kb-spacer').length === 0, '常规预览无 Spacer（此布局）');
 
+  console.log('== 预览高度比滑杆（只拉高、不改宽不改字） ==');
+  ok($('pt-height') && $('pt-height-val'), '高度滑杆与百分比显示存在');
+  /* 换算：K = (pct/100 × 20/9) / 0.5；31% → 1.38，15% → 0.67，60% → 2.67 */
+  eq(FE.heightPctToK(31).toFixed(2), '1.38', '31% 换算 1.38（默认）');
+  eq(FE.heightPctToK(15).toFixed(2), '0.67', '15% 下限换算');
+  eq(FE.heightPctToK(60).toFixed(2), '2.67', '60% 上限换算');
+  eq(FE.heightPctToK('oops'), 1.38, '非法输入回退默认');
+  /* 滑杆拖到 40%：行高拉长、宽与字不动 */
+  $('pt-height').value = '40';
+  $('pt-height')._fire('input');
+  eq(FE.state.previewHeightPct, 40, '滑杆值进 state');
+  eq($('pt-height-val').textContent, '40%', '百分比显示同步');
+  eq(FE.PREVIEW_HEIGHT_K.toFixed(2), FE.heightPctToK(40).toFixed(2), '系数同步更新');
+  const tallRowH = q('.kb-row')[0].style.height;
+  ok(parseFloat(tallRowH) > parseFloat(portraitRowH), '行高拉长（' + portraitRowH + ' → ' + tallRowH + '）');
+  eq(q('.kb-label', q('.kb-key')[0])[0].style.fontSize, portraitLabelFs, '拉高后字号不变');
+  /* 滑回 31% 恢复默认高度 */
+  $('pt-height').value = '31';
+  $('pt-height')._fire('input');
+  eq(q('.kb-row')[0].style.height, portraitRowH, '滑回 31% 行高恢复');
+  /* 持久化：草稿里有百分比，boot 恢复后滑杆/K/显示三处对齐 */
+  $('pt-height').value = '40';
+  $('pt-height')._fire('input');
+  const draft = JSON.parse(global.localStorage.getItem('foxy-layout-editor-draft-v1'));
+  eq(draft.previewHeightPct, 40, '高度百分比随草稿持久化');
+
   /* split2.json 的 default 常规无 Spacer，分体有 → 数量应不同 */
   $('pt-split').checked = true;
   $('pt-split')._fire('change');

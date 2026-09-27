@@ -321,6 +321,9 @@ button.danger:hover, .mini-button.danger:hover { background: #3a2321; }
 }
 .mini-input.wide, .mini-select.wide { width: min(320px, 100%); }
 .mini-input:focus, .mini-select:focus, textarea:focus { outline: 1px solid var(--accent); }
+/* 高度比滑杆：跟 mini-label 一行，宽 110px 不抢位置；浅色下 track 用边框色 */
+.mini-range { width: 110px; accent-color: var(--accent); cursor: pointer; }
+#pt-height-val { font-family: var(--mono); font-size: 12px; min-width: 36px; display: inline-block; }
 .mini-label { font-size: 12px; color: var(--text-dim); white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 .mini-label.check { cursor: pointer; }
 label.check { cursor: pointer; white-space: nowrap; }

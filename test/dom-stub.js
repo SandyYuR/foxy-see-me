@@ -465,6 +465,9 @@ function buildSkeleton() {
       el('label', null, el('input', { type: 'checkbox', id: 'pt-disabled' })),
       el('label', null, el('input', { type: 'checkbox', id: 'pt-split' })),
       el('input', { type: 'text', id: 'pt-status-text' }),
+      el('label', null,
+        el('input', { type: 'range', id: 'pt-height', value: '31' }),
+        el('span', { id: 'pt-height-val' })),
       el('select', { id: 'pt-theme' }))
   );
   const pStage = el('div', { class: 'preview-stage' }, el('div', { id: 'preview-kb', class: 'kb kb-dark' }));

@@ -440,6 +440,21 @@ FE.MAX_GRID_CELLS = 4000;
  * 后面做可调间距时改这里（运行时可在控制台改 FE.ROW_GAP 后重渲染）。 */
 FE.ROW_GAP = 5;
 
+/* 预览键盘高度系数：只拉高、不拉宽、不放大字。
+ * 口径 = 手机键盘高宽比 / 预览默认高宽比。
+ * 默认值 1.38 = (0.31 × 20/9) / 0.5：0.31 是竖屏键盘高度百分比（Foxy 设置），
+ * 20:9 是手机屏长宽比，0.5 是预览默认总高/宽（5 单位高 ÷ 10 单位宽）。
+ * 由预览工具栏的高度滑杆（pt-height，百分比）换算：K = (pct/100 × 20/9) / 0.5。
+ * 滑杆改动只重渲染预览；控制台直接改 FE.PREVIEW_HEIGHT_K 后重渲染也行。 */
+FE.PREVIEW_HEIGHT_K = 1.38;
+/* 高度百分比（15–60）→ 高度系数。屏长宽比按 20:9（H/W = 20/9）计。 */
+FE.heightPctToK = function (pct) {
+  var p = Number(pct);
+  if (!isFinite(p)) return 1.38;
+  p = Math.max(15, Math.min(60, p)) / 100;
+  return (p * 20 / 9) / 0.5;
+};
+
 /* 网格预览的几何：间隙必须随列/行数缩放，**不能固定 5px**。
  *
  * 固定间隙在列数多时是致命的：48 列时 .kb 内容宽约 414px，47 个 5px 间隙合计
@@ -1935,7 +1950,8 @@ function autosave() {
     localStorage.setItem(LS_KEY, JSON.stringify({
       profile: state.profile, layoutName: state.layoutName, fileName: state.fileName,
       popupProfile: state.popupProfile || null, popupFileName: state.popupFileName,
-      splitMode: state.splitMode, includeType: state.includeType
+      splitMode: state.splitMode, includeType: state.includeType,
+      previewHeightPct: state.previewHeightPct != null ? state.previewHeightPct : 31
     }));
   } catch (e) { /* 忽略存储失败 */ }
 }
@@ -2573,6 +2589,11 @@ function isSel(s, r, k) {
 /* 以下三个 build* 都吃 FE.compileLayout 的编译产物（纯数据），不再自行解析引用。 */
 function buildRowsSection(compiledSection, unit) {
   var wrap = h('div', { class: 'kb-section' });
+  /* 手机高度比：预览宽不动，只拉高。unit 不动（字号/图标/提示全挂 unit 上，
+   * 动了字跟着变大，手机上字可没变大），只把行高换算乘系数。
+   * 系数 = 手机键盘高宽比 / 预览默认高宽比 = (0.31 × 20/9) / 0.5 ≈ 1.38。
+   * 31% 是竖屏键盘高度百分比（Foxy 设置），20:9 是手机屏长宽比。 */
+  var HK = FE.PREVIEW_HEIGHT_K || 1;
   compiledSection.rows.forEach(function (row) {
     var rowEl = h('div', { class: 'kb-row' });
     if (row.width != null) {
@@ -2580,7 +2601,7 @@ function buildRowsSection(compiledSection, unit) {
       rowEl.style.marginLeft = 'auto';
       rowEl.style.marginRight = 'auto';
     }
-    rowEl.style.height = Math.max(18, row.heightUnits * unit) + 'px';
+    rowEl.style.height = Math.max(18, row.heightUnits * unit * HK) + 'px';
     /* 槽位对齐（与 App 同口径）：槽按 weight 分整行宽（行内无 gap），键在槽内
      * 左右各留半个间隙。不同键数的行同权重点边界精确重合；若间隙参与 flex
      * 分配，键数少的行每份权重会多分到像素，对不齐。间隙集中在 FE.ROW_GAP，
@@ -2618,7 +2639,7 @@ function buildGridSection(compiledSection, unit) {
   } else {
     el.style.gridTemplateRows = 'repeat(' + compiledSection.rows + ', 1fr)';
   }
-  el.style.height = Math.max(24, compiledSection.totalUnits * unit) + 'px';
+  el.style.height = Math.max(24, compiledSection.totalUnits * unit * (FE.PREVIEW_HEIGHT_K || 1)) + 'px';
   /* 字号上限**按每个键自己的跨距**算：3×3 大键的可用面积是 1×1 小键的 9 倍，
    * 若统一按 1×1 封顶，大键的字会小得离谱。取该键实际占位的较短边留出边距。 */
   (compiledSection.keys || []).forEach(function (item) {
@@ -5179,6 +5200,34 @@ function initToolbar() {
     if (FE.renderPopupTab) FE.renderPopupTab();
   });
   $('pt-status-text').addEventListener('input', function () { state.statusSample = this.value; renderPreview(); });
+  /* 高度比滑杆：百分比 → 系数 → 只重渲染预览（宽/字不动）。值跟布局草稿一起持久化。 */
+  (function () {
+    var hr = $('pt-height'), hv = $('pt-height-val');
+    function applyHeight(fromSlider) {
+      var pct = hr ? Number(hr.value) : 31;
+      if (!isFinite(pct)) pct = 31;
+      FE.PREVIEW_HEIGHT_K = FE.heightPctToK(pct);
+      state.previewHeightPct = pct;
+      if (hv) hv.textContent = pct + '%';
+      if (!fromSlider && hr) hr.value = String(pct);
+      autosave();
+      renderPreview();
+    }
+    if (hr) {
+      hr.addEventListener('input', function () { applyHeight(true); });
+      hr.addEventListener('change', function () { applyHeight(true); });
+    }
+    /* 草稿恢复： persisted 百分比回填滑杆（boot 时 state 已就绪，此处只做 UI 对齐） */
+    if (state.previewHeightPct != null && hr) {
+      hr.value = String(state.previewHeightPct);
+      FE.PREVIEW_HEIGHT_K = FE.heightPctToK(state.previewHeightPct);
+      if (hv) hv.textContent = state.previewHeightPct + '%';
+    } else {
+      FE.PREVIEW_HEIGHT_K = FE.heightPctToK(hr ? Number(hr.value) : 31);
+      if (hv) hv.textContent = (hr ? hr.value : 31) + '%';
+    }
+    FE.applyPreviewHeight = applyHeight;
+  })();
   $('pt-split') && $('pt-split').addEventListener('change', function () {
     state.splitMode = this.checked;
     state.sel = null;
@@ -5369,8 +5418,21 @@ function boot() {
       }
       if (d2 && d2.splitMode) state.splitMode = !!d2.splitMode;
       if (d2 && d2.includeType === false) state.includeType = false;
+      if (d2 && isFinite(Number(d2.previewHeightPct))) {
+        state.previewHeightPct = Math.max(15, Math.min(60, Number(d2.previewHeightPct)));
+      }
     }
   } catch (e2) { /* 忽略 */ }
+  /* 草稿恢复后对齐高度滑杆：initToolbar 跑在恢复之前，滑杆还是默认值，
+   * 这里按恢复出的百分比回填并换算 K（否则刷新后高度回到 31%）。 */
+  try {
+    var hhr = $('pt-height'), hhv = $('pt-height-val');
+    if (state.previewHeightPct != null) {
+      if (hhr) hhr.value = String(state.previewHeightPct);
+      FE.PREVIEW_HEIGHT_K = FE.heightPctToK(state.previewHeightPct);
+      if (hhv) hhv.textContent = state.previewHeightPct + '%';
+    }
+  } catch (e3) { /* 忽略 */ }
   state.validation = FE.validateProfile(state.profile);
   renderAll();
   setOpStatus('就绪。修改会实时渲染并自动保存到浏览器。', 'ok');
