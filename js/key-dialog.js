@@ -64,7 +64,18 @@ function openModal(opts) {
            function () { confirming = false; });
   }
   dlg.addEventListener('close', function () { dlg.remove(); if (opts.onClose) opts.onClose(); });
-  dlg.addEventListener('click', function (e) { if (e.target === dlg) requestClose(); });
+  /* 点遮罩关闭。但要豁免"从取色面板拖出来"的手势：jscolor 滑块拖动是在
+   * document 上挂 move/end 监听的，拖过头松手时浏览器合成的 click 会冒泡
+   * 到 dialog（target 落在 dialog 空白区），不能算"点遮罩"。installJscolor
+   * 会在面板 pointerdown/mousedown 时打标 FE._colorDragGuard（带时间戳）。 */
+  dlg.addEventListener('click', function (e) {
+    if (e.target !== dlg) return;
+    try {
+      var g = FE._colorDragGuard;
+      if (g && (Date.now() - g) < 800) return;
+    } catch (err) { /* 取时间失败则按普通遮罩点击处理 */ }
+    requestClose();
+  });
   /* Esc 默认会让 <dialog> 直接关闭：必须拦下来走同一条守卫路径 */
   dlg.addEventListener('cancel', function (e) { e.preventDefault(); requestClose(); });
   form.addEventListener('submit', function (e) { e.preventDefault(); });
@@ -344,6 +355,7 @@ function positionColorWrap(input) {
   wrap.style.left = Math.round(r.left) + 'px';
   wrap.style.top = Math.round(top) + 'px';
   wrap.style.zIndex = '100000';
+  watchColorWrap(wrap);
 }
 function bindColorReposition() {
   if (colorResizeBound) return;
@@ -356,6 +368,20 @@ function bindColorReposition() {
   };
   window.addEventListener('resize', reflow);
   window.addEventListener('scroll', reflow);
+}
+/* 取色面板手势标记：面板内 pointerdown/mousedown 即打标（带时间戳），供
+ * openModal 的遮罩点击判定豁免"从面板拖出来、松手落在 dialog 空白区"的
+ * 合成 click。只打标不拦截，面板自己的拖动逻辑不受影响。 */
+function markColorDragGuard() {
+  try { FE._colorDragGuard = Date.now(); } catch (e) { /* 忽略 */ }
+}
+function watchColorWrap(wrap) {
+  if (!wrap || wrap._foxyGuardWatched) return;
+  wrap._foxyGuardWatched = true;
+  try {
+    wrap.addEventListener('pointerdown', markColorDragGuard);
+    wrap.addEventListener('mousedown', markColorDragGuard);
+  } catch (e) { /* 桩环境缺方法时忽略 */ }
 }
 
 FE.installJscolor = function (input, opts) {
@@ -373,13 +399,19 @@ FE.installJscolor = function (input, opts) {
     try { p.fromString(pickerHex); } catch (e) { /* 忽略 */ }
   }
   function syncInputFromPicker() {
-    /* 面板拖动后把值写回输入框（f5a 的 syncArgbInputFromInlinePicker 同款） */
+    /* 面板拖动后把值写回输入框（f5a 的 syncArgbInputFromInlinePicker 同款）。
+     * 面板不透明时输出 6 位（hexaColor 的 a==1 分支）；若输入框当前是 8 位
+     * （用户之前设过透明度），则补 FF 保持 8 位，避免滑块滑到顶时前两位
+     * 突然消失（#8052F7BD → #FF52F7BD 而不是 #52F7BD）。 */
     var p = input.jscolor;
     if (!p) return;
     var raw = null;
     try { raw = (typeof p.toHEXAString === 'function' ? p.toHEXAString() : p.toHEXString()); } catch (e) { return; }
     var argb = FE.pickerHexToArgb(raw);
-    if (argb) input.value = argb;
+    if (!argb) return;
+    var cur = FE.normalizeColorHex(input.value);
+    if (argb.length === 7 && cur && cur.length === 9) argb = '#FF' + argb.slice(1);
+    input.value = argb;
   }
 
   var api = {
@@ -435,6 +467,7 @@ FE.installJscolor = function (input, opts) {
       var r = origShow();
       activeColorInput = input;
       positionColorWrap(input);
+      markColorDragGuard();
       return r;
     };
     /* 关闭时补一次 Done 回调（实时值已由 onInput 发出） */
@@ -1287,7 +1320,8 @@ FE.openKeyDialog = function (opts) {
       h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '键类型'), ktSel),
       h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '图标'), iconSel)));
 
-    var weightInp = h('input', { type: 'number', step: 'any', min: '0', class: 'mini-input', value: typeof draft.weight === 'number' ? String(draft.weight) : '', placeholder: '留空=1' });
+    var effWeight = effRaw('weight');
+    var weightInp = h('input', { type: 'number', step: 'any', min: '0', class: 'mini-input', value: typeof draft.weight === 'number' ? String(draft.weight) : '', placeholder: '留空继承' + (effWeight != null ? '(' + effWeight + ')' : '(1)') });
     var weightAuto = h('input', { type: 'checkbox' });
     weightAuto.checked = draft.weight === 'auto';
     weightInp.disabled = weightAuto.checked;
@@ -1299,7 +1333,8 @@ FE.openKeyDialog = function (opts) {
       if (weightInp.value === '') delete draft.weight;
       else draft.weight = parseFloat(weightInp.value);
     });
-    var heightInp = h('input', { type: 'number', step: 'any', min: '0', class: 'mini-input', value: typeof draft.height === 'number' ? String(draft.height) : '', placeholder: '留空=1' });
+    var effHeight = effRaw('height');
+    var heightInp = h('input', { type: 'number', step: 'any', min: '0', class: 'mini-input', value: typeof draft.height === 'number' ? String(draft.height) : '', placeholder: '留空继承' + ((typeof effHeight === 'number' && effHeight > 0) ? '(' + effHeight + ')' : '(1)') });
     heightInp.addEventListener('change', function () {
       if (heightInp.value === '') delete draft.height;
       else draft.height = parseFloat(heightInp.value);

@@ -602,6 +602,9 @@ var name = await FE.uiPrompt({ title, message, value, placeholder, required }); 
   `#BBGGRR`（不透明）/ `#AABBGGRR`（带透明度），**不是** 标准 CSS 的 `#RRGGBBAA`。
   转换必须走 `FE.argbToPickerHex` / `FE.pickerHexToArgb`，自己写会串色。
   `dom-stub.js` 里的 jscolor 桩刻意照抄了这个字节序，测试才能验出来。
+  **滑块拖过头不关窗**：jscolor 拖动在 document 上挂监听，拖出面板松手时的合成
+  click 会冒泡到 dialog。面板 `pointerdown/mousedown` 打标 `FE._colorDragGuard`，
+  `openModal` 的遮罩判定对 800ms 内的 click 豁免；普通遮罩点击照常关闭。
 
 ### 4.6 弹出菜单（popup-editor.js）
 

@@ -266,6 +266,27 @@ ok(documentStub._openDialogs.length === 1, 'chip 对话框打开');
 documentStub._openDialogs[0].close();
 documentStub._openDialogs.length = 0;
 
+console.log('== 权重输入框显示继承值 ==');
+/* 放置位没写 weight 时输入框为空，但 placeholder 显示定义链的继承值，
+ * 避免用户误以为权重是 1（彩·气泡 shift 定义 weight=1.5 的场景） */
+FE.state.profile.keys['wtest.shift'] = { ref: 'rime.a', weight: 1.5 };
+FE.state.profile.layouts.default.sections[0].rows[0].push({ ref: 'wtest.shift' });
+FE.renderAll();
+documentStub._openDialogs.length = 0;
+FE.openKeyDialog({ mode: 'placement', placement: FE.state.profile.layouts.default.sections[0].rows[0].slice(-1)[0], location: { s: 0, r: 0, k: 99 } });
+{
+  const kdW = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  const numInputs = kdW.querySelectorAll('input').filter(i => i.getAttribute('type') === 'number');
+  const wInp = numInputs.find(i => String(i.getAttribute('placeholder') || '').indexOf('继承') >= 0);
+  ok(!!wInp, '找到权重输入框（placeholder 含继承）');
+  eq(wInp.value, '', '放置位未写 weight 时输入框为空');
+  ok(String(wInp.getAttribute('placeholder')).indexOf('1.5') >= 0, 'placeholder 显示定义链继承值 1.5');
+}
+documentStub._openDialogs.length = 0;
+FE.state.profile.layouts.default.sections[0].rows[0].pop();
+delete FE.state.profile.keys['wtest.shift'];
+FE.renderAll();
+
 console.log('== 按键选择器 ==');
 FE.openKeyPicker({ title: '测试选择器', allowInline: true, onPick: () => {} });
 ok(documentStub._openDialogs.length === 1, '选择器打开');
@@ -1217,19 +1238,51 @@ FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
   const bgInput = colorInputs[1]; /* 背景 */
   const bgPicker = bgInput.jscolor;
   ok(!!bgPicker, '背景输入框有 jscolor 实例');
-  /* 面板里选纯红（不透明）→ 桩按约定返回 6 位 BBGGRR = 0000FF */
+  /* 面板里选纯红（不透明）→ 桩按约定返回 6 位 BBGGRR = 0000FF（hexaColor a==1 分支） */
   bgPicker.fromString('#0000FF');
   eq(bgPicker.toHEXAString(), '0000FF', '桩按 vendor 约定输出不透明 BBGGRR');
   bgPicker.opts.onInput();
-  eq(bgInput.value, '#FF0000', '面板取色回写输入框为 ARGB 正序（纯红）');
+  eq(bgInput.value, '#FF0000', '面板 6 位输出回写为 6 位 ARGB（纯红）');
   eq(FE.state.profile.keys['qwerty.q'].colors, undefined, '面板拖动只进 draft，保存前不动 profile');
-  /* 手输 change 同样归一化写 draft */
-  const textInput = colorInputs[0]; /* 文字 */
+  /* ★ 滑块滑到顶（不透明）时输入框不突然缩短：当前是 8 位则补 FF 保持 8 位 */
+  bgInput.value = '#8052F7BD';
+  bgPicker.fromString('#BDF752'); /* 同一 RGB 的不透明色（面板输出 6 位） */
+  eq(bgPicker.toHEXAString(), 'BDF752', '不透明时面板输出 6 位');
+  bgPicker.opts.onInput();
+  eq(bgInput.value, '#FF52F7BD', '滑到顶：8 位输入框补 FF 保持 8 位（#8052F7BD→#FF52F7BD）');
+  /* 6 位输入框不受影响（保持 6 位） */
+  bgInput.value = '#52F7BD';
+  bgPicker.fromString('#BDF752');
+  bgPicker.opts.onInput();
+  eq(bgInput.value, '#52F7BD', '滑到顶：6 位输入框保持 6 位');
+  /* ★ 半透明 8 位端到端（面板→落盘→预览三方一致）：
+   * 面板按 vendor 约定输出 AABBGGRR，经 pickerHexToArgb 落盘为 Foxy #AARRGGBB，
+   * 再经 foxyColorToCss 进预览为 CSS #RRGGBBAA，三处解析出的 RGBA 通道必须相同。 */
+  bgPicker.fromString('#80BDF752'); /* vendor 约定：alpha=0x80，B=BD G=F7 R=52 */
+  eq(bgPicker.toHEXAString(), '80BDF752', '桩按 vendor 约定输出半透明 AABBGGRR');
+  bgPicker.opts.onInput();
+  eq(bgInput.value, '#8052F7BD', '半透明面板取色回写输入框为 Foxy #AARRGGBB');
+  kd.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  eq(FE.state.profile.keys['qwerty.q'].colors.background, '#8052F7BD', '半透明背景色落盘为 Foxy 语义');
+  /* 预览侧验证搬到后面的「预览颜色渲染」段（那里已切回默认 profile，保证 qwerty.q 被渲染） */
+  documentStub._openDialogs.length = 0;
+  FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+  const kdRe = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  const bgRe = kdRe.querySelectorAll('.color-input')[1];
+  eq(bgRe.value, '#8052F7BD', '重开对话框回显落盘值（Foxy 语义不变）');
+  kdRe.querySelectorAll('.dialog-toolbar')[0].querySelectorAll('button')[0].click(); /* 取消 */
+  $('top-undo').click();
+  eq(FE.state.profile.keys['qwerty.q'].colors, undefined, '撤销清除颜色覆盖（含半透明一次）');
+  /* 手输 change 同样归一化写 draft（重开对话框拿新的 colorInputs） */
+  documentStub._openDialogs.length = 0;
+  FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+  const kdW = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  const colorInputsW = kdW.querySelectorAll('.color-input');
+  const textInput = colorInputsW[0]; /* 文字 */
   textInput.value = '#ff0000';
   textInput._fire('change');
   /* 保存 → profile */
-  kd.querySelectorAll('.dialog-toolbar .primary')[0].click();
-  eq(FE.state.profile.keys['qwerty.q'].colors.background, '#FF0000', '面板选的背景色写入 profile（归一化，不透明省略 alpha）');
+  kdW.querySelectorAll('.dialog-toolbar .primary')[0].click();
   eq(FE.state.profile.keys['qwerty.q'].colors.text, '#FF0000', '手输的文字色归一化写入 profile');
   /* 非法输入被回退：现在通过 FE.uiAlert 提示（内建弹窗），要像用户那样读它 */
   documentStub._openDialogs.length = 0;
@@ -1280,6 +1333,29 @@ FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
 }
 documentStub._openDialogs.length = 0;
 
+console.log('== 取色滑块拖过头不关窗 ==');
+/* jscolor 滑块拖动在 document 上挂 move/end 监听，拖过头松手时合成的 click
+ * 会冒泡到 dialog（target 落在空白区），不能算"点遮罩"。面板内 pointerdown
+ * 打标，800ms 内的遮罩 click 豁免；普通遮罩点击照常关闭。 */
+documentStub._openDialogs.length = 0;
+FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+{
+  const kdDrag = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  const dragInput = kdDrag.querySelectorAll('.color-input')[1];
+  dragInput.getBoundingClientRect = () => ({ left: 40, top: 100, right: 190, bottom: 124, width: 150, height: 24 });
+  dragInput.jscolor.show();
+  const dragWrap = kdDrag.querySelectorAll('.jscolor-wrap')[0];
+  ok(!!dragWrap, '拖过头用例：取色面板已弹出');
+  dragWrap._fire('pointerdown');
+  ok(typeof FE._colorDragGuard === 'number', '面板内 pointerdown 打标');
+  kdDrag._fire('click');
+  ok(kdDrag.open, '从面板拖出来松手：dialog 不关闭');
+  FE._colorDragGuard = 0;
+  kdDrag._fire('click');
+  ok(!kdDrag.open, '普通遮罩点击：dialog 照常关闭');
+}
+documentStub._openDialogs.length = 0;
+
 console.log('== 预览颜色渲染（基础 pressed/shadow/hint 四边 + states 优先级） ==');
 /* 前面的用例已加载 cc lite.json 等示例，这里回到内置默认布局，
  * 保证 qwerty.q / qwerty.shift 一定被渲染（否则断言取到的不是目标键）。 */
@@ -1300,10 +1376,22 @@ FE.renderAll();
   ok(!!key, '找到 qwerty.q 对应的预览按键');
   eq(key.style.background, '#4CAF50', '基础 background 应用到按键');
   eq(key.style.color, '#FFFFFFFF', '基础 text 应用到按键');
-  ok(String(key.style.boxShadow).indexOf('#40000000') >= 0, '基础 shadow 渲染为 box-shadow（含透明色）');
+  ok(String(key.style.boxShadow).indexOf('#00000040') >= 0, '基础 shadow 转 CSS 语义（含透明色，alpha 移到末尾）');
   /* 提示四边：hint 是兜底，hintTop/hintBottom 按边覆盖 */
   eq(q('.kb-hint-up', key)[0].style.color, '#123456', 'hintTop 只作用于上滑提示');
   eq(q('.kb-hint-down', key)[0].style.color, '#654321', 'hintBottom 只作用于下滑提示');
+  /* 8 位 Foxy 色（#AARRGGBB）→ CSS（#RRGGBBAA）：彩·气泡场景，不透明粉蓝 */
+  FE.state.profile.keys['qwerty.q'].colors.background = '#FF52F7BD';
+  FE.renderAll();
+  const keyAARR = q('.kb-key').find(k => String(k.getAttribute('title') || '').indexOf('qwerty.q') >= 0);
+  eq(keyAARR.style.background, '#52F7BDFF', '8 位 background 的 alpha 移到末尾（与手机一致）');
+  /* 半透明 8 位：面板落盘的 #8052F7BD 预览为 #52F7BD80（与手机解析的 RGBA 通道一致） */
+  FE.state.profile.keys['qwerty.q'].colors.background = '#8052F7BD';
+  FE.renderAll();
+  const keySemi = q('.kb-key').find(k => String(k.getAttribute('title') || '').indexOf('qwerty.q') >= 0);
+  eq(keySemi.style.background, '#52F7BD80', '半透明 background 预览为 CSS 语义（alpha 移末尾）');
+  FE.state.profile.keys['qwerty.q'].colors.background = '#4CAF50';
+  FE.renderAll();
   /* pointerdown → 基础 pressed 角色生效（无 states.pressed 时） */
   key._fire('pointerdown');
   eq(key.style.background, '#388E3C', '按住时基础 pressed 角色生效');
