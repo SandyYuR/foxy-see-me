@@ -2751,6 +2751,57 @@ await sleep(350);
   ok(!!hoverMac.getAttribute('title'), '宏摘要行有悬停提示：' + hoverMac.getAttribute('title'));
   ok(hoverAct.getAttribute('title').indexOf('展开') >= 0, '动作悬停提示说明点下去会展开配置');
 
+  console.log('== 布局编辑按键跟随键盘配色（主题 + colors 覆盖） ==');
+  /* 回到布局页 + 默认布局，保证区段编辑器与预览都渲染同一批键 */
+  tabs[0]._fire('click');
+  FE.applyProfileText(FE.DEFAULT_PROFILE_TEXT, {});
+  FE.state.splitMode = false;
+  FE.state.theme = 'light';
+  $('pt-theme').value = 'light';
+  FE.renderAll();
+  ok($('layout-sections').classList.contains('theme-light'), '浅色主题下编辑区 host 带 theme-light');
+  /* 该键无 colors 覆盖 → 无行内色，基础色走 CSS 类（与预览键面一致的白色由类给） */
+  const noColorChip = q('#layout-sections .chip').find(c => !c.style.background && !c.classList.contains('chip-add'));
+  ok(!!noColorChip, '无 colors 覆盖的编辑按键无行内背景色（基础色走主题类）');
+  /* 给某键加 colors 覆盖 → 编辑区按键行内套色，与预览同款 */
+  FE.state.profile.keys['qwerty.q'] = {
+    ref: 'rime.q', keyType: 'LETTER',
+    swipe: { up: { ref: 'rime.Q' }, down: { ref: 'rime.1' } },
+    colors: { background: '#4CAF50', text: '#FFFFFFFF' }
+  };
+  FE.renderAll();
+  const colorChip = q('#layout-sections .chip').find(c => c.style.background === '#4CAF50');
+  ok(!!colorChip, '有 colors 覆盖的编辑按键套上自定义背景色');
+  eq(colorChip.style.color, '#FFFFFFFF', '编辑按键的自定义文字色同样生效');
+  const colorPrev = q('.kb-key').find(k => String(k.getAttribute('title') || '').indexOf('qwerty.q') >= 0);
+  eq(colorPrev && colorPrev.style.background, '#4CAF50', '预览同键背景色一致');
+  /* 通过 key-dialog 保存改色（定义模式）→ 编辑区同样实时跟上 */
+  documentStub._openDialogs.length = 0;
+  FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+  const kdColor = documentStub._openDialogs[0];
+  const kdBg = kdColor.querySelectorAll('.color-input')[1];
+  kdBg.value = '#123456';
+  kdBg._fire('change');
+  kdColor.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  const savedChip = q('#layout-sections .chip').find(c => c.style.background === '#123456');
+  ok(!!savedChip, '对话框保存改色后编辑区按键实时跟上');
+  /* 切回深色 → host 类同步，无覆盖的键回到深色基础 */
+  $('pt-theme').value = 'dark';
+  $('pt-theme')._fire('change');
+  ok($('layout-sections').classList.contains('theme-dark'), '深色主题下编辑区 host 切回 theme-dark');
+  /* 深色键盘的容器跟随必须显式写死（源码级断言）：行块底色基础值是
+   * var(--card-inner)，会跟整站 site-light 变浅；"浅色整站 + 深色键盘"下只有
+   * .theme-dark 显式规则能把容器钉回键盘底（本次修复的回归点，桩量不到计算样式故查源码） */
+  const cssSrc = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+  ok(/\.theme-dark\s+\.row-block\s*\{[^}]*background:\s*#191a1e/.test(cssSrc), '深色键盘行块底色显式钉死（不随整站变量走）');
+  ok(/\.theme-dark\s+\.gedit-wrap\s*\{[^}]*background:\s*#191a1e/.test(cssSrc), '深色键投资源网格画布底色显式钉死');
+  ok(/\.theme-dark\s+\.chip\s*\{[^}]*background:\s*#52555b/.test(cssSrc), '深色键盘按键底色显式钉死');
+  /* 行头 ↑ ↓ ✕ 的底色必须与行块底同色（融进背景）：浅色键盘 #cfd2d7，深色键盘 #191a1e。
+   * .icon-button 基础是透明底，浅色行块上不给底就是"白成一片"；深色行块上不给底，
+   * 将来整站浅色的 button 白底（tag 选择器）会透进来。桩量不到计算样式，查源码锁规则。 */
+  ok(/\.theme-light\s+\.row-block\s+\.icon-button\s*\{[^}]*background:\s*#cfd2d7/.test(cssSrc), '浅色键盘行头按钮底色与行块底同色（融进背景）');
+  ok(/\.theme-dark\s+\.row-block\s+\.icon-button\s*\{[^}]*background:\s*#191a1e/.test(cssSrc), '深色键盘行头按钮底色与行块底同色（不受整站浅色影响）');
+
 }   /* 结束 await sleep(350) 后的主体块 */
 
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');

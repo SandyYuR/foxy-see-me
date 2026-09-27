@@ -44,7 +44,7 @@ var state = {
   layoutName: null,       // 当前正在编辑/预览的命名布局
   status: { composing: false, ascii_mode: false, disabled: false, shift: false },
   statusSample: '朙月拼音',
-  theme: 'dark',
+  theme: 'light',
   includeType: true,
   sel: null,              // 选中按键 {s, r, k}
   validation: { errors: [], warnings: [] },
@@ -2970,6 +2970,9 @@ function renderSectionsEditor() {
    * 才能一次覆盖全部，不必逐个调用方去打补丁。 */
   var gridScroll = captureGridScroll();
   clearEl(host);
+  /* 布局编辑里可点击编辑的按键（chip / gedit-key）跟随预览键盘配色（state.theme） */
+  host.classList.remove('theme-dark', 'theme-light');
+  host.classList.add(state.theme === 'light' ? 'theme-light' : 'theme-dark');
   var L = curLayout();
   var hasSplit = !!(L && isPlainObject(L.split));
 
@@ -2977,6 +2980,7 @@ function renderSectionsEditor() {
   function setSplitMode(v) {
     state.splitMode = v;
     state.sel = null;
+    var sp = $('pt-split'); if (sp) sp.checked = v;   // 同步预览工具栏的「分体」复选框，使其跟随布局编辑的常规/分体切换
     renderAll();
     requestAnimationFrame(function () { renderPreview(); });
   }
@@ -3429,7 +3433,14 @@ function performGridDrop(si, gi, target) {
   });
 }
 
-/* ---- 按键 chip（吃编译产物，不再自行解析引用） ---- */
+/* ---- 按键 chip（吃编译产物，不再自行解析引用） ----
+ * 颜色语义与预览同款：先按主题/keyType 定基础色（CSS 类），再把该键 colors
+ * 覆盖以行内样式套上（applyKeyColors）。行内样式优先级高于类，所以有覆盖的
+ * 键显示自定义色、无覆盖的键跟随主题——与预览 .kb-key 的叠加顺序一致。 */
+function applyEditorKeyColors(el, item) {
+  if (!el || !item || !item.eff) return;
+  applyKeyColors(el, item.eff, false, state.status);
+}
 function keyChip(item) {
   var placement = item.placement;
   var loc = { s: item.s, r: item.r, k: item.k };
@@ -3447,6 +3458,7 @@ function keyChip(item) {
       if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'placement', placement: placement, location: loc });
     }
   });
+  applyEditorKeyColors(chip, item);
   chip.__chipLoc = { s: loc.s, r: loc.r, k: loc.k };
   chip.appendChild(h('span', { class: 'chip-label' }, String(label).slice(0, 6)));
   chip.appendChild(h('span', { class: 'chip-sub' }, placement && placement.ref ? placement.ref : '内联'));
@@ -3694,6 +3706,7 @@ function gridEditor(section, si, csec) {
             style: place
           });
           cell.style.zIndex = '1';
+          applyEditorKeyColors(cell, item);
           var label = item.label || (item.icon ? '⚙' : '？');
           cell.appendChild(h('span', { class: 'gedit-label' }, String(label).slice(0, 4)));
           cell.appendChild(h('span', { class: 'gedit-sub' }, item.ref || '内联'));
@@ -5048,7 +5061,14 @@ function initToolbar() {
   $('pt-composing').addEventListener('change', function () { state.status.composing = this.checked; renderPreview(); });
   $('pt-ascii').addEventListener('change', function () { state.status.ascii_mode = this.checked; renderPreview(); });
   $('pt-disabled') && $('pt-disabled').addEventListener('change', function () { state.status.disabled = this.checked; renderPreview(); });
-  $('pt-theme').addEventListener('change', function () { state.theme = this.value; renderPreview(); if (FE.renderPopupTab) FE.renderPopupTab(); });
+  $('pt-theme').addEventListener('change', function () {
+    state.theme = this.value;
+    renderPreview();
+    /* 布局编辑按键即时跟随配色：只切父容器主题类，无需整块重渲染 */
+    var ls = $('layout-sections');
+    if (ls) { ls.classList.remove('theme-dark', 'theme-light'); ls.classList.add(state.theme === 'light' ? 'theme-light' : 'theme-dark'); }
+    if (FE.renderPopupTab) FE.renderPopupTab();
+  });
   $('pt-status-text').addEventListener('input', function () { state.statusSample = this.value; renderPreview(); });
   $('pt-split') && $('pt-split').addEventListener('change', function () {
     state.splitMode = this.checked;

@@ -633,6 +633,67 @@ label.check { cursor: pointer; white-space: nowrap; }
   position: absolute; top: 2px; right: 3px; font-size: 10px; color: var(--sel);
 }
 
+/* 布局编辑里可点击编辑的按键（.chip 行区段 / .gedit-key 网格区段）跟随预览键盘配色。
+ * 两层叠加，与预览 .kb-key 同款语义：
+ * · 基础色（主题/keyType）走 CSS 类 —— .theme-light 下覆盖为浅色；
+ * · 该键 colors 覆盖由 applyEditorKeyColors 以行内样式写入（见 app.js），优先级更高。
+ * 深浅两档都显式写死（不用"默认基础值"偷懒）：整站另有 site-light 浅色主题，
+ * 一旦整站变浅、键盘仍是深色，裸基础值会被整站浅变量带跑，只有显式规则才钉得住。 */
+.theme-light .chip { background: #ffffff; color: #22242a; border-color: #c9ccd2; }
+.theme-light .chip.chip-fn { background: #d6d9de; border-color: #c2c6cc; }
+.theme-light .chip-sub { color: #63676f; }
+.theme-light .chip-add { border-color: #c2c6cc; }
+.theme-light .gedit-key { background: #ffffff; color: #22242a; border-color: #c9ccd2; }
+.theme-light .gedit-key.chip-fn { background: #d6d9de; }
+.theme-light .gedit-sub { color: #63676f; }
+.theme-light .gedit-empty { border-color: #c2c6cc; }
+.theme-dark .chip { background: #52555b; color: #f2f3f5; border-color: #5d6167; }
+.theme-dark .chip.chip-fn { background: #313439; border-color: #3c4046; }
+.theme-dark .chip-sub { color: #b9bec6; }
+.theme-dark .gedit-key { background: #52555b; color: #f2f3f5; border-color: #5d6167; }
+.theme-dark .gedit-key.chip-fn { background: #313439; }
+.theme-dark .gedit-sub { color: #b9bec6; }
+
+/* 布局编辑容器（行块 / 网格画布 / 网格滚动条）跟随预览键盘底色。
+ * 行块 ≈ 预览 .kb（自带 padding，底色整块可见）；网格 .gedit 本身无 padding，
+ * 间隙透出的是父级 .gedit-wrap，所以底色打在 wrap 上；滚动条轨道/滑块同步键盘底，
+ * 否则深色轨道在浅灰画布下过扎眼。色值全部取自本文件已有（.kb-dark/.kb-light）。
+ * 深浅两档都显式写死：行块底色基础值是 var(--card-inner)，会跟整站 site-light 变浅，
+ * 深色键盘时必须显式钉回 #191a1e，否则"浅色整站 + 深色键盘"下容器跟丢。 */
+.theme-light .row-block { background: #cfd2d7; border-color: #b9bdc4; }
+.theme-light .row-block .row-title { color: #63676f; }
+.theme-light .row-block .mini-label { color: #63676f; }
+/* 行头 ↑ ↓ ✕：底色与行块底同色（#cfd2d7），只留边框+灰字，融进行块背景；
+ * hover 才浮出白底。边框不能省，否则浅底上"白成一片、看不见边"。 */
+.theme-light .row-block .icon-button { color: #5f656e; border-color: #a8adb5; background: #cfd2d7; }
+.theme-light .row-block .icon-button:hover { color: #1c1e22; border-color: #8a8f98; background: #ffffff; }
+.theme-light .gedit-wrap { background: #cfd2d7; border-radius: 8px; }
+.theme-light .gedit-scrollbar { background: #b9bdc4; border-color: #c2c6cc; }
+.theme-light .gedit-thumb { background: #63676f; }
+.theme-light .gedit-thumb:hover { background: #4a4f58; }
+/* 拖放目标高亮在浅底上 0.07 几乎看不见，与 .gedit-drop 的 0.18 对齐 */
+.theme-light .chip-box.drop-target { background: rgba(76, 141, 255, 0.18); }
+/* 行块/网格设置里的输入框、列/行数字框同步变浅（与浅色键面同款白色），
+ * 否则深色小框嵌在浅灰行块里过重。影响面只限 .theme-light 之内。 */
+.theme-light .row-block .mini-input { background: #ffffff; color: #22242a; border-color: #c2c6cc; }
+.theme-light .row-block .mini-input::placeholder { color: #8a8f98; }
+.theme-light .section-body > .form-row .mini-input { background: #ffffff; color: #22242a; border-color: #c2c6cc; }
+.theme-light .section-body > .form-row .mini-input::placeholder { color: #8a8f98; }
+/* 深色键盘钉死：底色/边框/文字全部显式写死，不随整站变量走 */
+.theme-dark .row-block { background: #191a1e; border-color: #26282d; }
+.theme-dark .row-block .row-title { color: #9aa0a8; }
+.theme-dark .row-block .mini-label { color: #9aa0a8; }
+/* 行头 ↑ ↓ ✕：底色与深色行块底同色，只留边框+灰字；background 必须显式写，
+ * 否则将来整站浅色的 button 白底规则（tag 选择器）会透进来，白底贴深底行块上。 */
+.theme-dark .row-block .icon-button { color: #9aa0a8; border-color: #34383f; background: #191a1e; }
+.theme-dark .row-block .icon-button:hover { color: #e6e8ec; border-color: #4a4f58; background: #262a31; }
+.theme-dark .gedit-wrap { background: #191a1e; border-radius: 8px; }
+.theme-dark .gedit-scrollbar { background: #1b1e23; border-color: #34383f; }
+.theme-dark .gedit-thumb { background: #4a4f58; }
+.theme-dark .gedit-thumb:hover { background: #5a606a; }
+.theme-dark .row-block .mini-input { background: #17191d; color: #e6e8ec; border-color: #34383f; }
+.theme-dark .section-body > .form-row .mini-input { background: #17191d; color: #e6e8ec; border-color: #34383f; }
+
 /* ---------------- 变体行 / 手势行 ---------------- */
 .variant-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 0; border-bottom: 1px dashed #31353c; }
 .variant-row:last-child { border-bottom: none; }
