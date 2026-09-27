@@ -47,8 +47,13 @@ global.requestAnimationFrame = (fn) => { fn(); return 0; };
 global.cancelAnimationFrame = () => {};
 
 function load(file) {
-  const code = fs.readFileSync(path.join(__dirname, '..', 'js', file), 'utf8');
+  /* 符号页由另一模块提供：**缺席时跳过而不是抛错** —— 该文件尚未落地时，
+   * 本套件不该整体崩掉（那会掩盖真正的 UI 失败）。主题页同理。 */
+  const p = path.join(__dirname, '..', 'js', file);
+  if (!fs.existsSync(p)) return false;
+  const code = fs.readFileSync(p, 'utf8');
   vm.runInThisContext(code, { filename: file });
+  return true;
 }
 load('data.js');
 load('default-profile.js');
@@ -58,6 +63,10 @@ load('folder-import.js');
 load('key-dialog.js');
 load('macro-editor.js');
 load('popup-editor.js');
+load('theme-editor.js');
+load('color-source.js');
+load('symbol-editor.js');
+load('symbol-preview.js');
 
 const FE = global.FE;
 const $ = (id) => documentStub.getElementById(id);
@@ -206,10 +215,12 @@ ok(filterCount >= 1 && filterCount < 10, '过滤后只剩少数定义: ' + filte
 $('keys-filter').value = '';
 $('keys-filter')._fire('input');
 
-/* 标签页切换：4 个控制按钮（布局编辑/按键定义/动作与宏/弹出菜单）；
- * 弹出菜单是另一类文档，视觉上有分隔 */
+/* 标签页切换：6 个控制按钮（布局编辑/按键定义/动作与宏/弹出菜单/主题/符号面板）；
+ * 弹出菜单之后的三个是另外几类文档（主题文件 / 符号 catalog），视觉上有分隔。
+ * ⚠️ 新增的 tab 一律排在 tab-popup **之后**，这样下面按索引取 tabs[0]/tabs[3] 的
+ * 断言（弹出菜单、布局页）不受影响。 */
 const tabs = q('.tab');
-eq(tabs.length, 4, '4 个标签按钮');
+eq(tabs.length, 6, '6 个标签按钮');
 ok(tabs[3].classList.contains('tab-popup'), '弹出菜单按钮有分隔样式类');
 tabs[3]._fire('click');
 ok($('tab-popup').classList.contains('active'), '弹出菜单标签激活');
@@ -661,11 +672,127 @@ ok(fMax > fMin + 3, '3×3 大键字号明显大于 1×1 小键（' + fMax.toFixe
 $('layout-select').value = 'numpad';
 $('layout-select')._fire('change');
 const numGridEl = q('.kb-grid')[0];
-eq(numGridEl.style.gap, '5px 5px', 'numpad 5×4 间距仍是 5px（小网格外观零变化）');
+/* 小网格：间隙应为「按键外观」的配置值（App 口径：相邻可见间隙 = 2×gap），
+ * 而**不是**旧的固定 5px —— 见 foxy-render-spec.md §2.7。
+ * 旧断言 `gap === '5px 5px'` 钉的是"固定间隙"时代的行为，已随配置化一并更新。 */
+const numGapParts = String(numGridEl.style.gap).split(/\s+/);
+const numRenderedCol = parseFloat(numGapParts[0]);
+const numWantCol = FE.kbDp(FE.keyAppearance().gapHDp, FE.state.portraitW / 10) * 2;
+ok(Math.abs(numRenderedCol - numWantCol) < 0.01,
+  'numpad 5×4 间距 = 2×配置间隙（实际 ' + numGridEl.style.gap +
+  '，期望列间隙 ' + numWantCol.toFixed(2) + 'px）');
+ok(numRenderedCol !== 5, '不再固定 5px（配置化后按 dp 换算）');
 eq(q('.kb-key').length, 19, 'numpad 仍渲染 19 键');
 $('layout-select').value = 'default';
 $('layout-select')._fire('change');
 eq(q('.kb-row').length, 4, '回到 default 行布局仍正常');
+
+/* ================================================================
+ * 按键外观三项（圆角 / 水平间隙 / 垂直间隙）
+ *
+ * 对照 App「设置 → 键盘外观」同名项（foxy-render-spec.md §2.7）：
+ *   范围 0–24 / 0–16 / 0–16，默认 6 / 3 / 4（c50.java:16 + a60 校验 + 设置页回落）。
+ * ⭐ 最易做错处：App 的间隙是**每键四周内缩**（v40.setPadding + InsetDrawable），
+ *   所以相邻两键的可见间隙 = **2×**设置值，且**行首尾键也内缩**。
+ *   把它当"相邻留空"（只给非首尾键半个）会少一半、首尾不内缩。
+ * ================================================================ */
+console.log('== 按键外观：圆角 / 水平间隙 / 垂直间隙 ==');
+{
+  const savedAp = {
+    c: FE.state.keyCornerRadiusDp, h: FE.state.keyGapHorizontalDp, v: FE.state.keyGapVerticalDp
+  };
+  try {
+    /* ① 默认值与范围（与 App 双重佐证，别随手改） */
+    FE.state.keyCornerRadiusDp = 6;
+    FE.state.keyGapHorizontalDp = 3;
+    FE.state.keyGapVerticalDp = 4;
+    eq(FE.keyAppearance(), { cornerDp: 6, gapHDp: 3, gapVDp: 4 },
+      '默认 6 / 3 / 4（与 App 设置页回落值一致）');
+    eq(FE.KEY_APPEARANCE_SPEC.cornerRadius.max, 24, '圆角上限 24（c50 滑块）');
+    eq(FE.KEY_APPEARANCE_SPEC.gapHorizontal.max, 16, '水平间隙上限 16');
+    eq(FE.KEY_APPEARANCE_SPEC.gapVertical.max, 16, '垂直间隙上限 16');
+
+    /* ② 越界/非法 → 回落默认（App 端 a60.e/f/g 判定非法后同样回落默认） */
+    FE.state.keyCornerRadiusDp = 99;
+    FE.state.keyGapHorizontalDp = -5;
+    FE.state.keyGapVerticalDp = 'abc';
+    eq(FE.keyAppearance(), { cornerDp: 6, gapHDp: 3, gapVDp: 4 },
+      '越界/非法值一律回落默认');
+
+    /* ③ dp → px 换算（unit = portraitW/10，等价 360dp 宽屏 → 1dp = unit/36） */
+    eq(FE.kbDp(36, 36), 36, 'unit=36 时 36dp = 36px');
+    ok(Math.abs(FE.kbDp(6, 38) - 6.333) < 0.01, 'unit=38 时 6dp ≈ 6.33px');
+
+    /* ④ 圆角 clamp 到键面短边一半（v40.java:397-404） */
+    eq(FE.keyCornerPx(6, 36, 100, 100), 6, '键面够大时不夹（6dp→6px）');
+    eq(FE.keyCornerPx(24, 36, 20, 20), 10, '大圆角在小键上夹到短边一半（24→10）');
+    eq(FE.keyCornerPx(6, 36, null, null), 6, '键面尺寸未知时不夹');
+
+    /* ⑤ 行区段：每键四周内缩（相邻 = 2×gap、首尾也内缩） */
+    FE.state.keyGapHorizontalDp = 4;
+    FE.state.keyGapVerticalDp = 2;
+    FE.state.keyCornerRadiusDp = 8;
+    FE.renderAll();
+    const rowKeys = q('.kb-row')[0].querySelectorAll('.kb-key');
+    const unitNow = FE.state.portraitW / 10;
+    const wantH = FE.kbDp(4, unitNow) + 'px';
+    const wantV = FE.kbDp(2, unitNow) + 'px';
+    ok(rowKeys.length >= 2, '（前置）首行至少 2 个键');
+    /* 首个键也要有左/上内缩（这是"每键内缩"与"相邻留空"最直观的区别） */
+    eq(String(rowKeys[0].style.marginLeft), wantH, '行首键也有左侧内缩（不是贴边）');
+    eq(String(rowKeys[0].style.marginTop), wantV, '行首键也有上侧内缩');
+    eq(String(rowKeys[rowKeys.length - 1].style.marginRight), wantH, '行尾键也有右侧内缩');
+    /* 相邻两键左右各内缩 → 合计 2×gap（这就是手机上看到的可见间隙） */
+    const gapBetweenTwo = parseFloat(rowKeys[0].style.marginRight) +
+      parseFloat(rowKeys[1].style.marginLeft);
+    ok(Math.abs(gapBetweenTwo - FE.kbDp(4, unitNow) * 2) < 0.01,
+      '相邻两键可见间隙 = 2×设置值（实际 ' + gapBetweenTwo.toFixed(2) + 'px）');
+
+    /* ⑥ 圆角写进了键的行内样式，且随设置变化 */
+    ok(Math.abs(parseFloat(rowKeys[0].style.borderRadius) - FE.kbDp(8, unitNow)) < 0.6,
+      '键圆角跟随设置（实际 ' + rowKeys[0].style.borderRadius + 'px）');
+
+    /* ⑦ 滑杆接线：改 value 触发 input → state 与预览同步 */
+    const sliderC = $('pt-corner');
+    ok(!!sliderC, '圆角滑杆存在');
+    eq(sliderC.getAttribute('min'), '0', '圆角滑杆下限 0');
+    eq(sliderC.getAttribute('max'), '24', '圆角滑杆上限 24');
+    sliderC.value = '16';
+    sliderC._fire('input');
+    eq(FE.state.keyCornerRadiusDp, 16, '拖动圆角滑杆写入 state');
+    ok(Math.abs(parseFloat(q('.kb-row')[0].querySelectorAll('.kb-key')[0].style.borderRadius) -
+      FE.kbDp(16, unitNow)) < 0.6, '拖动后预览圆角立即跟随');
+    eq($('pt-corner-val').textContent, '16dp', '滑杆数值标签同步');
+    const sliderV = $('pt-gap-v');
+    ok(!!sliderV, '垂直间隙滑杆存在');
+    sliderV.value = '7';
+    sliderV._fire('input');
+    eq(FE.state.keyGapVerticalDp, 7, '拖动垂直间隙滑杆写入 state');
+    eq(String(q('.kb-row')[0].querySelectorAll('.kb-key')[0].style.marginTop),
+      FE.kbDp(7, unitNow) + 'px', '拖动后预览垂直内缩立即跟随');
+
+    /* ⑧ 随草稿持久化（纯预览设置，不进 Foxy 文件） */
+    const draftAp = JSON.parse(localStorageStub.getItem('foxy-layout-editor-draft-v1'));
+    eq(draftAp.keyCornerRadiusDp, 16, '圆角写入草稿');
+    eq(draftAp.keyGapVerticalDp, 7, '垂直间隙写入草稿');
+
+    /* ⑨ 网格区段同样按「2×设置值」写 gap */
+    $('layout-select').value = 'numpad';
+    $('layout-select')._fire('change');
+    const gEl = q('.kb-grid')[0];
+    const gCol = parseFloat(String(gEl.style.gap).split(/\s+/)[0]);
+    const wantG = FE.gridGaps(FE.state.profile.layouts['numpad'].sections[0].columns,
+      FE.state.profile.layouts['numpad'].sections[0].rows, unitNow, 5).colGap;
+    ok(Math.abs(gCol - wantG) < 0.01, '网格 gap 与 FE.gridGaps 同口径（渲染与测试共用一份计算）');
+    $('layout-select').value = 'default';
+    $('layout-select')._fire('change');
+  } finally {
+    FE.state.keyCornerRadiusDp = savedAp.c;
+    FE.state.keyGapHorizontalDp = savedAp.h;
+    FE.state.keyGapVerticalDp = savedAp.v;
+    if (FE.applyKeyAppearance) FE.applyKeyAppearance();
+  }
+}
 
 console.log('== 示例加载（内置 bundle，file:// 可用） ==');
 ok(FE.EXAMPLE_FILES && FE.EXAMPLE_FILES['cc lite.json'], 'bundle 含 cc lite.json');
@@ -1374,6 +1501,145 @@ FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
 }
 documentStub._openDialogs.length = 0;
 
+console.log('== 颜色行全链路回显（当前生效色 + 来源 + 跳转主题页） ==');
+/* 用户抱怨的核心：「留空即恢复继承」这句没说继承到哪一级、那个颜色是什么。
+ * 布局 JSON **不支持**「颜色引用主题字段」（schema:115 的 colors 是自由对象；
+ * SKILL.md:892-893 值只能是 #RRGGBB/#AARRGGBB 字面量），所以全链路对应只能做在
+ * UI 层：值仍写字面量，但每行必须回显「当前生效色 ← 它来自哪一级」与
+ * 「清空后回落到什么」。解析复用 js/color-source.js（FE.resolveRole /
+ * FE.colorSourceLabel / FE.resolveThemeField），颜色行照 theme-editor.js 的幂等 apply。 */
+{
+  const roleRow = (dlg, role) =>
+    dlg.querySelectorAll('.color-row-wrap').filter(r => r.getAttribute('data-color-role') === role)[0];
+  const jumpOf = (row) => row.querySelectorAll('.color-theme-jump')[0];
+  const txt = (row) => row.querySelectorAll('.color-effect')[0].textContent;
+  const fb = (row) => row.querySelectorAll('.color-fallback')[0].textContent;
+  const inpOf = (row) => row.querySelectorAll('.color-input')[0];
+  const clearOf = (row) => row.querySelectorAll('.mini-button').filter(b => b.textContent === '清除')[0];
+
+  /* ---- ① 未导入主题：必须讲清「清空后回落 App 内置默认配色」而不是「没有颜色」 ---- */
+  FE.state.themeProfile = null;
+  FE.state.themeSlot = 'light';
+  FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q', keyType: 'LETTER' };
+  documentStub._openDialogs.length = 0;
+  FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+  {
+    const kd = documentStub._openDialogs[0];
+    eq(kd.querySelectorAll('.color-row-wrap').length, 19, '19 个颜色行各自带回显块');
+    eq(kd.querySelectorAll('.color-input').length, 19, '回显没有引入新的颜色输入框（仍是 19 个）');
+    eq(kd.querySelectorAll('.color-theme-state').length, 1, '颜色卡顶部有主题导入状态说明');
+    ok(kd.querySelectorAll('.color-theme-state')[0].textContent.indexOf('未导入主题') >= 0,
+      '未导入主题时明说「清空后 Foxy 端将用内置默认配色」');
+    const bg = roleRow(kd, 'background');
+    ok(!!bg, '背景行可按 data-color-role 定位');
+    ok(txt(bg).indexOf('当前生效') === 0, '背景行首行是「当前生效 …」');
+    ok(txt(bg).indexOf('内置默认') >= 0, '未导入主题时来源落到 App 内置默认色');
+    ok(txt(bg).indexOf('←') > 0, '回显带「← 来源」箭头');
+    ok(jumpOf(bg) && jumpOf(bg).style.display === 'none',
+      '来源不是主题时「到主题页改 →」隐藏（不误导用户）');
+    const stBg = roleRow(kd, 'background.pressed');
+    ok(!!stBg, 'states 行可按 data-color-role=角色.状态 定位');
+    ok(stBg.querySelectorAll('.color-effect')[0].textContent.indexOf('pressed') >= 0,
+      '状态行回显标明是命中 pressed 时生效');
+    ok(fb(stBg).indexOf('① > ②') >= 0, '状态行明确写出状态色优先于基础角色（① > ②）');
+  }
+  documentStub._openDialogs.length = 0;
+
+  /* ---- ② 已导入主题：来源指向主题字段，并给出「到主题页改」入口 ---- */
+  FE.state.themeProfile = FE.normalizeThemeProfile({
+    type: 'foxy.keyboard-theme', name: 'src',
+    light: {
+      keyBackgroundColor: '#FF111111',
+      keyTypes: { FUNCTION: { background: '#FF888888' } }
+    }
+  });
+  FE.state.themeSlot = 'light';
+  FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q', keyType: 'FUNCTION' };
+  documentStub._openDialogs.length = 0;
+  FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+  {
+    const kd = documentStub._openDialogs[0];
+    ok(kd.querySelectorAll('.color-theme-state')[0].textContent.indexOf('已导入主题') >= 0,
+      '已导入主题时状态说明切换口径');
+    const bg = roleRow(kd, 'background');
+    /* ③ 主题 keyTypes[键类型] 优先于 ④ 主题全局，来源细节必须写出来 */
+    ok(txt(bg).indexOf('#FF888888') >= 0, '背景行显示主题 keyTypes 给出的当前生效色');
+    ok(txt(bg).indexOf('keyTypes.FUNCTION.background') >= 0,
+      '背景行注明来源细节 keyTypes.FUNCTION.background');
+    ok(txt(bg).indexOf('来自主题') >= 0, '背景行注明「来自主题，改主题即同步」');
+    ok(jumpOf(bg) && jumpOf(bg).style.display !== 'none',
+      '来源是主题时显示「到主题页改 →」入口');
+    /* 本键自己的值 → 首行标「本键自己的设置」，并另给「清空后 →」回落目标 */
+    const inp = inpOf(bg);
+    inp.value = '#FF123456';
+    inp._fire('change');
+    ok(txt(bg).indexOf('#FF123456') >= 0 && txt(bg).indexOf('本键自己的设置') >= 0,
+      '写入本键值后首行标「本键自己的设置」');
+    ok(fb(bg).indexOf('清空后') === 0 && fb(bg).indexOf('#FF888888') >= 0,
+      '有本键值时明确写出「清空后 →」会回落到哪个色');
+    clearOf(bg).click();
+    eq(inpOf(bg).value, '', '清除后输入框留空');
+    ok(txt(bg).indexOf('#FF888888') >= 0 && txt(bg).indexOf('本键自己的设置') < 0,
+      '清除后首行回到主题给出的生效色');
+    /* 方向角色有反直觉的逐层回落（keyTypes.hint 优先于主题槽位方向色），
+     * 回显走的就是 FE.resolveRole，断言它同样有内容 */
+    const top = roleRow(kd, 'hintTop');
+    ok(!!top && txt(top).length > 0, 'hintTop 方向行同样有回显');
+  }
+  documentStub._openDialogs.length = 0;
+
+  /* ---- ③ 弹出菜单 section：如实说明气泡配色属于主题，不提供可填颜色框 ---- */
+  FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q', keyType: 'FUNCTION' };
+  documentStub._openDialogs.length = 0;
+  FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+  {
+    const kd = documentStub._openDialogs[0];
+    const pinfo = kd.querySelectorAll('.popup-color-info');
+    ok(pinfo.length === 1, '弹出菜单 section 有气泡配色说明块（无 popupKey 时也在）');
+    eq(kd.querySelectorAll('.popup-section .color-input').length, 0,
+      '弹出气泡不提供颜色输入框（颜色属于主题文件，不在布局里）');
+    const ptxt = pinfo[0].textContent;
+    ok(ptxt.indexOf('主题文件') >= 0, '说明气泡配色属于主题文件');
+    ok(ptxt.indexOf('不影响') >= 0, '说明布局按键的 colors 不影响弹出气泡');
+    /* ⚠️ DOM 桩不支持属性选择器（[data-xxx]），只按 class + 文本内容定位 */
+    const lines = pinfo[0].querySelectorAll('.popup-color-line');
+    const pick = (name) => lines.filter(e => e.textContent.indexOf(name) >= 0)[0];
+    ok(!!pick('popupTextColor') && pick('popupTextColor').textContent.indexOf('#FF') >= 0,
+      'popupTextColor 显示当前生效值');
+    ok(!!pick('popupBackgroundColor') && pick('popupBackgroundColor').textContent.indexOf('#FF') >= 0,
+      'popupBackgroundColor 显示当前生效值');
+    /* popupBorderColor：App 端未找到消费点（spec §7.3）—— 只如实标注，不画边框 */
+    const borderNote = pinfo[0].querySelectorAll('.popup-border-note')[0];
+    ok(!!borderNote && borderNote.textContent.indexOf('未找到消费点') >= 0,
+      'popupBorderColor 如实标注「未找到消费点」（不假装生效）');
+  }
+  documentStub._openDialogs.length = 0;
+
+  /* ---- ④ 跳转主题页：走 leaveThen（无未保存改动必须**同步**放行） ---- */
+  FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q', keyType: 'FUNCTION' };
+  documentStub._openDialogs.length = 0;
+  FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+  {
+    const kd = documentStub._openDialogs[0];
+    const bg = roleRow(kd, 'background');
+    jumpOf(bg).click();
+    /* 无改动 → 必须同步关闭并切页；若被推迟一帧，用户看到的是「点了没反应」 */
+    ok(!kd.open, '「到主题页改 →」无未保存改动时同步关闭对话框');
+    ok($('tab-theme').classList.contains('active'), '跳转后主题页被激活');
+  }
+  documentStub._openDialogs.length = 0;
+
+  /* 收尾：恢复未导入主题 + 默认键 + **切回布局编辑页**
+   * （跳转用例把主题页留在激活态会让后续「停留在布局编辑页」类断言变红）。 */
+  FE.state.themeProfile = null;
+  FE.state.themeSlot = 'light';
+  FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q', keyType: 'LETTER', swipe: { up: { ref: 'rime.Q' }, down: { ref: 'rime.1' } } };
+  FE.activateTab('tab-layout');
+  ok($('tab-layout').classList.contains('active'), '收尾切回布局编辑页（不影响后续断言）');
+  FE.renderAll();
+}
+documentStub._openDialogs.length = 0;
+
 console.log('== 预览颜色渲染（基础 pressed/shadow/hint 四边 + states 优先级） ==');
 /* 前面的用例已加载 cc lite.json 等示例，这里回到内置默认布局，
  * 保证 qwerty.q / qwerty.shift 一定被渲染（否则断言取到的不是目标键）。 */
@@ -1811,7 +2077,112 @@ await sleep(350);
   $('pt-split').checked = false;
   $('pt-split')._fire('change');
 
-  /* 横幅切换 + 从常规生成分体 */
+  /* ================================================================
+   * 横屏预览（「横屏」复选）：容器加宽到分体宽度，但**仍渲染常规布局**
+   *
+   * 与「分体」的唯一区别就在这里：分体把编译目标换成 L.split 片段，
+   * 横屏不换 —— 它只是"同一套布局在宽屏下的观感"。
+   * 两条复选还**互斥**（同时开会让"渲染哪个片段"产生歧义）。
+   * ================================================================ */
+  console.log('== 横屏预览（加宽不切片段） ==');
+  {
+    const savedLs = FE.state.landscapeMode;
+    const savedSp = FE.state.splitMode;
+    $('preview-kb').clientWidth = 380;
+    FE.state.landscapeMode = false;
+    FE.state.splitMode = false;
+    FE.state.portraitW = null;
+    FE.renderAll();
+    const portraitKeys = q('.kb-key').length;
+    const portraitH2 = q('.kb-row')[0].style.height;
+    const portraitFs2 = q('.kb-label', q('.kb-key')[0])[0].style.fontSize;
+
+    $('pt-landscape').checked = true;
+    $('pt-landscape')._fire('change');
+    ok(FE.state.landscapeMode === true, '勾选横屏写入 state.landscapeMode');
+    ok($('preview-kb').classList.contains('kb-split'), '横屏预览挂 kb-split 宽屏类（与分体同宽）');
+    /* 关键：**仍是常规布局** —— 键数与行高/字号都不因变宽而变 */
+    eq(q('.kb-key').length, portraitKeys, '横屏键数与竖屏相同（未切 split 片段）');
+    eq(FE.state.splitMode, false, '横屏**不**置 splitMode（不切片段）');
+    $('preview-kb').clientWidth = 760;
+    FE.renderAll();
+    eq(q('.kb-row')[0].style.height, portraitH2, '横屏只加宽，行高不变（仍是竖屏 unit 口径）');
+    eq(q('.kb-label', q('.kb-key')[0])[0].style.fontSize, portraitFs2, '横屏字号不变');
+    ok($('preview-meta').textContent.indexOf('横屏') >= 0, 'meta 标出横屏宽屏预览');
+    ok($('preview-meta').textContent.indexOf('常规布局') >= 0, 'meta 强调仍渲染常规布局');
+
+    /* 互斥：开分体自动关掉横屏（否则"渲染哪个片段"歧义） */
+    $('pt-split').checked = true;
+    $('pt-split')._fire('change');
+    ok(FE.state.landscapeMode === false && $('pt-landscape').checked === false,
+      '开分体自动取消横屏（两者互斥）');
+    /* 反向：开横屏自动关掉分体 */
+    $('pt-split').checked = false;
+    $('pt-split')._fire('change');
+    $('pt-landscape').checked = true;
+    $('pt-landscape')._fire('change');
+    $('pt-split').checked = true;
+    $('pt-split')._fire('change');
+    ok(FE.state.splitMode === true, '（前置）已切到分体');
+    $('pt-landscape').checked = true;
+    $('pt-landscape')._fire('change');
+    ok(FE.state.splitMode === false && $('pt-split').checked === false,
+      '开横屏自动取消分体（反向互斥）');
+
+    /* 收尾：恢复竖屏 */
+    $('pt-landscape').checked = false;
+    $('pt-landscape')._fire('change');
+    $('preview-kb').clientWidth = 380;
+    FE.state.splitMode = savedSp;
+    FE.state.landscapeMode = savedLs;
+    FE.renderAll();
+  }
+
+  /* ================================================================
+   * 预览工具栏分两行 + 深浅键盘与主题槽位**联动**
+   *
+   * 用户要求：滑杆与深浅键盘单独起一行；深浅选择与主题编辑的槽位联动。
+   * 语义上 state.theme（预览 CSS 档位）与 state.themeSlot（主题取哪套槽位）
+   * 是**同一件事的两面** —— 拆开会出现"预览切了深色、主题页还在编辑浅色槽"。
+   * ================================================================ */
+  console.log('== 预览工具栏分行 + 深浅与主题槽位联动 ==');
+  {
+    const savedTheme = FE.state.theme, savedSlot = FE.state.themeSlot;
+    eq(q('.preview-toggles').length, 2, '预览工具栏分两行（.preview-toggles × 2）');
+    ok(q('.preview-toggles-geom').length === 1, '第二行有 .preview-toggles-geom 类');
+    const geomRow = q('.preview-toggles-geom')[0];
+    /* 第二行承载：高度 + 三个外观滑杆 + 深浅键盘 */
+    ['pt-height', 'pt-corner', 'pt-gap-h', 'pt-gap-v', 'pt-theme'].forEach(id => {
+      ok(geomRow.querySelectorAll('#' + id).length === 1, '第二行含 ' + id);
+    });
+    /* 深浅下拉**不在**状态开关组里 —— 否则切到符号页会被一起隐藏掉 */
+    eq($('pt-state-group').querySelectorAll('#pt-theme').length, 0,
+      '深浅下拉不在状态开关组内（符号页仍可见）');
+
+    /* 联动：改预览下拉 → theme 与 themeSlot 同步 */
+    $('pt-theme').value = 'dark';
+    $('pt-theme')._fire('change');
+    eq(FE.state.theme, 'dark', '预览下拉写入 state.theme');
+    eq(FE.state.themeSlot, 'dark', '预览下拉**同时**写入 state.themeSlot（联动）');
+    $('pt-theme').value = 'light';
+    $('pt-theme')._fire('change');
+    eq(FE.state.themeSlot, 'light', '切回浅色同样联动');
+
+    /* 反向：主题页切槽位 → 预览下拉同步（FE.syncThemeSlotUI 由 theme-editor 提供） */
+    if (FE.syncThemeSlotUI) {
+      FE.state.themeSlot = 'dark';
+      FE.syncThemeSlotUI();
+      eq($('pt-theme').value, 'dark', '主题页槽位变更后预览下拉同步显示（反向联动）');
+    } else {
+      ok(false, 'theme-editor 应导出 FE.syncThemeSlotUI 供反向联动');
+    }
+    FE.state.theme = savedTheme;
+    FE.state.themeSlot = savedSlot;
+    if (FE.syncThemeSlotUI) FE.syncThemeSlotUI();
+    FE.renderAll();
+  }
+
+
   console.log('== 分体生成与编辑 ==');
   $('op-example').value = 'layout-variant.json';
   $('op-load-example').click();
@@ -1941,6 +2312,106 @@ await sleep(350);
     FE.mutate(function () { FE.state.profile.keys['qwerty.a'].colors = { background: '#ff0000' }; });
     eq(q('.pp-key')[0].style.background, '#ff0000', '改按键 a 颜色后模拟按键实时变红');
     ok(bgBefore !== '#ff0000', '（前置）改色前模拟按键不是红色');
+  })();
+
+  /* 弹出预览**全链路跟随主题文件**（不只是 kb-dark/kb-light 两档 CSS）：
+   * 舞台底 = 键盘容器底色（含 key_border_enabled 联动）、气泡底/字 = popup*、
+   * 候选底/字 = candidate*、首选候选底 = candidateHighlight。
+   * 依据工作区 foxy/foxy-render-spec.md §7（App 端 pt.java:30/39、sc.java:1057-1074）。
+   * ⭐ 未导入主题时按 **App 内置默认主题**取色（需求：预览默认用内置默认主题的深浅色，
+   * 而不是编辑器自己那套预置色）。改前这里断言的是"一个内联色都不写"——旧口径已反转。 */
+  (function () {
+    var savedTheme = FE.state.themeProfile;
+    var savedSlot = FE.state.themeSlot;
+    var savedBorder = FE.state.keyBorderEnabled;
+    try {
+      /* ① 未导入主题：气泡走**内置默认主题**色（light 槽） */
+      FE.state.themeProfile = null;
+      FE.state.themeSlot = 'light';
+      FE.state.keyBorderEnabled = true;
+      FE.state.popupSelKey = 'a';
+      FE.renderPopupTab();
+      var bubble0 = q('.pp-bubble')[0];
+      ok(!!bubble0, '未导入主题时气泡仍渲染');
+      eq(bubble0.style.background, '#EEEEEEFF',
+        '未导入主题时气泡底 = 内置默认 light 的 popupBackgroundColor');
+      eq(bubble0.style.color, '#212121FF',
+        '未导入主题时气泡字 = 内置默认 light 的 popupTextColor');
+      /* 切到 dark 槽 → 内置默认的深色那套（两套槽位各自生效） */
+      FE.state.themeSlot = 'dark';
+      FE.renderPopupTab();
+      eq(q('.pp-bubble')[0].style.background, '#373737FF',
+        '内置默认 dark 的气泡底（deep 槽的 popupBackgroundColor）');
+      FE.state.themeSlot = 'light';
+
+      /* ② 导入一份辨识度高的主题，逐元素核对取色 */
+      FE.state.themeProfile = FE.normalizeThemeProfile({
+        type: 'foxy.keyboard-theme', name: 'pp-test',
+        light: {
+          keyboardColor: '#FF101112', altKeyboardColor: '#FF202122',
+          popupBackgroundColor: '#FF303132', popupTextColor: '#FF404142',
+          candidateBackgroundColor: '#FF505152', candidateTextColor: '#FF606162',
+          candidateHighlightColor: '#FF707172', candidateCommentColor: '#FF808182'
+        }
+      });
+      FE.state.themeSlot = 'light';
+      FE.state.keyBorderEnabled = true;
+      FE.state.popupSelKey = 'a';
+      FE.renderPopupTab();
+
+      var stageT = q('.pp-stage')[0];
+      var bubbleT = q('.pp-bubble')[0];
+      var candT = q('.pp-cand');
+      eq(stageT.style.background, '#202122FF',
+        '舞台底用键盘容器底色（border 开 → altKeyboardColor）');
+      eq(bubbleT.style.background, '#303132FF', '气泡底用 popupBackgroundColor');
+      eq(bubbleT.style.color, '#404142FF', '气泡字用 popupTextColor');
+      ok(candT.length >= 1, '候选存在（实际 ' + candT.length + '）');
+      eq(candT[0].style.background, '#707172FF', '首选候选底用 candidateHighlightColor');
+      eq(candT[0].style.color, '#606162FF', '候选字用 candidateTextColor');
+      if (candT.length > 1) {
+        eq(candT[1].style.background, '#505152FF',
+          '非首选候选底用 candidateBackgroundColor');
+      }
+
+      /* ③ key_border_enabled 关 → 舞台底改用 keyboardColor */
+      FE.state.keyBorderEnabled = false;
+      FE.renderPopupTab();
+      eq(q('.pp-stage')[0].style.background, '#101112FF',
+        'border 关 → 舞台底回落 keyboardColor');
+    } finally {
+      FE.state.themeProfile = savedTheme;
+      FE.state.themeSlot = savedSlot;
+      FE.state.keyBorderEnabled = savedBorder;
+      FE.renderPopupTab();
+    }
+  })();
+
+  /* 「弹出菜单那边的按键颜色引用」——模拟按键的颜色**来源**必须列出来。
+   * 用户明确要求：这里不能只是写死颜色值，要真正全链路与主题对应。
+   * 注意：模拟按键的颜色属于**布局文件**（该 popupKey 对应的那个布局按键），
+   * popup 文件本身没有颜色字段 —— 所以这块是**只读展示 + 跳转**，不给颜色输入框。 */
+  (function () {
+    var savedTheme = FE.state.themeProfile;
+    FE.state.themeProfile = FE.normalizeThemeProfile({
+      type: 'foxy.keyboard-theme', name: 'src-test',
+      light: { keyBackgroundColor: '#FF222222', keyTextColor: '#FF111111' }
+    });
+    FE.state.themeSlot = 'light';
+    FE.renderPopupTab();
+    var srcBox = q('.pp-color-src')[0];
+    ok(!!srcBox, '弹出预览里有「模拟按键颜色来源」区块');
+    if (srcBox) {
+      var lines = srcBox.querySelectorAll('.pp-color-line');
+      ok(lines.length >= 1, '列出了至少一行颜色来源（实际 ' + lines.length + '）');
+      var txt = srcBox.textContent || '';
+      ok(txt.indexOf('←') >= 0, '来源行含「←」箭头（生效值 ← 来源）');
+      ok(txt.indexOf('只读') >= 0, '明确标注为只读（颜色属于布局文件）');
+      ok(srcBox.querySelectorAll('input.color-input').length === 0,
+        '来源区块**不含**颜色输入框（不能在 popup 页改布局按键的颜色）');
+    }
+    FE.state.themeProfile = savedTheme;
+    FE.renderPopupTab();
   })();
 
   /* 添加候选（文本类型）端到端。
@@ -2973,12 +3444,20 @@ await sleep(350);
   FE.applyProfileText(FE.DEFAULT_PROFILE_TEXT, {});
   FE.state.splitMode = false;
   FE.state.theme = 'light';
+  FE.state.themeProfile = null;      /* 未导入主题 → 走 App 内置默认主题（需求语义） */
+  FE.state.themeSlot = 'light';
   $('pt-theme').value = 'light';
   FE.renderAll();
   ok($('layout-sections').classList.contains('theme-light'), '浅色主题下编辑区 host 带 theme-light');
-  /* 该键无 colors 覆盖 → 无行内色，基础色走 CSS 类（与预览键面一致的白色由类给） */
-  const noColorChip = q('#layout-sections .chip').find(c => !c.style.background && !c.classList.contains('chip-add'));
-  ok(!!noColorChip, '无 colors 覆盖的编辑按键无行内背景色（基础色走主题类）');
+  /* ⭐ 无 colors 覆盖的键**也会拿到行内兜底色**，来源是「生效主题」——
+   * 未导入主题时即 App 内置默认主题（需求：预览/编辑区默认用内置默认主题的深浅色，
+   * 而不是编辑器自己那套预置色）。改前这里断言的是"无行内色"，旧口径已反转。 */
+  const plainChip = q('#layout-sections .chip').find(c => !c.classList.contains('chip-add'));
+  ok(!!plainChip, '（前置）存在无 colors 覆盖的编辑按键');
+  eq(plainChip.style.background, '#FFFFFFFF',
+    '无 colors 覆盖的编辑按键也有行内底 = 内置默认 light 的 keyBackgroundColor');
+  eq(plainChip.style.color, '#212121FF',
+    '同键文字色 = 内置默认 light 的 keyTextColor');
   /* 给某键加 colors 覆盖 → 编辑区按键行内套色，与预览同款 */
   FE.state.profile.keys['qwerty.q'] = {
     ref: 'rime.q', keyType: 'LETTER',
@@ -3047,6 +3526,848 @@ await sleep(350);
   ok($('popup-keys').classList.contains('theme-dark'), '深色键盘下弹出菜单 host 带 theme-dark');
   FE.state.theme = 'light';
   FE.renderPopupTab();
+
+  /* ================================================================
+   * 主题页（foxy.keyboard-theme）
+   * ================================================================ */
+  console.log('== 主题页：标签与骨架 ==');
+  {
+    const themeTab = tabs.find(t => t.dataset.tab === 'tab-theme');
+    const symTab = tabs.find(t => t.dataset.tab === 'tab-symbols');
+    ok(!!themeTab, '存在「主题」标签按钮');
+    ok(!!symTab, '存在「符号面板」标签按钮');
+    ok(themeTab.classList.contains('tab-theme'), '主题按钮有分隔样式类');
+    /* 新 tab 排在 tab-popup 之后 → 前面按索引取的 tabs[0]/tabs[3] 不受影响。
+     * ⚠️ 这里用 ok(... === ...) 而不是 eq：DOM 桩节点带 parentNode 循环引用，
+     * eq 内部要 JSON.stringify，会抛「Converting circular structure to JSON」。 */
+    ok(tabs[4] === themeTab, '主题按钮排在第 5 位（弹出菜单之后）');
+    ok(tabs[5] === symTab, '符号面板按钮排在第 6 位');
+    ok($('tab-theme') != null, '主题面板存在');
+    ok($('tab-symbols') != null, '符号面板存在');
+    /* 主题页容器 id 齐备（app.js/theme-editor.js 都按 id 取） */
+    ['th-import', 'th-import-file', 'th-export', 'th-example', 'th-load-example', 'th-author',
+      'th-status', 'th-slot', 'th-bordermode', 'th-colors', 'th-keytypes', 'th-validation',
+      'th-json', 'th-json-apply', 'th-json-format', 'th-json-status'].forEach(id => {
+      ok($(id) != null, '主题页容器存在: ' + id);
+    });
+    /* 符号页容器（另一模块实现内容，但容器必须由本页备好） */
+    ['sym-import', 'sym-import-file', 'sym-export', 'sym-example', 'sym-load-example', 'sym-kind',
+      'sym-status', 'sym-multiline', 'sym-filter', 'sym-filter-clear', 'sym-search',
+      'sym-new', 'sym-add', 'sym-list', 'sym-json', 'sym-json-apply', 'sym-json-format',
+      'sym-json-status'].forEach(id => {
+      ok($(id) != null, '符号页容器存在: ' + id);
+    });
+  }
+
+  console.log('== 主题页：未导入时不改动预览（回归保护） ==');
+  {
+    /* 干净起点：默认布局 + 浅色预览 + 无主题 */
+    FE.applyProfileText(FE.DEFAULT_PROFILE_TEXT, {});
+    FE.state.themeProfile = null;
+    FE.state.splitMode = false;
+    /* ⚠️ theme 与 themeSlot 现在**是一件事的两面**（预览工具栏的「键盘」下拉与
+     * 主题页槽位联动，见 app.js 的 setPreviewSlot）。此处是"干净起点"声明，
+     * 两个都要摆正 —— 只写 theme 会让 themeSlot 停在前一块留下的 'dark'，
+     * 于是下面新建的 LETTER 分组被写进 dark 槽、断言 light 时失败（踩过）。 */
+    FE.state.theme = 'light';
+    FE.state.themeSlot = 'light';
+    FE.state.keyBorderEnabled = true;
+    FE.renderAll();
+    const host = $('preview-kb');
+    /* ⭐ 未导入主题 → 预览按 **App 内置默认主题**上色（需求）。
+     * 内置默认 light 的 altKeyboardColor = #FFEEEEEE（border 开）→ CSS #EEEEEEFF。
+     * 改前这里断言的是"不写内联底色、走 CSS 类"，旧口径已反转。 */
+    eq(host.style.background, '#EEEEEEFF',
+      '未导入主题时容器底 = 内置默认 light 的 altKeyboardColor');
+    ok(host.classList.contains('kb-light'), '未导入主题时容器类仍是 kb-light');
+    /* 无 colors 覆盖的键全部拿到内置默认兜底色（不再是"零内联色"） */
+    const plain = q('.kb-key').find(k => !String(k.getAttribute('title') || '').indexOf('colors'));
+    const withInlineBg = q('.kb-key').filter(k => k.style.background).length;
+    const totalKeys = q('.kb-key').length;
+    ok(totalKeys > 0, '（前置）预览渲染出按键');
+    eq(withInlineBg, totalKeys,
+      '未导入主题时预览键**全部**有内联底（内置默认主题兜底，' + withInlineBg + '/' + totalKeys + '）');
+    void plain;
+  }
+
+  console.log('== 主题页：渲染 26 色 + 3 类 keyTypes 表单 ==');
+  {
+    tabs.find(t => t.dataset.tab === 'tab-theme')._fire('click');
+    ok($('tab-theme').classList.contains('active'), '切到主题页');
+    /* 先以内置默认色新建（不依赖 examples —— build-examples 不认主题类型） */
+    $('th-example').value = '__builtin__';
+    $('th-load-example').click();
+    ok(FE.state.themeProfile != null, '内置默认模板已载入');
+    FE.renderThemeTab();
+
+    eq(q('#th-colors .color-input').length, 26, '槽位全局配色渲染出 26 个颜色输入框');
+    /* 字段名以权威顺序出现 */
+    const labels = q('#th-colors .th-field-label code').map(c => c.textContent);
+    eq(labels.length, 26, '26 个字段标签');
+    eq(labels[0], 'keyboardColor', '首个字段是 keyboardColor');
+    eq(labels[25], 'accentColor', '末个字段是 accentColor');
+    ok(labels.includes('keyHintTextBottomColor'), '含四方向提示色字段');
+
+    /* keyTypes：3 类分组，各自 10 个字段（内置默认只给 FUNCTION/ACTION，
+     * LETTER 以"创建分组"按钮呈现 —— 表单必须能编辑 LETTER，否则会被静默丢弃） */
+    const groups = q('#th-keytypes .th-keytype-block');
+    eq(groups.length, 3, 'keyTypes 渲染 3 个分组块（含 LETTER）');
+    const names = q('#th-keytypes .th-keytype-head code').map(c => c.textContent);
+    eq(names, ['LETTER', 'FUNCTION', 'ACTION'], '分组名与顺序：LETTER / FUNCTION / ACTION');
+    /* FUNCTION / ACTION 默认展开字段（10 个），LETTER 未定义 → 显示创建按钮 */
+    eq(q('#th-keytypes .color-input').length, 20, 'FUNCTION + ACTION 各 10 个字段输入框');
+    const createBtn = q('#th-keytypes button').find(b => b.textContent.indexOf('创建 LETTER') >= 0);
+    ok(!!createBtn, 'LETTER 未定义时给出「创建 LETTER 分组」按钮');
+    createBtn.click();
+    eq(q('#th-keytypes .color-input').length, 30, '创建 LETTER 后共 30 个字段输入框');
+    ok(FE.state.themeProfile.light.keyTypes.LETTER != null, 'LETTER 分组已写入主题文档');
+    /* 10 个字段名齐全（漏字段会被静默丢弃） */
+    FE.renderThemeTab();
+    const allNames = q('#th-keytypes .th-field-label code').map(c => c.textContent);
+    ['LETTER.text', 'LETTER.background', 'LETTER.pressed', 'LETTER.border', 'LETTER.shadow',
+      'LETTER.hint', 'LETTER.hintUp', 'LETTER.hintDown', 'LETTER.hintLeft', 'LETTER.hintRight']
+      .forEach(f => ok(allNames.includes(f), 'LETTER 含字段 ' + f));
+  }
+
+  console.log('== 主题页：编辑颜色实时联动预览 ==');
+  {
+    const host = $('preview-kb');
+    /* 改槽位全局 keyBackgroundColor → 所有无覆盖的键拿到主题兜底色 */
+    FE.state.themeProfile.light.keyBackgroundColor = '#FF445566';
+    FE.state.themeProfile.light.keyTextColor = '#FFEEDDCC';
+    FE.state.themeSlot = 'light';
+    FE.renderAll();
+    /* 注意 foxyColorToCss 的字节序：#AARRGGBB → #RRGGBBAA（alpha 移到末尾）。
+     * 内置默认 light 的 altKeyboardColor = #FFEEEEEE，故 CSS 为 #EEEEEEFF。 */
+    eq(host.style.background, '#EEEEEEFF', '键盘容器底用主题 altKeyboardColor（border 启用）');
+    const letters = q('.kb-key').filter(k => k.classList.contains('kt-letter'));
+    ok(letters.length > 0, '存在 LETTER 类按键');
+    eq(letters[0].style.background, '#445566FF', '主题 keyBackgroundColor 兜底到普通键（③④ 垫底）');
+    eq(letters[0].style.color, '#EEDDCCFF', '主题 keyTextColor 兜底到普通键文字');
+
+    /* keyTypes 覆盖全局（③ 高于 ④） */
+    FE.state.themeProfile.light.keyTypes.FUNCTION = { background: '#FF8899AA', text: '#FF112233' };
+    FE.renderAll();
+    const fnKey = q('.kb-key').find(k => k.classList.contains('kt-function'));
+    ok(!!fnKey, '存在 FUNCTION 类按键');
+    eq(fnKey.style.background, '#8899AAFF', 'keyTypes.FUNCTION 覆盖全局 keyBackgroundColor');
+    eq(fnKey.style.color, '#112233FF', 'keyTypes.FUNCTION 覆盖全局 keyTextColor');
+
+    /* 切到 dark 槽：两套槽位独立（dark 槽没有这些值 → 回退内置默认） */
+    $('th-slot').value = 'dark';
+    $('th-slot')._fire('change');
+    eq(FE.state.themeSlot, 'dark', '槽位切到 dark');
+    eq($('preview-kb').style.background, '#333333FF', 'dark 槽容器底取该槽 altKeyboardColor');
+    /* 切回 light：值回来了 */
+    $('th-slot').value = 'light';
+    $('th-slot')._fire('change');
+    eq($('preview-kb').style.background, '#EEEEEEFF', '切回 light 槽恢复该槽取值');
+  }
+
+  console.log('== 主题页：预览优先级（布局每键 colors 胜过主题 keyTypes） ==');
+  {
+    /* 基线 §1.5：① states.* > ② 布局每键 colors > ③ 主题 keyTypes > ④ 主题全局
+     * 这与"主题是全局设置所以最高"的直觉相反，必须锁住。 */
+    FE.state.themeProfile = FE.normalizeThemeProfile({
+      type: 'foxy.keyboard-theme', name: 'prio',
+      light: {
+        keyBackgroundColor: '#FF111111', keyTextColor: '#FF222222',
+        keyTypes: { LETTER: { background: '#FF333333', text: '#FF444444' } }
+      }
+    });
+    FE.state.themeSlot = 'light';
+    FE.state.theme = 'light';
+    /* 布局里给某个 LETTER 键显式 colors */
+    FE.state.profile.keys['qwerty.q'] = {
+      ref: 'rime.q', keyType: 'LETTER',
+      swipe: { up: { ref: 'rime.Q' }, down: { ref: 'rime.1' } },
+      colors: { background: '#4CAF50', text: '#FFFFFFFF' }
+    };
+    FE.renderAll();
+    const qKey = q('.kb-key').find(k => String(k.getAttribute('title') || '').indexOf('qwerty.q') >= 0);
+    eq(qKey.style.background, '#4CAF50', '布局每键 colors.background 胜过主题 keyTypes（② > ③）');
+    eq(qKey.style.color, '#FFFFFFFF', '布局每键 colors.text 胜过主题 keyTypes');
+    /* 同排另一个无 colors 的 LETTER 键 → 用主题 keyTypes */
+    const otherLetter = q('.kb-key').find(k =>
+      k.classList.contains('kt-letter') && String(k.getAttribute('title') || '').indexOf('qwerty.q') < 0);
+    eq(otherLetter.style.background, '#333333FF', '无 colors 的 LETTER 键用主题 keyTypes（③）');
+
+    /* ① 状态覆盖胜过 ②：states.pressed 赢过每键 colors.background。
+     * 写成 #FFFF0000（ARGB：alpha FF + 红）→ CSS #FF0000FF，避免把字节序看错。 */
+    FE.state.profile.keys['qwerty.q'].colors.states = { pressed: { background: '#FFFF0000' } };
+    FE.renderAll();
+    const qKey2 = q('.kb-key').find(k => String(k.getAttribute('title') || '').indexOf('qwerty.q') >= 0);
+    qKey2._fire('pointerdown');
+    eq(qKey2.style.background, '#FF0000FF', 'states.pressed 胜过布局每键 colors（① > ②）');
+    qKey2._fire('pointerup');
+    eq(qKey2.style.background, '#4CAF50', '松开后回到每键 colors');
+  }
+
+  console.log('== 主题页：按键边框开关影响容器底色 ==');
+  {
+    /* key_border_enabled=false → 回落 keyboardColor（基线 §1.4） */
+    FE.state.themeProfile.light.keyboardColor = '#FF0A0B0C';
+    FE.state.themeProfile.light.altKeyboardColor = '#FF0D0E0F';
+    FE.state.themeSlot = 'light';
+    FE.state.keyBorderEnabled = true;
+    FE.renderAll();
+    /* 同样注意字节序：#FF0D0E0F → CSS #0D0E0FFF */
+    eq($('preview-kb').style.background, '#0D0E0FFF', 'border 启用时用 altKeyboardColor');
+    $('th-bordermode').value = 'off';
+    $('th-bordermode')._fire('change');
+    eq(FE.state.keyBorderEnabled, false, '边框开关状态已记录');
+    eq($('preview-kb').style.background, '#0A0B0CFF', 'border 禁用时回落 keyboardColor');
+    $('th-bordermode').value = 'on';
+    $('th-bordermode')._fire('change');
+    eq($('preview-kb').style.background, '#0D0E0FFF', '再启用后回到 altKeyboardColor');
+  }
+
+  console.log('== 主题页：还原细节（按下态/阴影/边框开关/图标）+ 键盘配色 CSS 变量 ==');
+  /* 依据 foxy-render-spec.md §2.4 / §2.5 / §2.6 / §1.4 与 §5 行动项 4、5、9。
+   * 桩不支持真实布局与计算样式（clientWidth 恒 0、无 elementFromPoint），
+   * 所以「filter / box-shadow 的最终渲染效果」只能查源码，其余走行内样式断言。 */
+  {
+    const cssSrc2 = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+    const appSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'app.js'), 'utf8');
+
+    /* ---- 源码级：按下态 = 换背景色，不是亮度滤镜（§2.6） ---- */
+    ok(!/\.kb-key\.pressed\s*\{[^}]*brightness/.test(cssSrc2),
+      '按下态不再用 brightness 滤镜（App 是 StateListDrawable 换背景色，§2.6）');
+    ok(/\.kb-key\.pressed\s*\{[^}]*filter:\s*none/.test(cssSrc2),
+      '按下态显式 filter:none（悬停中按下同样不提亮，显示值 = 配置值）');
+    const hoverM = cssSrc2.match(/\.kb-key:hover\s*\{[^}]*brightness\(([\d.]+)\)/);
+    ok(!!hoverM && parseFloat(hoverM[1]) <= 1.1,
+      'hover 提亮系数很小（仅网页交互反馈，手机端无此效果）');
+
+    /* ---- 源码级：阴影是「向下 1dp 的实心圆角层」，不是模糊阴影（§2.5） ---- */
+    ok(/function shadowCss\(color\)\s*\{\s*return '0 1px 0 '/.test(appSrc),
+      '阴影改为向下 1px 实心（模糊半径 0），§2.5');
+
+    /* ---- 源码级：图标色跟随键文字色（§1.4，不能再被写死色盖掉） ---- */
+    ok(/\.kb-icon-wrap\s*\{\s*color:\s*currentColor/.test(cssSrc2),
+      '图标色用 currentColor 跟随键文字色（§1.4）');
+    ok(!/\.kb-(dark|light)\s+\.kb-icon-wrap\s*\{/.test(cssSrc2),
+      '不再按明暗写死图标色（那会盖掉主题文字色）');
+
+    const saved = {
+      profile: FE.state.profile, layoutName: FE.state.layoutName,
+      themeProfile: FE.state.themeProfile, themeSlot: FE.state.themeSlot,
+      keyBorderEnabled: FE.state.keyBorderEnabled, theme: FE.state.theme
+    };
+    try {
+      FE.applyProfileText(FE.DEFAULT_PROFILE_TEXT, {});
+      FE.state.theme = 'dark';
+
+      /* ---- 未导入主题：**按 App 内置默认主题取色**，故变量与内联色都要写上 ----
+       * 改前这里断言的是"变量被删除、零内联色"（旧口径：未导入主题 → 走 CSS 预置色）。
+       * 需求已反转为"预览默认用 App 内置默认主题的深浅色"，所以现在应等价于
+       * 「导入了一份内置默认主题」所产生的结果。 */
+      FE.state.themeProfile = null;
+      FE.state.themeSlot = 'dark';
+      FE.state.keyBorderEnabled = true;
+      FE.renderAll();
+      const kbEl = $('preview-kb');
+      const secEl = $('layout-sections');
+      /* 内置默认 dark：altKeyboardColor = #FF333333 → CSS #333333FF */
+      eq(String(kbEl.style['--kb-bg'] || ''), '#333333FF',
+        '未导入主题时 --kb-bg = 内置默认 dark 的 altKeyboardColor');
+      eq(String(kbEl.style['--kb-inset'] || ''), 'none',
+        '有底色时同样清掉写死的内描边（否则多一圈固定色）');
+      eq(String(secEl.style['--kb-bg'] || ''), '#333333FF',
+        '编辑区宿主共享同一 --kb-bg');
+      eq(String(secEl.style['--kb-key-bg'] || ''), '#464646FF',
+        '编辑区按键变量 = 内置默认 dark 的 keyBackgroundColor');
+      eq(kbEl.style.background, '#333333FF', '未导入主题时容器底 = 内置默认 dark 的键盘底色');
+      eq(q('.kb-key').filter(k => k.style.background).length, q('.kb-key').length,
+        '未导入主题时预览键**全部**有内联背景（内置默认主题兜底）');
+      /* 切到 light 槽 → 换成内置默认的浅色那套（两套槽位各自生效，不能混） */
+      FE.state.themeSlot = 'light';
+      FE.renderAll();
+      eq(kbEl.style.background, '#EEEEEEFF', '切 light 槽 → 内置默认 light 的键盘底');
+      eq(String(kbEl.style['--kb-key-bg'] || ''), '#FFFFFFFF',
+        '切 light 槽 → 内置默认 light 的键底');
+      /* 收尾回 dark 槽，后面的断言按 dark 继续 */
+      FE.state.themeSlot = 'dark';
+      FE.renderAll();
+
+      /* ---- 导入主题：变量写入 ---- */
+      FE.state.themeProfile = FE.normalizeThemeProfile({
+        type: 'foxy.keyboard-theme', name: 'vars',
+        light: {
+          keyboardColor: '#FF0A0B0C', altKeyboardColor: '#FF0D0E0F', accentColor: '#FFABCDEF',
+          keyBackgroundColor: '#FF445566', keyTextColor: '#FFEEDDCC',
+          keyBorderColor: '#FF010203', keyShadowColor: '#FF040506',
+          keyTypes: { FUNCTION: { background: '#FFB1B2B3', text: '#FFC1C2C3' } }
+        }
+      });
+      FE.state.themeSlot = 'light';
+      FE.state.keyBorderEnabled = true;
+      FE.renderAll();
+      eq(String(kbEl.style['--kb-bg'] || ''), '#0D0E0FFF',
+        '主题生效时 --kb-bg = altKeyboardColor（border 启用，§3）');
+      eq(String(kbEl.style['--kb-inset'] || ''), 'none',
+        '主题底色上清掉写死的内描边（否则多一圈固定色）');
+      eq(String(secEl.style['--kb-bg'] || ''), '#0D0E0FFF',
+        '编辑区宿主共享同一 --kb-bg（两处面板不再与键盘各说各话）');
+      eq(String(kbEl.style['--kb-key-bg'] || ''), '#445566FF', 'LETTER 键底色写入 --kb-key-bg');
+      eq(String(kbEl.style['--kb-key-bg-fn'] || ''), '#B1B2B3FF', 'FUNCTION 键底色写入 --kb-key-bg-fn');
+      eq(String(kbEl.style['--kb-icon-active'] || ''), 'currentColor',
+        '修饰键激活的图标改跟键文字色（= accentColor）');
+
+      /* ---- 阴影实心无模糊（§2.5） ---- */
+      const shadowKey = q('.kb-key').find(k => k.classList.contains('kt-letter') && k.style.boxShadow);
+      ok(!!shadowKey, '（前置）存在带主题阴影的 LETTER 键');
+      const bs = String(shadowKey.style.boxShadow);
+      ok(/^0 1px 0 #/.test(bs), '阴影为「向下 1px 实心层」（无模糊半径）：' + bs);
+      ok(bs.indexOf('2px') < 0, '阴影不含模糊半径（§2.5 明确不是模糊阴影）');
+
+      /* ---- 边框开关**真正作用于键边框**（§2.4：B 决定是否画边框） ---- */
+      const borderCount = () => q('.kb-key').filter(k => k.classList.contains('kb-key-hasborder')).length;
+      ok(borderCount() > 0, 'border 启用且主题给了 keyBorderColor 时键画边框');
+      $('th-bordermode').value = 'off';
+      $('th-bordermode')._fire('change');
+      eq(FE.state.keyBorderEnabled, false, '边框开关已关闭');
+      eq(borderCount(), 0, 'border 禁用时**不再**画键边框（此前开关形同虚设）');
+      eq(String(kbEl.style['--kb-bg'] || ''), '#0A0B0CFF', '关闭边框时 --kb-bg 回落 keyboardColor');
+      $('th-bordermode').value = 'on';
+      $('th-bordermode')._fire('change');
+      ok(borderCount() > 0, '重新启用后键边框回来');
+      eq(String(kbEl.style['--kb-bg'] || ''), '#0D0E0FFF', '重新启用后 --kb-bg 回到 altKeyboardColor');
+    } finally {
+      FE.state.profile = saved.profile;
+      FE.state.layoutName = saved.layoutName;
+      FE.state.themeProfile = saved.themeProfile;
+      FE.state.themeSlot = saved.themeSlot;
+      FE.state.keyBorderEnabled = saved.keyBorderEnabled;
+      FE.state.theme = saved.theme;
+      FE.renderAll();
+    }
+  }
+
+  console.log('== 主题页：校验与 JSON 卡片 ==');
+  {
+    /* 合法主题：无错误 */
+    FE.state.themeProfile = FE.normalizeThemeProfile(FE.themeNewProfile());
+    FE.state.themeProfile.name = 'demo';
+    FE.renderAll();
+    ok($('th-validation').textContent.indexOf('主题校验通过') >= 0 ||
+      $('th-validation').textContent.indexOf('个提示') >= 0, '校验区给出结论');
+    ok($('th-json').value.indexOf('"type": "foxy.keyboard-theme"') >= 0, 'JSON 卡片实时同步');
+    ok($('th-json').value.indexOf('"keyboardColor"') >= 0, 'JSON 含槽位字段');
+
+    /* 类型不符：导入被拒 */
+    FE.state.lastParseError = '';
+    ok(FE.loadThemeProfileText(JSON.stringify({ type: 'foxy.keyboard-layout', light: {} })) === false,
+      'type 不符的主题文件被拒绝导入');
+    ok(String(FE.state.lastParseError).indexOf('foxy.keyboard-theme') >= 0, '拒绝原因说明了正确 type');
+
+    /* 非法颜色：校验报错但不阻止导入（宽容读入，靠校验提示） */
+    ok(FE.loadThemeProfileText(JSON.stringify({
+      type: 'foxy.keyboard-theme', name: 'bad', light: { keyboardColor: '#12345' }
+    })) === true, '颜色非法仍能导入（不拦读取）');
+    FE.renderThemeTab();
+    ok($('th-validation').textContent.indexOf('个错误') >= 0, '非法颜色被校验报错');
+
+    /* JSON 卡片应用：修复后写入 */
+    $('th-json').value = '{ type: "foxy.keyboard-theme", name: "fixme", light: { keyboardColor: "#FFF" } }';
+    $('th-json')._fire('input');
+    $('th-json-apply').click();
+    eq(FE.state.themeProfile.name, 'fixme', 'JSON 卡片应用生效（含宽松修复）');
+    eq(FE.state.themeProfile.light.keyboardColor, '#FFFFFFFF', '#RGB 归一化为 #AARRGGBB');
+
+    /* 新建主题：type 正确、含两个槽位、方向提示色留空 */
+    const fresh = FE.normalizeThemeProfile(FE.themeNewProfile());
+    eq(fresh.type, 'foxy.keyboard-theme', '新建主题 type 正确');
+    ok(fresh.light && fresh.dark, '新建主题含 light / dark 两个槽位');
+    eq(fresh.light.keyHintTextTopColor, null, '新建主题的方向提示色留空（继承）');
+  }
+
+  console.log('== 主题页：撤销栈与草稿 ==');
+  {
+    /* 主题变更走 mutate → 压入历史；撤销必须回到「未导入」而非一份空主题 */
+    FE.state.themeProfile = null;
+    FE.renderAll();
+    const before = FE.state.history.length;
+    FE.mutate(() => { FE.state.themeProfile = FE.normalizeThemeProfile(FE.themeNewProfile()); });
+    eq(FE.state.history.length, before + 1, '主题变更压入撤销栈');
+    const snap = FE.state.history[FE.state.history.length - 1];
+    eq(JSON.parse(snap).theme, null, '主题变更前的快照里主题是 null（未导入语义保留）');
+    ok(JSON.parse(FE.snapshotState()).theme != null, '当前快照里含主题文档');
+    $('top-undo').click();
+    eq(FE.state.themeProfile, null, '撤销后主题回到「未导入」（不是空对象）');
+    /* 撤销到"未导入"后预览**仍按内置默认主题上色**（需求：预览默认用 App 内置默认
+     * 主题的深浅色）。改前这里断言的是"恢复无内联底色"，旧口径已反转。
+     * 注意断的是"回落到内置默认色"这个**语义**，不是"与导入前逐像素相同"——
+     * 二者在本次需求下已不是一回事。 */
+    eq($('preview-kb').style.background, '#EEEEEEFF',
+      '撤销到未导入后预览回落到内置默认主题底色（不是无底色）');
+
+    /* 草稿写入 localStorage */
+    FE.mutate(() => { FE.state.themeProfile = FE.normalizeThemeProfile(FE.themeNewProfile()); });
+    FE.state.themeProfile.name = 'draft-theme';
+    FE.mutate(() => { FE.state.themeProfile.name = 'draft-theme2'; });
+    const draft = JSON.parse(localStorageStub.getItem('foxy-layout-editor-draft-v1'));
+    ok(draft.themeProfile != null, '主题随草稿写入 localStorage');
+    eq(draft.themeProfile.name, 'draft-theme2', '草稿里的主题是最新值');
+    eq(draft.themeSlot, FE.state.themeSlot, '槽位随草稿一起存');
+
+    /* 一次性取色手势应只压一条历史（拖动会连发几十次回调） */
+    const h0 = FE.state.history.length;
+    const inp = q('#th-colors .color-input')[0];
+    inp.value = '#FF0F0F0F';
+    inp._fire('change');
+    eq(FE.state.history.length, h0 + 1, '一次取色手势只压一条历史');
+
+    /* 收尾：清掉主题，恢复「未导入」让后续断言不受影响 */
+    FE.state.themeProfile = null;
+    FE.state.themeSlot = 'light';
+    FE.state.keyBorderEnabled = true;
+    FE.state.history.length = 0;
+    FE.state.future.length = 0;
+    FE.renderAll();
+  }
+
+  /* ================================================================
+   * 符号面板页：复数槽口径的撤销 / 草稿回归
+   *
+   * 历史缺口：app.js 曾只接线单数 `symbolProfile`，而 symbol-editor 的事实来源
+   * 是复数槽 `symbolProfiles = { kind: profile }`。后果是「切过类别再撤销」——
+   * 撤销按钮可点、历史也变长，但符号数据**根本没回退**（只写回单数镜像，
+   * `symbolProfiles[kind]` 不动）。下面这组断言就是钉住这个缺口。
+   * ================================================================ */
+  console.log('== 符号面板页：复数槽撤销与草稿 ==');
+  {
+    tabs.find(t => t.dataset.tab === 'tab-symbols')._fire('click');
+    ok($('tab-symbols').classList.contains('active'), '切到符号面板页');
+    /* 切页即 renderSymbolsTab → ensureSymbolState 懒建复数槽（浏览器里的真实顺序）。
+     * ⚠️ 不要在这之后把槽位手动清成 null 再点按钮：symbol-editor 的载入入口
+     * 直接写 state.symbolProfiles[id]，槽位为 null 时会抛 ——
+     * 而真实浏览器里切页总会先建槽，所以那种起点本身就不真实。 */
+    FE.state.history.length = 0;
+    FE.state.future.length = 0;
+
+    const symEx = $('sym-example');
+    /* 载入两个类别的内置样例：符号页同时编辑多类 catalog */
+    symEx.value = 'symbols';
+    $('sym-load-example').click();
+    ok(FE.isPlainObject(FE.state.symbolProfiles) && !!FE.state.symbolProfiles.symbols,
+      'symbols 类别已载入');
+    const symGroups0 = FE.state.symbolProfiles.symbols.groups.length;
+    ok(symGroups0 > 0, 'symbols 样例含分组');
+
+    symEx.value = 'emoji';
+    $('sym-load-example').click();
+    ok(!!FE.state.symbolProfiles.emoji, 'emoji 类别已载入（第二类）');
+    ok(!!FE.state.symbolProfiles.symbols && !!FE.state.symbolProfiles.emoji,
+      '两类 catalog 同时存在（复数槽）');
+
+    /* 快照必须整组带上，而不是只有当前类别 */
+    const symSnap = JSON.parse(FE.snapshotState()).symbol;
+    ok(symSnap != null && FE.isPlainObject(symSnap.profiles), '快照里 symbol 是复数槽结构');
+    ok(!!symSnap.profiles.symbols && !!symSnap.profiles.emoji,
+      '快照同时含 symbols 与 emoji 两类（单数槽会丢掉未选中的那类）');
+    ok(symSnap.kind != null, '快照记录了当前类别');
+
+    /* ---- 核心回归：改符号数据 → 撤销 → 数据真的回退 ---- */
+    const hBefore = FE.state.history.length;
+    FE.mutate(() => {
+      FE.state.symbolProfiles.symbols.groups.push({ names: { zh: 'zz新增' }, symbols: ['★'] });
+    });
+    eq(FE.state.history.length, hBefore + 1, '符号变更压入撤销栈');
+    eq(FE.state.symbolProfiles.symbols.groups.length, symGroups0 + 1, '符号数据已新增一组');
+
+    $('top-undo').click();
+    eq(FE.state.symbolProfiles.symbols.groups.length, symGroups0,
+      '撤销后符号数据**真的回退**（不是只变长历史）');
+    /* 镜像必须重新指向撤销后的对象，否则界面仍读旧对象 */
+    ok(FE.state.symbolProfile === FE.state.symbolProfiles[FE.state.symbolKind],
+      '撤销后单数镜像重新指向 profiles[kind]');
+    /* 未选中的类别也要一起回退（复数槽的意义所在） */
+    ok(!!FE.state.symbolProfiles.emoji, '撤销后另一类别仍在（没被顺手清掉）');
+
+    /* ---- 草稿：复数槽 + 文件名 + legacy 都要存 ---- */
+    FE.state.symbolFileNames = { symbols: 'my-symbols.json' };
+    FE.state.symbolLegacy = { symbols: false };
+    FE.mutate(() => { FE.state.symbolProfiles.symbols.multiLine = true; });
+    const symDraft = JSON.parse(localStorageStub.getItem('foxy-layout-editor-draft-v1'));
+    ok(FE.isPlainObject(symDraft.symbolProfiles), '符号复数槽写入草稿');
+    ok(!!symDraft.symbolProfiles.symbols && !!symDraft.symbolProfiles.emoji,
+      '草稿含两类 catalog（刷新后不丢未选中的那类）');
+    eq(symDraft.symbolFileNames, { symbols: 'my-symbols.json' }, '符号文件名按类别写入草稿');
+    eq(symDraft.symbolLegacy, { symbols: false }, 'legacy 标记按类别写入草稿');
+    eq(symDraft.symbolKind, FE.state.symbolKind, '当前类别随草稿一起存');
+
+    /* ---- 未导入时快照存 null（不强造空对象）----
+     * 这是纯函数断言，刻意不触发渲染：渲染会走 symbol-editor 的懒建逻辑，
+     * 那是它的正常行为，不该被这条断言否定。 */
+    const savedSym = {
+      profiles: FE.state.symbolProfiles, fileNames: FE.state.symbolFileNames,
+      legacy: FE.state.symbolLegacy, profile: FE.state.symbolProfile, kind: FE.state.symbolKind
+    };
+    FE.state.symbolProfiles = null;
+    FE.state.symbolFileNames = null;
+    FE.state.symbolLegacy = null;
+    FE.state.symbolProfile = null;
+    eq(JSON.parse(FE.snapshotState()).symbol.profiles, null, '未导入符号时快照存 null（不强造空对象）');
+    eq(JSON.parse(FE.snapshotState()).symbol.fileNames, null, '未导入时文件名槽也是 null');
+
+    /* ---- 从「未导入」写入数据 → 撤销 → 数据回退 ---- */
+    FE.state.history.length = 0;
+    FE.state.future.length = 0;
+    FE.mutate(() => {
+      FE.state.symbolProfiles = { symbols: FE.normalizeSymbolProfile('symbols', FE.SYMBOL_SAMPLES.symbols) };
+    });
+    eq(FE.state.symbolProfiles.symbols.groups.length, 2, '写入 symbols 样例后含 2 组');
+    $('top-undo').click();
+    ok(!FE.state.symbolProfiles || !FE.state.symbolProfiles.symbols ||
+      FE.state.symbolProfiles.symbols.groups.length === 0,
+      '撤销后符号数据回到未导入 / 空（渲染会懒建空槽，故断言数据而非对象是否为 null）');
+
+    /* 收尾：恢复进入本块前的符号状态，避免影响后续 */
+    FE.state.symbolProfiles = savedSym.profiles;
+    FE.state.symbolFileNames = savedSym.fileNames;
+    FE.state.symbolLegacy = savedSym.legacy;
+    FE.state.symbolProfile = savedSym.profile;
+    FE.state.symbolKind = savedSym.kind;
+    FE.state.history.length = 0;
+    FE.state.future.length = 0;
+    FE.renderAll();
+  }
+
+/* ================================================================
+ * 预览「实际渲染的颜色」vs 解析链「声称的来源」——逐键交叉验证
+ *
+ * 动机：编辑器现在有两条**独立**路径给出同一件事：
+ *   · 预览实际写进 DOM 的行内样式（app.js 的 applyKeyColors，走 themeKeyColors + 分层）
+ *   · 编辑面展示的「生效值 + 来源」（color-source.js 的 resolveKeyColors）
+ * 二者若不一致，用户就会看到「编辑面说继承到 A 色、预览却显示 B 色」——
+ * 正是本次要消灭的「对不上」。下面按四种情形（④③②①）逐键比对。
+ * ================================================================ */
+console.log('== 预览渲染 vs 颜色来源：逐键一致 ==');
+{
+  const savedProfile = FE.state.profile;
+  const savedLayout = FE.state.layoutName;
+  const savedTheme = FE.state.themeProfile;
+  const savedSlot = FE.state.themeSlot;
+  const savedBorder = FE.state.keyBorderEnabled;
+  const savedStatus = FE.state.status;
+  const savedTab = FE.state.activeTab;
+  /* ⚠️ 本块验的是**键盘**预览的颜色，必须先把页签钉回一个非符号页 ——
+   * renderPreview 会按 state.activeTab 决定"渲染键盘还是符号面板"
+   * （App 端符号面板整块替换键盘，见 foxy-render-spec.md §8）。
+   * 不钉的话，若前面某块把页签停在 tab-symbols，这里 q('.kb-key') 会取不到东西。 */
+  FE.state.activeTab = 'tab-layout';
+  try {
+    FE.state.profile = FE.normalizeProfile({
+      type: 'foxy.keyboard-layout',
+      layouts: {
+        default: {
+          sections: [{
+            type: 'rows',
+            rows: [{
+              height: 1, keys: [
+                { ref: 'rime.q', keyType: 'LETTER' },
+                { ref: 'rime.w', keyType: 'FUNCTION' },
+                { ref: 'rime.e', keyType: 'FUNCTION', colors: { background: '#FF0A0B0C', text: '#FF0D0E0F' } },
+                { ref: 'rime.r', keyType: 'LETTER', colors: { states: { pressed: { background: '#FF010203' } } } }
+              ]
+            }]
+          }]
+        }
+      }, keys: {}
+    });
+    FE.state.layoutName = 'default';
+    FE.state.themeProfile = FE.normalizeThemeProfile({
+      type: 'foxy.keyboard-theme', name: 'x',
+      light: {
+        keyTextColor: '#FF111111', keyBackgroundColor: '#FF222222', keyPressedColor: '#FF333333',
+        keyBorderColor: '#FF444444', keyShadowColor: '#FF555555', keyHintTextColor: '#FF666666',
+        accentColor: '#FFABCDEF',
+        keyTypes: { FUNCTION: { background: '#FFB1B2B3', text: '#FFC1C2C3' } }
+      }, dark: {}
+    });
+    FE.state.themeSlot = 'light';
+    FE.state.keyBorderEnabled = true;
+    FE.state.status = { composing: false, ascii_mode: false, disabled: false, shift: false };
+    FE.renderAll();
+
+    /* 按标签索引预览里的键 */
+    const byLabel = {};
+    q('.kb-key').forEach((el) => {
+      const lab = String(el.textContent || '').trim();
+      if (lab && !byLabel[lab]) byLabel[lab] = el;
+    });
+    ok(!!byLabel['q'] && !!byLabel['w'] && !!byLabel['e'], '（前置）预览渲染出 q/w/e 键');
+
+    /* 四情形：④ 纯主题兜底 / ③ keyTypes / ② 布局每键 */
+    [
+      ['q', 'LETTER', null, 'theme.global', '④ 全局兜底'],
+      ['w', 'FUNCTION', null, 'theme.keyType', '③ keyTypes'],
+      ['e', 'FUNCTION', { background: '#FF0A0B0C', text: '#FF0D0E0F' }, 'layout.key', '② 布局每键']
+    ].forEach((row) => {
+      const el = byLabel[row[0]];
+      if (!el) { ok(false, '找不到预览键 ' + row[0]); return; }
+      const eff = { keyType: row[1] };
+      if (row[2]) eff.colors = row[2];
+      const res = FE.resolveKeyColors(eff, {});
+      const wantBg = res.roles.background.value ? FE.colorToCss(res.roles.background.value) : null;
+      const wantFg = res.roles.text.value ? FE.colorToCss(res.roles.text.value) : null;
+      if (wantBg) {
+        eq(String(el.style.background || ''), wantBg,
+          row[0] + '（' + row[4] + '）预览背景 = 解析链生效值');
+      }
+      if (wantFg) {
+        eq(String(el.style.color || ''), wantFg,
+          row[0] + '（' + row[4] + '）预览文字色 = 解析链生效值');
+        eq(res.roles.text.source, row[3], row[0] + ' 文字色来源标注正确（' + row[3] + '）');
+      }
+    });
+
+    /* ① 状态色：按下后预览背景换成 states.pressed */
+    const rEl = byLabel['r'];
+    const rEff = { keyType: 'LETTER', colors: { states: { pressed: { background: '#FF010203' } } } };
+    rEl._fire('pointerdown');
+    const rRes = FE.resolveKeyColors(rEff, { pressed: true });
+    eq(String(rEl.style.background || ''), FE.colorToCss(rRes.roles.background.value),
+      '① 按下后预览背景 = states.pressed（来源 ' + rRes.roles.background.source + '）');
+    eq(rRes.roles.background.source, FE.COLOR_SOURCES.LAYOUT_STATE, '① 来源标注为布局状态色');
+    rEl._fire('pointerup');
+
+    /* 修饰键激活 → accentColor（规范 §1.4） */
+    FE.state.status.shift = true;
+    FE.state.profile.keys['verify.shift'] = { ref: 'foxy.Shift' };
+    FE.state.profile.layouts['default'].sections[0].rows[0].keys.push(
+      { ref: 'foxy.Shift', keyType: 'FUNCTION' });
+    FE.renderAll();
+    const ks2 = q('.kb-key');
+    const shiftEl = ks2[ks2.length - 1];
+    const sRes = FE.resolveKeyColors({ keyType: 'FUNCTION', modifier: 'SHIFT' }, { modifierActive: true });
+    ok(sRes.textFromAccent, '修饰键激活时解析链标记 textFromAccent');
+    eq(String(shiftEl.style.color || ''), FE.colorToCss(sRes.roles.text.value),
+      '修饰键激活时预览文字色 = 主题 accentColor');
+    FE.state.status.shift = false;
+  } finally {
+    FE.state.profile = savedProfile;
+    FE.state.layoutName = savedLayout;
+    FE.state.themeProfile = savedTheme;
+    FE.state.themeSlot = savedSlot;
+    FE.state.keyBorderEnabled = savedBorder;
+    FE.state.status = savedStatus;
+    FE.state.activeTab = savedTab;
+    FE.renderAll();
+  }
+}
+
+/* ================================================================
+ * 符号面板预览：切到「符号面板」页签时，预览区换成符号面板
+ *
+ * App 端符号面板（`ly`）是**整块替换键盘区域**的横排面板（不是弹层），
+ * 依据 foxy-render-spec.md §8。断言要点：
+ *   · 切到符号页 → 预览区渲染面板，键盘键消失；
+ *   · 面板结构 = 左列（84dp 分组列表 + ⌨/⌫）+ 右列格子区；
+ *   · 格子列数随 multiLine 变（false 6 格/行、true 1 格/行）；
+ *   · 切回其它页 → 恢复键盘渲染（不能把键盘弄丢）。
+ * ================================================================ */
+console.log('== 符号面板预览 ==');
+{
+  const savedTab = FE.state.activeTab;
+  const savedSym = {
+    profiles: FE.state.symbolProfiles, kind: FE.state.symbolKind,
+    sample: FE.state.symbolPreviewGroup
+  };
+  try {
+    /* 装一份三类 catalog（用内置样例，2 组 4 条，够验证结构） */
+    FE.state.symbolProfiles = {
+      symbols: FE.normalizeSymbolProfile('symbols', FE.SYMBOL_SAMPLES.symbols)
+    };
+    FE.state.symbolKind = 'symbols';
+    FE.state.symbolPreviewGroup = 0;
+
+    /* ⚠️ 必须**显式**把页签钉成 tab-symbols 再 renderAll：
+     * activateTab 只在「跨符号页/非符号页边界」时才重画预览（性能考虑），
+     * 若前一块已把 state.activeTab 停在 tab-symbols，activateTab 不会重渲染，
+     * 这里就会断言到**上一块遗留**的 DOM（实测：拿到 emoji 的 6 格而非 symbols 的 12 格）。
+     * 显式 renderAll 让断言与数据严格对应，不受块的执行顺序影响。 */
+    FE.state.activeTab = 'tab-symbols';
+    FE.activateTab('tab-symbols');
+    FE.renderAll();
+    ok(q('.sym-pv').length === 1, '符号页预览区渲染出符号面板（.sym-pv）');
+    ok(q('.kb-key').length === 0, '符号页预览区**不再**渲染键盘按键');
+    ok(q('.sym-pv-left').length === 1, '面板有左列（分组列表容器）');
+    ok(q('.sym-pv-cells-wrap').length === 1, '面板有右列（格子区）');
+
+    /* ①b 符号页的工具栏：**几何滑杆组隐藏**（用户要求"那一行滑杆调整键盘的，
+     *     就不要显示在符号键盘预览了"），但**深浅下拉保留**（面板底跟它走）。
+     *     ⚠️ 隐藏的必须是滑杆**包装层** #pt-geom-sliders，而不是整行 .preview-toggles-geom ——
+     *     整行连同 #pt-theme 一起隐藏就把"符号页也能切深浅"弄丢了。 */
+    ok($('pt-geom-sliders').hidden === true, '符号页：几何滑杆组隐藏（高度/圆角/水平/垂直间隙）');
+    ok($('pt-theme').hidden !== true, '符号页：深浅下拉**仍可见**（面板底跟它走）');
+    ok($('pt-geom-sliders').querySelectorAll('#pt-theme').length === 0,
+      '深浅下拉不在滑杆组内（否则会被一起隐藏 —— 这是设计约束）');
+    ['pt-height', 'pt-corner', 'pt-gap-h', 'pt-gap-v'].forEach(id => {
+      ok($('pt-geom-sliders').querySelectorAll('#' + id).length === 1,
+        id + ' 位于滑杆组内（会随符号页隐藏）');
+    });
+    /* 切回布局页 → 滑杆恢复 */
+    FE.activateTab('tab-layout');
+    ok($('pt-geom-sliders').hidden === false, '切回布局页后滑杆组恢复显示');
+    FE.state.activeTab = 'tab-symbols';
+    FE.activateTab('tab-symbols');
+    FE.renderAll();
+
+    /* ② 左列：分组项 + 两个热键 */
+    const gItems = q('.sym-pv-group');
+    ok(gItems.length === 2, '左列渲染 2 个分组项（实际 ' + gItems.length + '）');
+    ok(q('.sym-pv-group-sel').length === 1, '恰有 1 个分组处于选中态');
+    const hotkeys0 = q('.sym-pv-hotkey');
+    eq(hotkeys0.length, 2, '左列底部有 ⌨ / ⌫ 两个热键');
+
+    /* ②b ★回归：⌨/⌫ 必须与右侧符号格子**同款底色/圆角/描边**（用户指出：
+     *     App 上这两个键是有按键底色的，和右边符号格一样）。
+     *     证据：创建它们的 `a()`（ly.java:159-171，`f()` 在 :167）与创建格子那段
+     *     （ly.java:202-218，`f()` 在 :209）调的是**同一个 `f()`**（ly.java:326-341）：
+     *       setColor(this.a.j) = keyBackgroundColor；圆角 6dp clamp；描边仅当 B&&C。
+     *     字色也是同一个 `this.a.n`（candidateTextColor，:166 与 :208）。
+     *     早先这里**只给字色、漏了底色** —— 所以这条断言钉住"不能再漏"。 */
+    {
+      /* 导入一份辨识度高的主题，让"同款"可被精确断言（而非依赖 CSS 兜底） */
+      const savedTp = FE.state.themeProfile, savedSlot = FE.state.themeSlot;
+      FE.state.themeProfile = FE.normalizeThemeProfile({
+        type: 'foxy.keyboard-theme', name: 'hk-same',
+        light: {
+          keyboardColor: '#FF101112', altKeyboardColor: '#FF202122',
+          keyBackgroundColor: '#FF303132', candidateTextColor: '#FF404142',
+          keyBorderColor: '#FF808182'
+        }, dark: {}
+      });
+      FE.state.themeSlot = 'light';
+      FE.state.keyBorderEnabled = true;
+      FE.renderAll();
+      const cellOne = q('.sym-pv-cell')[0];
+      const hk = q('.sym-pv-hotkey');
+      eq(hk[0].style.background, cellOne.style.background,
+        '★ ⌨ 底色 = 格子底色（keyBackgroundColor #303132FF）');
+      eq(hk[0].style.background, '#303132FF', '★ ⌨ 确实拿到了主题键底色（不是空）');
+      eq(hk[1].style.background, cellOne.style.background, '★ ⌫ 底色同格子');
+      eq(hk[0].style.color, cellOne.style.color, '⌨ 字色 = 格子字色（candidateTextColor）');
+      eq(hk[0].style.borderRadius, cellOne.style.borderRadius, '⌨ 圆角 = 格子圆角（6dp clamp）');
+      eq(hk[0].style.height, cellOne.style.height, '⌨ 高度 = 格子高度（40dp）');
+      /* 描边条件与格子**同一条**（B 与 C 同时开才画；编辑器无 C 开关 → 默认不画） */
+      ok(!hk[0].style.border && !cellOne.style.border,
+        'B=true/C=false 时热键与格子**都不画描边**（ly.java:332-334）');
+
+      /* dark 槽同样跟随（两套槽位各自生效） */
+      FE.state.themeSlot = 'dark';
+      FE.renderAll();
+      eq(q('.sym-pv-hotkey')[0].style.background, q('.sym-pv-cell')[0].style.background,
+        '★ dark 槽下 ⌨ 底色仍与格子一致');
+
+      /* 未导入主题 → 走 App 内置默认主题，也必须有底色 */
+      FE.state.themeProfile = null;
+      FE.state.themeSlot = 'light';
+      FE.renderAll();
+      eq(q('.sym-pv-hotkey')[0].style.background, q('.sym-pv-cell')[0].style.background,
+        '★ 未导入主题时 ⌨ 底色 = 格子底色（内置默认主题兜底）');
+      ok(!!q('.sym-pv-hotkey')[0].style.background,
+        '★ 未导入主题时 ⌨ 也有底色（不为空 —— 这是本回归的核心）');
+
+      FE.state.themeProfile = savedTp;
+      FE.state.themeSlot = savedSlot;
+      FE.renderAll();
+    }
+
+    /* ③ 右列：格子数与 multiLine 决定的列数一致 */
+    const cells = q('.sym-pv-cell');
+    const sampleGroups = FE.SYMBOL_SAMPLES.symbols.groups;
+    eq(cells.length, sampleGroups[0].symbols.length,
+      '格子数 = 当前分组的条目数（' + sampleGroups[0].symbols.length + '）');
+    const grid = q('.sym-pv-cells')[0];
+    ok(!!grid, '格子网格存在');
+    /* 样例 symbols 的 multiLine=false → 6 格/行 */
+    eq(FE.state.symbolProfiles.symbols.multiLine === true, false, '（前置）样例 symbols 为 multiLine=false');
+    ok(String(grid.style.gridTemplateColumns).indexOf('repeat(6') >= 0,
+      'multiLine=false → 每行 6 格（实际 ' + grid.style.gridTemplateColumns + '）');
+
+    /* ④ 切 multiLine=true → 每行 1 格 */
+    FE.state.symbolProfiles.symbols = FE.normalizeSymbolProfile('symbols', {
+      multiLine: true, groups: sampleGroups
+    });
+    FE.renderAll();
+    const grid2 = q('.sym-pv-cells')[0];
+    ok(String(grid2.style.gridTemplateColumns).indexOf('repeat(1') >= 0,
+      'multiLine=true → 每行 1 格（实际 ' + grid2.style.gridTemplateColumns + '）');
+
+    /* ⑤ 尺寸与布局预览**严格一致**（用户明确要求），且说明文字**移出键盘预览区**。
+     *    面板高度 = 布局总单位数 × unit × 高度系数，正是布局预览各区段高度之和；
+     *    这样两边一切换预览盒子大小完全相同。 */
+    const symUnits = FE.layoutHeightUnits(FE.state.profile.layouts[FE.state.layoutName]);
+    const symUnit = FE.state.portraitW / 10;
+    const wantPanelH = symUnits * symUnit * FE.PREVIEW_HEIGHT_K;
+    const pv = q('.sym-pv')[0];
+    ok(pv && Math.abs(parseFloat(pv.style.height) - wantPanelH) < 1,
+      '面板高度 = 布局预览高度（' + (pv && pv.style.height) + ' vs ' + wantPanelH.toFixed(1) + 'px）');
+    eq(pv.style.overflow, 'hidden', '面板 overflow:hidden —— 内容再多也不会把它撑高');
+    eq(q('#preview-kb .sym-pv-note').length, 0, '键盘预览区内**没有**说明文字（已移出）');
+    ok(q('#preview-meta .sym-pv-note').length >= 1, '说明文字放进状态行（键盘区之外）');
+
+    /* ⑥ 分组区与符号区**各自滚动**（对齐 App 的两个 ScrollView，ly.java:66-71/149-153），
+     *    而不是靠拉长面板高度来显示全部条目 —— 这是用户明确要求的。
+     *    minHeight:0 是 flex 子项能滚动的必要条件（默认 min-height:auto 会按内容撑高）。 */
+    eq(q('.sym-pv-groups')[0].style.overflowY, 'auto', '左列分组区自身可滚动');
+    eq(q('.sym-pv-groups')[0].style.minHeight, '0', '分组区 minHeight:0（flex 下才滚得起来）');
+    eq(q('.sym-pv-cells-wrap')[0].style.overflowY, 'auto', '右列符号区自身可滚动');
+    eq(q('.sym-pv-cells-wrap')[0].style.minHeight, '0', '符号区 minHeight:0');
+    ok(!q('.sym-pv-cells-wrap')[0].style.maxHeight, '符号区不再用固定 maxHeight 限制');
+    /* 两条滚动槽**隐藏原生滚动条**（用户要求「去掉那两个网页滑动杆」，对齐 App 观感）：
+     * App 端的滚动指示是 Android 那套（细、贴边、自动淡出），不是网页粗白条。
+     * 桩量不到 ::-webkit-scrollbar，故查源码里的规则 + 行内 scrollbar-width。 */
+    {
+      const cssSym = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+      ok(/\.sym-pv-groups,\s*\n?\.sym-pv-cells-wrap\s*\{[^}]*scrollbar-width:\s*none/.test(cssSym),
+        '两条滚动槽都设了 scrollbar-width:none（Firefox）');
+      ok(/\.sym-pv-groups::-webkit-scrollbar,\s*\n?\.sym-pv-cells-wrap::-webkit-scrollbar\s*\{\s*display:\s*none/.test(cssSym),
+        '两条滚动槽都隐藏了 WebKit/Blink 原生滚动条');
+      /* 滚动能力本身不能被改掉（上面已断言 overflowY === 'auto'） */
+      ok(q('.sym-pv-groups')[0].style.overflowY === 'auto',
+        '隐藏滚动条后仍保留可滚动能力（不是 overflow:hidden）');
+    }
+
+    /* ⑦ 分组极多时高度**仍不变**（真实预置示例：emoji 50+ 组）。
+     *    这条是"不要强制拉长预览高度"的直接回归断言。 */
+    const emojiFiles = FE.SYMBOL_EXAMPLE_FILES && FE.SYMBOL_EXAMPLE_FILES.emoji;
+    const emojiName = emojiFiles ? Object.keys(emojiFiles)[0] : null;
+    if (emojiName) {
+      FE.state.symbolProfiles.emoji = FE.normalizeSymbolProfile('emoji', JSON.parse(emojiFiles[emojiName]));
+      FE.state.symbolKind = 'emoji';
+      FE.state.activeTab = 'tab-symbols';
+      FE.renderAll();
+      ok(FE.state.symbolProfiles.emoji.groups.length > 20,
+        '（前置）预置 emoji 示例分组数 > 20（实际 ' + FE.state.symbolProfiles.emoji.groups.length + '）');
+      const pvMany = q('.sym-pv')[0];
+      ok(Math.abs(parseFloat(pvMany.style.height) - wantPanelH) < 1,
+        '分组极多时高度仍 = 布局预览高度（' + pvMany.style.height + '，未被撑高）');
+    } else {
+      ok(false, '预置 emoji 示例应存在（FE.SYMBOL_EXAMPLE_FILES.emoji）');
+    }
+
+    /* ⑧ 切回布局页 → 键盘渲染恢复（不能把键盘弄丢） */
+    FE.activateTab('tab-layout');
+    ok(q('.sym-pv').length === 0, '切回布局页后符号面板消失');
+    ok(q('.kb-key').length > 0, '切回布局页后键盘按键恢复渲染（实际 ' + q('.kb-key').length + '）');
+
+    /* ⑨ 空 catalog → 给出提示而不是空白（且不抛） */
+    FE.state.symbolProfiles = { symbols: FE.normalizeSymbolProfile('symbols', null) };
+    FE.activateTab('tab-symbols');
+    ok(q('.kb-empty').length >= 1, '空 catalog 时给出提示而非空白');
+  } finally {
+    FE.state.symbolProfiles = savedSym.profiles;
+    FE.state.symbolKind = savedSym.kind;
+    FE.state.symbolPreviewGroup = savedSym.sample;
+    FE.state.activeTab = savedTab;
+    FE.activateTab(savedTab === 'tab-symbols' ? 'tab-layout' : savedTab);
+    FE.renderAll();
+  }
+}
 
 }   /* 结束 await sleep(350) 后的主体块 */
 

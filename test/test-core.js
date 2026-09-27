@@ -11,8 +11,12 @@ const path = require('path');
 global.window = global;
 const vm = require('vm');
 function load(file) {
+  /* 主题页纯逻辑必须加载；符号页由另一模块提供，**缺席时不报错** ——
+   * 否则「另一个模块还没落地」会把本套件整体拖红，掩盖真正的失败。 */
+  if (!fs.existsSync(path.join(__dirname, '..', 'js', file))) return false;
   const code = fs.readFileSync(path.join(__dirname, '..', 'js', file), 'utf8');
   vm.runInThisContext(code, { filename: file });
+  return true;
 }
 load('data.js');
 load('default-profile.js');
@@ -21,6 +25,10 @@ load('folder-import.js');
 load('key-dialog.js');
 load('macro-editor.js');
 load('popup-editor.js');
+load('theme-editor.js');
+load('color-source.js');
+load('symbol-editor.js');
+load('symbol-preview.js');
 
 const FE = global.FE;
 let passed = 0, failed = 0;
@@ -331,9 +339,27 @@ FE.state.profile = profile;
 console.log('== 工作区示例文件 ==');
 for (const f of fs.readdirSync(exDir)) {
   const raw = fs.readFileSync(path.join(exDir, f), 'utf8');
-  const p = FE.normalizeProfile(JSON.parse(FE.sanitizeJsonText(raw)));
+  const parsed = JSON.parse(FE.sanitizeJsonText(raw));
+  /* ⚠️ examples/ 里现在有**三类**文件，不能一律当布局校验：
+   *   · 弹出菜单  → type foxy.popup-profile / 有 schemas
+   *   · 符号面板  → {multiLine, groups}（无 layouts/schemas）
+   *   · 布局      → 其余
+   * 少了符号这条分支，三个符号文件会被 validateProfile 判成
+   * 「layouts 必须是非空对象」（踩过：新增预置符号后 core 直接红 3 条）。
+   * 判定口径与 tools/build-examples.js、test/check-real-files.js 保持一致。 */
+  if (Array.isArray(parsed.groups) && !parsed.layouts && !parsed.schemas) {
+    const kind = /颜文字|kaomoji/i.test(f) ? 'kaomoji'
+      : (/表情|emoji/i.test(f) ? 'emoji' : 'symbols');
+    const sp = FE.normalizeSymbolProfile(kind, parsed);
+    ok(sp.groups.length > 0, f + '（符号）解析出分组（实际 ' + sp.groups.length + '）');
+    ok(sp.groups.every(g => Array.isArray(g.symbols)), f + '（符号）每个分组的 symbols 都是数组');
+    ok(sp.groups.some(g => Object.keys(g.names || {}).length > 0),
+      f + '（符号）至少有一个分组带可显示的名字');
+    continue;
+  }
+  const p = FE.normalizeProfile(parsed);
   if (p && p.type === 'foxy.popup-profile') {
-    const pp = FE.normalizePopupProfile(JSON.parse(FE.sanitizeJsonText(raw)));
+    const pp = FE.normalizePopupProfile(parsed);
     const r = FE.validatePopupProfile(pp);
     eq(r.errors, [], f + '（弹出菜单）无错误');
     continue;
@@ -1312,6 +1338,266 @@ eq(FE.stableJson(undefined), FE.stableJson(undefined), '裸 undefined 可比较'
   g.reset();
   eq(g.onBeforeClose(), true, '快照函数抛错时放行，不卡住用户');
 }
+
+/* ================================================================
+ * 主题文件（foxy.keyboard-theme）
+ * 字段面按基线 §1.2：26 色 + keyTypes 3 类 × 10 字段。
+ * 历史假设错在两处：keyTypes 不是 2 类（漏 LETTER）、每类不是 4 字段
+ * （漏 border/shadow/hintUp/Down/Left/Right）—— 漏了就会被静默丢弃。
+ * ================================================================ */
+console.log('== 主题：字段面与默认值 ==');
+eq(FE.THEME_COLOR_FIELDS.length, 26, '槽位颜色字段 26 个');
+eq(FE.THEME_COLOR_FIELDS[0], 'keyboardColor', '字段首位是 keyboardColor');
+eq(FE.THEME_COLOR_FIELDS[25], 'accentColor', '字段末位是 accentColor');
+eq(FE.THEME_KEY_TYPE_NAMES, ['LETTER', 'FUNCTION', 'ACTION'], 'keyTypes 三类含 LETTER');
+eq(FE.THEME_KEYTYPE_FIELDS.length, 10, '每类 keyType 10 个字段');
+eq(FE.THEME_KEYTYPE_FIELDS, ['text', 'background', 'pressed', 'border', 'shadow',
+  'hint', 'hintUp', 'hintDown', 'hintLeft', 'hintRight'], 'keyType 字段名与顺序');
+
+console.log('== 主题：颜色解析宽容度 ==');
+eq(FE.normalizeThemeColor('#FFF'), '#FFFFFFFF', '#RGB 补成 #FFRRGGBB');
+eq(FE.normalizeThemeColor('#8F00'), '#88FF0000', '#ARGB 的 alpha 与通道按位复制');
+eq(FE.normalizeThemeColor('#52f7bd'), '#FF52F7BD', '#RRGGBB 补 FF 并大写');
+eq(FE.normalizeThemeColor('#80abcdef'), '#80ABCDEF', '#AARRGGBB 原样（仅大写）');
+eq(FE.normalizeThemeColor('  #FFF7F5CB  '), '#FFF7F5CB', '首尾空白被容忍');
+eq(FE.normalizeThemeColor('#FFFFF'), null, '5 位视为非法');
+eq(FE.normalizeThemeColor('red'), null, '颜色名视为非法');
+eq(FE.normalizeThemeColor(''), null, '空串非法');
+eq(FE.normalizeThemeColor(null), null, 'null 非法（不抛错）');
+
+console.log('== 主题：新建初值取内置默认色 ==');
+{
+  const t = FE.themeNewProfile();
+  eq(t.type, 'foxy.keyboard-theme', '新建主题 type 正确');
+  eq(t.name, '', '新建主题 name 为空（由用户填）');
+  eq(t.light.keyboardColor, '#FFFAFAFA', 'light 槽 keyboardColor 取内置默认');
+  eq(t.dark.keyboardColor, '#FF2D2D2D', 'dark 槽 keyboardColor 取内置默认');
+  /* 四个方向提示色在内置默认里是 null（继承 keyHintTextColor），必须留空 */
+  eq(t.light.keyHintTextTopColor, null, 'light 上提示色留空（继承 keyHintTextColor）');
+  eq(t.dark.keyHintTextRightColor, null, 'dark 右提示色留空');
+  eq(t.light.keyHintTextColor, '#FF808080', 'light 基础提示色有值');
+  ok(t.light.keyTypes && t.light.keyTypes.FUNCTION, '内置默认含 FUNCTION 分组');
+  ok(!t.light.keyTypes.LETTER, '内置默认不含 LETTER（走回落链到全局字段）');
+  /* 不能是共享引用：改一份不该污染另一份 */
+  const t2 = FE.themeNewProfile();
+  t2.light.keyboardColor = '#00000000';
+  eq(FE.themeNewProfile().light.keyboardColor, '#FFFAFAFA', '两次新建互不影响（深拷贝）');
+}
+
+console.log('== 主题：归一化（缺 type 不补、非法值不丢、字段不丢） ==');
+{
+  /* 缺 type：归一化**不许补**，否则校验器看不见「App 不会扫描」这个硬问题 */
+  const noType = FE.normalizeThemeProfile({ name: 'x', light: {} });
+  eq(noType.type, undefined, '缺 type 时归一化不补造');
+  ok(FE.validateThemeProfile(noType).errors.some(m => m.indexOf('type 缺失') >= 0),
+    '缺 type 被校验器报错');
+
+  /* 只给 4 个字段的样本（照 春.json 子集）：其余字段不补造、已有的不丢 */
+  const sample = {
+    type: 'foxy.keyboard-theme', name: '春',
+    light: {
+      keyboardColor: '#FFF7F5CB', keyBackgroundColor: '#FFFFFFFF',
+      keyHintTextColor: '#FF808080',
+      keyTypes: { FUNCTION: { text: '#FFE8BE6C', background: '#FF3D6847', pressed: '#1F000000', hint: '#FFE8BE6C' } }
+    }
+  };
+  const n = FE.normalizeThemeProfile(JSON.parse(JSON.stringify(sample)));
+  eq(n.light.keyboardColor, '#FFF7F5CB', '已有字段保留');
+  eq(Object.keys(n.light.keyTypes.FUNCTION).length, 4, '只给的 4 个 keyType 字段仍是 4 个（不补造）');
+  eq(n.light.keyTypes.FUNCTION.hint, '#FFE8BE6C', 'keyType 的 hint 保留');
+  /* 往返：序列化后 4 个字段一个都不少 */
+  const rt = JSON.parse(FE.serializeThemeProfile(n));
+  eq(Object.keys(rt.light.keyTypes.FUNCTION).sort(), ['background', 'hint', 'pressed', 'text'],
+    '4 字段样本往返不丢字段');
+
+  /* 非法颜色：归一化**原样留着**（丢掉它就再也看不到自己哪写错了） */
+  const bad = FE.normalizeThemeProfile({ type: 'foxy.keyboard-theme', light: { keyboardColor: '#12345' } });
+  eq(bad.light.keyboardColor, '#12345', '非法颜色值归一化时原样保留');
+  ok(FE.validateThemeProfile(bad).errors.some(m => m.indexOf('keyboardColor') >= 0),
+    '非法颜色被校验器报错');
+
+  /* 槽位 / keyTypes 不是对象时补成 {}（否则后续读取会抛） */
+  const weird = FE.normalizeThemeProfile({ type: 'foxy.keyboard-theme', light: 'nope', dark: { keyTypes: 3 } });
+  ok(FE.isPlainObject(weird.light), '槽位类型错时补成对象（不抛）');
+  ok(FE.isPlainObject(weird.dark.keyTypes), 'keyTypes 类型错时补成对象');
+
+  /* 未知字段保留（那是用户的数据） */
+  const extra = FE.normalizeThemeProfile({ type: 'foxy.keyboard-theme', light: { myCustom: '#FF000000' } });
+  eq(JSON.parse(FE.serializeThemeProfile(extra)).light.myCustom, '#FF000000', '未知字段往返保留');
+}
+
+console.log('== 主题：10 字段完整往返 ==');
+{
+  const full = { type: 'foxy.keyboard-theme', name: 'full', light: { keyTypes: {} } };
+  FE.THEME_KEY_TYPE_NAMES.forEach(kt => {
+    const g = {};
+    FE.THEME_KEYTYPE_FIELDS.forEach((f, i) => { g[f] = '#' + (10000000 + i * 1111).toString(16).padStart(8, '0').toUpperCase(); });
+    full.light.keyTypes[kt] = g;
+  });
+  const norm = FE.normalizeThemeProfile(JSON.parse(JSON.stringify(full)));
+  const out = JSON.parse(FE.serializeThemeProfile(norm));
+  eq(Object.keys(out.light.keyTypes), ['LETTER', 'FUNCTION', 'ACTION'], '三类 keyType 按权威顺序输出');
+  FE.THEME_KEY_TYPE_NAMES.forEach(kt => {
+    eq(Object.keys(out.light.keyTypes[kt]), FE.THEME_KEYTYPE_FIELDS, kt + ' 的 10 字段顺序与集合正确');
+  });
+  eq(FE.validateThemeProfile(norm).errors, [], '完整主题无错误');
+}
+
+console.log('== 主题：校验只断能确证的事 ==');
+{
+  const ok1 = { type: 'foxy.keyboard-theme', name: 'x', light: {}, dark: {} };
+  const v1 = FE.validateThemeProfile(ok1);
+  eq(v1.errors, [], '合法但极简的主题无错误（宁可少报）');
+  ok(v1.warnings.length > 0, '缺字段 / 缺 LETTER 只给提示，不给错误');
+
+  const v2 = FE.validateThemeProfile({ type: 'foxy.layout', name: 'x' });
+  ok(v2.errors.some(m => m.indexOf('foxy.keyboard-theme') >= 0), 'type 错误被报出');
+
+  const v3 = FE.validateThemeProfile({ type: 'foxy.keyboard-theme', name: '', light: { keyboardColor: 'zzz' } });
+  ok(v3.errors.length === 1, '非空 name 无关；只有颜色非法这条是错误');
+  ok(v3.warnings.some(m => m.indexOf('name') >= 0), 'name 为空只给提示');
+
+  /* keyTypes 缺 LETTER / 含未识别键名 → 提示而非错误 */
+  const v4 = FE.validateThemeProfile({
+    type: 'foxy.keyboard-theme', name: 'y',
+    light: { keyTypes: { LETTER: { text: '#FF000000' }, NOPE: { text: '#FF000000' } } }
+  });
+  eq(v4.errors, [], 'keyTypes 缺分组 / 含怪名都不算错误');
+  ok(v4.warnings.some(m => m.indexOf('NOPE') >= 0), '未识别的键类型名被提示');
+  ok(v4.warnings.some(m => m.indexOf('FUNCTION') >= 0), '缺 FUNCTION 分组被提示');
+
+  /* 非对象槽位是硬错误（App 解析会出错） */
+  const v5 = FE.validateThemeProfile({ type: 'foxy.keyboard-theme', light: [] });
+  ok(v5.errors.some(m => m.indexOf('light') >= 0), '槽位不是对象 → 错误');
+}
+
+console.log('== 主题：序列化顺序 ==');
+{
+  const txt = FE.serializeThemeProfile({ name: 'n', type: 'foxy.keyboard-theme', light: {} });
+  ok(txt.indexOf('"type"') < txt.indexOf('"name"'), 'type 排在 name 之前');
+  ok(txt.indexOf('"name"') < txt.indexOf('"light"'), 'name 排在槽位之前');
+  ok(/\n  "/.test(txt), 'JSON 缩进 2 空格');
+}
+
+console.log('== 主题：预览取值与优先级 ==');
+{
+  const savedTheme = FE.state.themeProfile;
+  const savedSlot = FE.state.themeSlot;
+  try {
+    /* ⭐ 未导入主题：**回退 App 内置默认主题**（用户要求：预览默认用 App 内置默认
+     * 主题的深浅色，而不是编辑器自己那套预置色）。
+     * 改前这两条断言的是 null（"不写任何内联色"）—— 那是旧口径，已随需求反转。
+     * 依据：App 端用户没自定义时用的就是内置默认主题（xw0.java:158-160/189-191）。 */
+    FE.state.themeProfile = null;
+    FE.state.themeSlot = 'light';
+    const biLight = FE.themeKeyColors('LETTER');
+    ok(biLight != null, '未导入主题时按内置默认取色（不再返回 null）');
+    eq(biLight.background, '#FFFFFFFF', '内置默认 light 的键底 = keyBackgroundColor');
+    eq(biLight.text, '#FF212121', '内置默认 light 的键字 = keyTextColor');
+    eq(FE.themeKeyboardColor(true), '#FFEEEEEE',
+      '内置默认 light 的键盘底（border 开 → altKeyboardColor）');
+    FE.state.themeSlot = 'dark';
+    const biDark = FE.themeKeyColors('LETTER');
+    eq(biDark.background, '#FF464646', '内置默认 dark 的键底（深浅两套槽位各自生效）');
+    eq(FE.themeKeyboardColor(true), '#FF333333', '内置默认 dark 的键盘底');
+    FE.state.themeSlot = 'light';
+
+    /* color-source 的 themeSlot() 仍返回 null —— 它表示"**没有导入主题**"这个语义
+     * （供 UI 提示 / 校验判断），**不要**也加内置回退，否则界面说不清当前有没有主题。 */
+    eq(FE.colorThemeSlot('light'), null, 'color-source.themeSlot 仍返回 null（语义是"未导入"）');
+    eq(FE.resolveRole('background', { keyType: 'LETTER' }, {}).value, null,
+      '未传 includeBuiltin 时解析链仍为 null（编辑面明确区分内置与用户主题）');
+
+    /* 导入一份：全局 26 色 + FUNCTION 覆盖 + 方向提示色空（继承） */
+    FE.state.themeProfile = FE.normalizeThemeProfile({
+      type: 'foxy.keyboard-theme', name: 't',
+      light: {
+        keyBackgroundColor: '#FF111111', keyTextColor: '#FFEEEEEE',
+        keyPressedColor: '#FF222222', keyBorderColor: '#FF333333', keyShadowColor: '#FF444444',
+        keyHintTextColor: '#FF555555',
+        altKeyboardColor: '#FF666666', keyboardColor: '#FF777777',
+        keyTypes: { FUNCTION: { background: '#FF888888', text: '#FF999999' } }
+      }
+    });
+    FE.state.themeSlot = 'light';
+
+    const lt = FE.themeKeyColors('LETTER');
+    eq(lt.background, '#FF111111', 'LETTER 取全局 keyBackgroundColor');
+    eq(lt.hintUp, '#FF555555', '方向提示色缺省回落 keyHintTextColor');
+    eq(lt.hintRight, '#FF555555', '四向提示色都回落');
+
+    const fn = FE.themeKeyColors('FUNCTION');
+    eq(fn.background, '#FF888888', 'keyTypes 覆盖全局字段（③ 高于 ④）');
+    eq(fn.text, '#FF999999', 'keyTypes 的 text 同样覆盖');
+    eq(fn.pressed, '#FF222222', 'keyTypes 未给的字段回落全局');
+    /* keyTypes 的 hint 未给 → 方向提示仍回落全局 hint */
+    eq(fn.hintUp, '#FF555555', 'keyTypes 不给 hint 时方向提示仍回落全局');
+
+    eq(FE.themeKeyColors('ACTION').background, '#FF111111', '未定义的 ACTION 分组回落全局');
+
+    /* 键边框开关：为真用 altKeyboardColor，为假回落 keyboardColor（基线 §1.4） */
+    eq(FE.themeKeyboardColor(true), '#FF666666', 'key_border_enabled=true 用 altKeyboardColor');
+    eq(FE.themeKeyboardColor(false), '#FF777777', 'key_border_enabled=false 回落 keyboardColor');
+
+    /* 槽位缺 dark → 回退内置默认（基线 §1.3 的槽为空回退） */
+    FE.state.themeSlot = 'dark';
+    eq(FE.themeKeyColors('LETTER').background, '#FF464646', 'dark 槽缺失时回退内置默认主题');
+
+    /* 槽位切换是两套独立配色，不是"深色外观" */
+    FE.state.themeProfile.light.keyBackgroundColor = '#FFAAAAAA';
+    FE.state.themeSlot = 'light';
+    eq(FE.themeKeyColors('LETTER').background, '#FFAAAAAA', 'light 槽独立取值');
+    FE.state.themeSlot = 'dark';
+    eq(FE.themeKeyColors('LETTER').background, '#FF464646', 'light 改动不影响 dark 槽');
+  } finally {
+    FE.state.themeProfile = savedTheme;
+    FE.state.themeSlot = savedSlot;
+  }
+}
+
+console.log('== 主题：方向提示色的逐层回落 ==');
+{
+  /* 对齐 App 端 m00.java:265-291 的回落链，**逐层**：
+   *   keyTypes[方向] → keyTypes.hint → 槽位[方向] → 槽位.hint
+   * ⚠️ 关键在于 `keyTypes.hint` **优先于「槽位自己的方向色」**。
+   * 这条最反直觉：直觉上"更具体的槽位方向色"该赢，实际 App 端是先取 keyTypes.hint。 */
+  const savedTheme2 = FE.state.themeProfile;
+  const savedSlot2 = FE.state.themeSlot;
+  try {
+    FE.state.themeProfile = FE.normalizeThemeProfile({
+      type: 'foxy.keyboard-theme', name: 'chain',
+      light: {
+        keyHintTextColor: '#FF555555',      /* 槽位 hint */
+        keyHintTextTopColor: '#FF660000',   /* 槽位方向色 */
+        keyTypes: {
+          FUNCTION: { hint: '#FF770000' },   /* keyTypes.hint，无方向色 */
+          ACTION: { hintUp: '#FF880000' }    /* keyTypes 方向色 */
+        }
+      }
+    });
+    FE.state.themeSlot = 'light';
+
+    /* ① keyTypes 给了方向色 → 用它（最高优先） */
+    eq(FE.themeKeyColors('ACTION').hintUp, '#FF880000', 'keyTypes 方向色最优先');
+    /* ② keyTypes 只给 hint、槽位另有方向色 → 取 keyTypes.hint（不是槽位方向色！） */
+    eq(FE.themeKeyColors('FUNCTION').hintUp, '#FF770000',
+      'keyTypes.hint 优先于槽位方向色（易做反的一条）');
+    eq(FE.themeKeyColors('FUNCTION').hint, '#FF770000', 'keyTypes.hint 本身也生效');
+    /* ③ keyTypes 方向与 hint 都没给 → 回落槽位方向色 */
+    eq(FE.themeKeyColors('ACTION').hintDown, '#FF555555',
+      'keyTypes 无 hint 时越过槽位方向色回落槽位 hint');
+    /* ④ 该键类型无 keyTypes 分组 → 槽位方向色优先于槽位 hint */
+    eq(FE.themeKeyColors('LETTER').hintUp, '#FF660000', '无 keyTypes 时用槽位方向色');
+    eq(FE.themeKeyColors('LETTER').hintDown, '#FF555555', '槽位方向色缺失时回落槽位 hint');
+  } finally {
+    FE.state.themeProfile = savedTheme2;
+    FE.state.themeSlot = savedSlot2;
+  }
+}
+
+/* 注：主题文档进入撤销栈 / 草稿的行为属 app.js 的 **UI 段**
+ * （core 环境里 FE.mutate / FE.snapshotState 不存在），
+ * 相关断言放在 test-ui.js 的「主题页」区块。 */
 
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
 process.exit(failed ? 1 : 0);

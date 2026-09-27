@@ -455,31 +455,59 @@ function buildSkeleton() {
   const main = el('main');
 
   /* 预览面板 */
-  const previewPanel = el('details', { class: 'panel preview-panel', open: 'open' });
+  const previewPanel = el('details', { class: 'panel preview-panel', open: 'open' },
+    el('summary', { id: 'preview-panel-title' }, '布局预览（实时渲染，点击按键即可编辑）'));
+  /* 工具栏**两行**（与 index.html 一致）：
+   *   第一行 = 键盘状态开关（切到符号页整组隐藏）；
+   *   第二行 = 几何滑杆组 #pt-geom-sliders（符号页隐藏）+ 深浅下拉（符号页**保留**）。
+   * 桩必须照抄这个层级 —— 测试会按 .preview-toggles 数量与 #pt-geom-sliders 断言。 */
   const pToolbar = el('div', { class: 'preview-toolbar' },
     el('div', { class: 'layout-tabs', id: 'layout-tabs' }),
     el('div', { class: 'preview-toggles' },
-      el('label', null, el('input', { type: 'checkbox', id: 'pt-shift' })),
-      el('label', null, el('input', { type: 'checkbox', id: 'pt-composing' })),
-      el('label', null, el('input', { type: 'checkbox', id: 'pt-ascii' })),
-      el('label', null, el('input', { type: 'checkbox', id: 'pt-disabled' })),
-      el('label', null, el('input', { type: 'checkbox', id: 'pt-split' })),
-      el('input', { type: 'text', id: 'pt-status-text' }),
-      el('label', null,
-        el('input', { type: 'range', id: 'pt-height', value: '31' }),
-        el('span', { id: 'pt-height-val' })),
-      el('select', { id: 'pt-theme' }))
+      /* 键盘状态开关组：切到符号面板页时整组隐藏（app.js 的 syncPreviewPanelChrome） */
+      el('div', { class: 'pt-state-group', id: 'pt-state-group' },
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-shift' })),
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-composing' })),
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-ascii' })),
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-disabled' })),
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-split' })),
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-landscape' })),
+        el('input', { type: 'text', id: 'pt-status-text' }))),
+    el('div', { class: 'preview-toggles preview-toggles-geom' },
+      /* 几何滑杆组：切到符号页时**整组隐藏**（深浅下拉不在这一层，故保留） */
+      el('div', { class: 'pt-geom-sliders', id: 'pt-geom-sliders' },
+        el('label', null,
+          el('input', { type: 'range', id: 'pt-height', value: '31' }),
+          el('span', { id: 'pt-height-val' })),
+        /* 按键外观三项（对照 App「设置 → 键盘外观」；见 foxy-render-spec.md §2.7）。
+         * 范围与默认值必须与 index.html 一致，否则测试与真实页面行为会分叉。 */
+        el('label', null,
+          el('input', { type: 'range', id: 'pt-corner', min: '0', max: '24', value: '6' }),
+          el('span', { id: 'pt-corner-val' })),
+        el('label', null,
+          el('input', { type: 'range', id: 'pt-gap-h', min: '0', max: '16', value: '3' }),
+          el('span', { id: 'pt-gap-h-val' })),
+        el('label', null,
+          el('input', { type: 'range', id: 'pt-gap-v', min: '0', max: '16', value: '4' }),
+          el('span', { id: 'pt-gap-v-val' }))),
+      /* 深浅键盘下拉：与主题页槽位联动，故**不**放进 pt-state-group（符号页也保留） */
+      el('select', { id: 'pt-theme' },
+        el('option', { value: 'light' }, '浅色'),
+        el('option', { value: 'dark' }, '深色')))
   );
   const pStage = el('div', { class: 'preview-stage' }, el('div', { id: 'preview-kb', class: 'kb kb-dark' }));
   const pLegend = el('div', { class: 'preview-legend' },
     '角标说明：右上蓝色 = 长按提示 · 右上橙色 = 按住提示 · 底中 ⌄ = 长按弹出菜单 · 红色虚线框 = 引用无法解析 · 黄色框 = 选中按键');
   previewPanel.append(pToolbar, pStage, pLegend, el('div', { id: 'preview-meta', class: 'status' }));
 
-  /* 标签栏：4 个按钮（布局编辑 / 按键定义 / 动作与宏 / 弹出菜单）。
+  /* 标签栏：6 个按钮（布局编辑 / 按键定义 / 动作与宏 / 弹出菜单 / 主题 / 符号面板）。
+   * 弹出菜单、主题、符号面板是另外几类文档，视觉上有分隔（各自带专用类）。
    * 布局 JSON 卡片在「布局编辑」页内，不是独立标签页——见 AGENT.md §5.4。 */
   const tabs = el('div', { class: 'tabs' });
-  [['tab-layout', true], ['tab-keys', false], ['tab-actions', false], ['tab-popup', false]].forEach(([t, active]) => {
-    tabs.appendChild(el('button', { class: 'tab' + (t === 'tab-popup' ? ' tab-popup' : ''), 'data-tab': t }));
+  [['tab-layout', true, ''], ['tab-keys', false, ''], ['tab-actions', false, ''],
+    ['tab-popup', false, 'tab-popup'], ['tab-theme', false, 'tab-theme'],
+    ['tab-symbols', false, 'tab-symbols']].forEach(([t, active, extra]) => {
+    tabs.appendChild(el('button', { class: 'tab' + (extra ? ' ' + extra : ''), 'data-tab': t }));
   });
 
   /* 布局编辑面板：与 index.html 相同的卡片顺序与标题 */
@@ -614,7 +642,82 @@ function buildSkeleton() {
       el('textarea', { id: 'popup-json', class: 'json-editor' }),
       el('div', { id: 'popup-json-status', class: 'status' })));
 
-  main.append(previewPanel, tabs, tabLayout, tabKeys, tabActions, tabPopup);
+  /* 主题面板（与 index.html 同样的卡片顺序与标题）：
+   * 主题文件 → 主题校验 → 槽位全局配色 → 键类型配色 → 主题 JSON（最下） */
+  const tabTheme = el('section', { class: 'tabpanel', id: 'tab-theme' });
+  tabTheme.append(
+    el('details', { class: 'card', open: 'open' },
+      el('summary', null, '主题文件'),
+      el('div', { class: 'toolbar' },
+        el('button', { id: 'th-import' }),
+        el('input', { id: 'th-import-file', type: 'file' }),
+        el('button', { id: 'th-export' }),
+        el('select', { id: 'th-example' }),
+        el('button', { id: 'th-load-example' })),
+      el('div', { class: 'form-row form-inline' },
+        el('label', { class: 'mini-label' }, '主题名 name'),
+        el('input', { id: 'th-name', type: 'text', class: 'mini-input' })),
+      el('div', { class: 'form-row form-inline' },
+        el('label', { class: 'mini-label' }, '作者 author'),
+        el('input', { id: 'th-author', type: 'text', class: 'mini-input' })),
+      el('select', { id: 'th-slot' }),
+      el('select', { id: 'th-bordermode' }),
+      el('div', { id: 'th-status', class: 'status' })),
+    el('details', { class: 'card', open: 'open' },
+      el('summary', null, '主题校验'),
+      el('div', { id: 'th-validation', class: 'status' })),
+    el('details', { class: 'card', open: 'open' },
+      el('summary', null, '槽位全局配色（26 个字段）'),
+      el('div', { id: 'th-colors' })),
+    el('details', { class: 'card', open: 'open' },
+      el('summary', null, '键类型配色 keyTypes（LETTER / FUNCTION / ACTION）'),
+      el('div', { id: 'th-keytypes' })),
+    el('details', { class: 'card', open: 'open' },
+      el('summary', null, '主题 JSON（实时同步；可直接编辑后“应用”）'),
+      el('div', { class: 'toolbar' },
+        el('button', { id: 'th-json-apply' }),
+        el('button', { id: 'th-json-format' })),
+      el('textarea', { id: 'th-json', class: 'json-editor' }),
+      el('div', { id: 'th-json-status', class: 'status' })));
+
+  /* 符号面板（symbol-editor.js 负责内容；这里只保证容器存在）。
+   * 卡片顺序：符号面板文件 → 面板选项 → 分组与条目 → 符号面板 JSON（最下） */
+  const tabSymbols = el('section', { class: 'tabpanel', id: 'tab-symbols' });
+  tabSymbols.append(
+    el('details', { class: 'card', open: 'open' },
+      el('summary', null, '符号面板文件'),
+      el('div', { class: 'toolbar' },
+        el('button', { id: 'sym-import' }),
+        el('input', { id: 'sym-import-file', type: 'file' }),
+        el('button', { id: 'sym-export' }),
+        el('select', { id: 'sym-example' }),
+        el('button', { id: 'sym-load-example' })),
+      el('select', { id: 'sym-kind' }),
+      el('div', { id: 'sym-status', class: 'status' })),
+    el('details', { class: 'card', open: 'open' },
+      el('summary', null, '面板选项'),
+      el('input', { id: 'sym-multiline', type: 'checkbox' })),
+    el('details', { class: 'card', open: 'open' },
+      el('summary', null, '分组与条目'),
+      el('div', { class: 'def-toolbar' },
+        el('div', { class: 'def-tool-group' },
+          el('span', { class: 'search-wrap' },
+            el('input', { id: 'sym-filter', type: 'text', placeholder: '搜索：分组名 / 条目内容' }),
+            el('button', { id: 'sym-filter-clear', class: 'search-clear', hidden: 'hidden' }, '✕')),
+          el('button', { id: 'sym-search' }, '搜索')),
+        el('div', { class: 'def-tool-group' },
+          el('input', { id: 'sym-new', type: 'text' }),
+          el('button', { id: 'sym-add' }, '+ 新建分组'))),
+      el('div', { id: 'sym-list' })),
+    el('details', { class: 'card', open: 'open' },
+      el('summary', null, '符号面板 JSON（实时同步；可直接编辑后“应用”）'),
+      el('div', { class: 'toolbar' },
+        el('button', { id: 'sym-json-apply' }),
+        el('button', { id: 'sym-json-format' })),
+      el('textarea', { id: 'sym-json', class: 'json-editor' }),
+      el('div', { id: 'sym-json-status', class: 'status' })));
+
+  main.append(previewPanel, tabs, tabLayout, tabKeys, tabActions, tabPopup, tabTheme, tabSymbols);
   /* 顶栏：标题（项目名 + 其后的仓库图标按钮）+ 右侧网页配色三图标按钮与常驻撤销/重做（与 index.html 保持同步） */
   const header = el('header', { class: 'topbar' });
   header.appendChild(el('div', { class: 'topbar-main' },

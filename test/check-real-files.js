@@ -13,6 +13,9 @@ function load(f) {
 load('data.js');
 load('app.js');
 load('popup-editor.js');
+/* 符号文件（{multiLine, groups}）的校验要用 normalizeSymbolProfile/符号类别元数据，
+ * 所以在 symbol-editor.js 之后再取 FE —— 少了它，体检遇到符号文件会直接抛。 */
+load('symbol-editor.js');
 const FE = global.FE;
 
 /* 收集目标文件 */
@@ -39,9 +42,25 @@ for (const p of files) {
   try { JSON.parse(raw); } catch (e) { strictOk = false; }
   const parsed = rep.parseOk ? JSON.parse(rep.fixedText) : null;
   const isPopup = parsed && parsed.type === 'foxy.popup-profile';
+  /* 符号面板数据（{multiLine, groups}）**不是**布局 profile —— 若无此分支，
+   * 会被 normalizeProfile/validateProfile 当成"缺 layouts 的布局"而误报错误。
+   * 判定与 tools/build-examples.js 保持同一套（顶层有 groups 且无 layouts/schemas）。 */
+  const isSymbol = parsed && Array.isArray(parsed.groups) && !parsed.layouts && !parsed.schemas;
 
   let errs = [], warns = [];
-  if (parsed) {
+  if (parsed && isSymbol) {
+    const kinds = ['symbols', 'emoji', 'kaomoji'];
+    const kind = kinds.find(k => name.toLowerCase().indexOf(k) >= 0) ||
+      (/颜文字|kaomoji/i.test(name) ? 'kaomoji' : (/表情|emoji/i.test(name) ? 'emoji' : 'symbols'));
+    const norm = FE.normalizeSymbolProfile(kind, parsed);
+    /* 符号文件的校验：分组必须有可显示的名字，symbols 必须是字符串数组 */
+    norm.groups.forEach((g, gi) => {
+      const hasName = Object.keys(g.names || {}).some(k => String(g.names[k] || '').trim() !== '');
+      if (!hasName) errs.push('第 ' + (gi + 1) + ' 个分组没有任何语言的名字（App 端无法显示）');
+      if (!g.symbols.length) warns.push('第 ' + (gi + 1) + ' 个分组是空的');
+    });
+    if (!norm.groups.length) errs.push('没有任何分组');
+  } else if (parsed) {
     if (isPopup) {
       const r = FE.validatePopupProfile(FE.normalizePopupProfile(parsed));
       errs = r.errors; warns = r.warnings;
@@ -56,7 +75,12 @@ for (const p of files) {
   if (flag === '✗') bad++;
   const splitN = parsed && parsed.layouts
     ? Object.keys(parsed.layouts).filter(n => parsed.layouts[n] && parsed.layouts[n].split).length : 0;
-  console.log(flag + ' ' + name + (isPopup ? ' [弹出菜单]' : '') +
+  const symInfo = isSymbol
+    ? ' [符号 ' + (parsed.groups ? parsed.groups.length : 0) + ' 组 / ' +
+      (parsed.groups || []).reduce((a, g) => a + ((g && g.symbols) || []).length, 0) + ' 条' +
+      (parsed.multiLine === true ? ' / multiLine' : '') + ']'
+    : '';
+  console.log(flag + ' ' + name + (isPopup ? ' [弹出菜单]' : '') + symInfo +
     (splitN ? ' [split:' + splitN + ']' : '') +
     (strictOk ? '' : ' · 严格解析失败') +
     (rep.total ? ' · 可修复 ' + rep.total + ' 处' : '') +
