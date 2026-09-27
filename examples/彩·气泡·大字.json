@@ -225,7 +225,7 @@
     "qwerty.b": {
       "ref": "rime.b",
       "keyType": "LETTER",
-      "swipe": { "up": { "ref": "rime.B", "label": " " } },
+      "swipe": { "up": { "ref": "rime.B", "label": " ️✡ " } },
       "longPress": { "popupKey": "b" }
     },
     "qwerty.n": {
@@ -277,7 +277,7 @@
     },
     "qwerty.slash": {
       "ref": "rime.slash",
-      "keyType": "LETTER",
+      "keyType": "FUNCTION",
       "swipe": { "up": { "ref": "rime.Question" } },
       "longPress": { "ref": "rime.Question" }
     },
@@ -287,6 +287,7 @@
     },
     "qwerty.comma": {
       "ref": "rime.comma",
+      "keyType": "FUNCTION",
       "swipe": { "up": { "ref": "qwerty.comma.up" } },
       "longPress": { "ref": "rime.less" }
     },
@@ -311,7 +312,6 @@
       "id": "space",
       "statusLabel": "schema_name",
       "keyType": "LETTER",
-      "textSize": 16,
       "tap": { "ref": "rime.space", "popup": false },
       "swipe": {
         "up": { "ref": "qwerty.space.up" },
@@ -331,12 +331,13 @@
     },
     "qwerty.period": {
       "ref": "rime.period",
+      "keyType": "FUNCTION",
       "swipe": { "up": { "ref": "qwerty.period.up" } },
       "longPress": { "ref": "rime.greater" }
     },
     "qwerty.apostrophe": {
       "ref": "rime.apostrophe",
-      "keyType": "LETTER",
+      "keyType": "FUNCTION",
       "swipe": { "up": { "ref": "rime.ApostropheShift" }
       },
       "longPress": { "ref": "rime.ApostropheShift" }
@@ -353,7 +354,6 @@
 
     "qwerty.editor": {
       "label": "编辑",
-      "textSize": 16,
       "keyType": "FUNCTION",
       "weight": 1.5,
       "tap": { "type": "switch_layout", "layout": "editor" }
@@ -361,120 +361,111 @@
     "editor.default": {
       "ref": "foxy.LayoutDefault",
       "label": "ABC",
-      "textSize": 16,
       "keyType": "FUNCTION"
     },
     "editor.escape": {
       "label": "Esc",
-      "textSize": 16,
       "tap": { "type": "key", "key": "ESCAPE" }
     },
     "editor.home": {
-      "label": "HOME",
-      "textSize": 16,
+      "label": "行首",
       "tap": { "ref": "rime.Home" }
     },
     "editor.end": {
-      "label": "End",
-      "textSize": 16,
+      "label": "行尾",
       "tap": { "ref": "rime.End" }
     },
     "editor.pageUp": {
       "label": "PgUp",
-      "textSize": 16,
       "tap": { "ref": "rime.Page_Up" }
     },
     "editor.pageDown": {
       "label": "PgDn",
-      "textSize": 16,
       "tap": { "ref": "rime.Page_Down" }
     },
     "editor.delete": {
       "label": "Del",
-      "textSize": 16,
       "tap": { "ref": "rime.Delete" }
     },
     "editor.selectAll": {
       "ref": "foxy.SelectAll",
-      "label": "全选",
-      "textSize": 16
+      "keyType": "FUNCTION",
+      "label": "全选"
     },
     "editor.selectLeft": {
       "label": "选←",
-      "textSize": 16,
       "tap": { "type": "key", "key": "LEFT", "meta": ["SHIFT"] }
     },
     "editor.selectDown": {
       "label": "选↓",
-      "textSize": 16,
       "tap": { "type": "key", "key": "DOWN", "meta": ["SHIFT"] }
     },
     "editor.selectUp": {
       "label": "选↑",
-      "textSize": 16,
       "tap": { "type": "key", "key": "UP", "meta": ["SHIFT"] }
     },
     "editor.selectRight": {
       "label": "选→",
-      "textSize": 16,
       "tap": { "type": "key", "key": "RIGHT", "meta": ["SHIFT"] }
     },
     "editor.left": {
       "label": "←",
-      "textSize": 16,
       "tap": { "ref": "rime.Left" }
     },
     "editor.down": {
       "label": "↓",
-      "textSize": 16,
       "tap": { "ref": "rime.Down" }
     },
     "editor.up": {
       "label": "↑",
-      "textSize": 16,
       "tap": { "ref": "rime.Up" }
     },
     "editor.right": {
       "label": "→",
-      "textSize": 16,
       "tap": { "ref": "rime.Right" }
     },
     "editor.insert": {
       "label": "Ins",
-      "textSize": 16,
       "tap": { "ref": "rime.Insert" }
     },
     "editor.undo": {
       "ref": "foxy.Undo",
-      "label": "撤销",
-      "textSize": 16
+      "label": "撤销"
     },
     "editor.redo": {
       "ref": "foxy.Redo",
-      "label": "重做",
-      "textSize": 16
+      "label": "重做"
     },
     "editor.cut": {
       "ref": "foxy.Cut",
-      "label": "剪切",
-      "textSize": 16
+      "keyType": "FUNCTION",
+      "label": "剪切"
     },
     "editor.copy": {
       "ref": "foxy.Copy",
-      "label": "复制",
-      "textSize": 16
+      "keyType": "FUNCTION",
+      "label": "复制"
     },
     "editor.paste": {
       "ref": "foxy.Paste",
-      "label": "粘贴",
-      "textSize": 16
+      "keyType": "FUNCTION",
+      "label": "粘贴"
     },
     "editor.backspace": {
       "ref": "rime.BackSpace",
       "label": "⌫",
-      "textSize": 16,
       "keyType": "FUNCTION",
       "icon": "backspace"
+    },
+    "editor.toggle_locked": {
+      "ref": "foxy.Shift",
+      "label": "选择",
+      "keyType": "FUNCTION",
+      "tap": {
+        "type": "modifier",
+        "modifier": "SHIFT",
+        "state": "TOGGLE_LOCKED"
+      }
     }
   },
 
@@ -505,34 +496,34 @@
           "rows": [
             [
               {
-                "ref": "num.1"
+                "ref": "num.1", "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" } 
               },
               {
-                "ref": "num.2"
+                "ref": "num.2", "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" } 
               },
               {
-                "ref": "num.3"
+                "ref": "num.3", "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" } 
               },
               {
-                "ref": "num.4"
+                "ref": "num.4", "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" } 
               },
               {
-                "ref": "num.5"
+                "ref": "num.5", "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" } 
               },
               {
-                "ref": "num.6"
+                "ref": "num.6", "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" } 
               },
               {
-                "ref": "num.7"
+                "ref": "num.7", "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" } 
               },
               {
-                "ref": "num.8"
+                "ref": "num.8", "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" } 
               },
               {
-                "ref": "num.9"
+                "ref": "num.9", "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" } 
               },
               {
-                "ref": "num.0"
+                "ref": "num.0", "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" } 
               }
             ],
 
@@ -602,7 +593,7 @@
                 "ref": "qwerty.l"
               },
               {
-                "ref": "qwerty.semicolon"
+                "ref": "qwerty.semicolon", "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" } 
               },
               {
                 "ref": "foxy.Spacer",
@@ -613,6 +604,7 @@
             [
               {
                 "ref": "qwerty.shift",
+                "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" },
                 "override": {
                   "swipe": {
                     "up": { "type": "key", "key": "TAB", "meta": ["SHIFT"], "label": " " },
@@ -642,31 +634,31 @@
                 "ref": "qwerty.m"
               },
               {
-                "ref": "qwerty.backspace"
+                "ref": "qwerty.backspace", "colors": {"text": "#FFFFFFFF", "background": "#FFDE537D", "hintLeft": "#FFFFFFFF" } 
               }
             ],
 
             [
               {
-                "ref": "qwerty.layout"
+                "ref": "qwerty.layout", "colors": {"text": "#FF212121", "background": "#FFFFBE00", "hintTop": "#FF808080" } 
               },
               {
-                "ref": "qwerty.slash"
+                "ref": "qwerty.slash", "colors": {"text": "#FF212121", "background": "#FFEEEE00", "hintTop": "#FF808080" } 
               },
               {
-                "ref": "qwerty.comma"
+                "ref": "qwerty.comma", "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" } 
               },
               {
                 "ref": "qwerty.space"
               },
               {
-                "ref": "qwerty.period"
+                "ref": "qwerty.period", "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" } 
               },
               {
-                "ref": "qwerty.apostrophe"
+                "ref": "qwerty.apostrophe", "colors": {"text": "#FF212121", "background": "#FF52F7BD", "hintTop": "#FF808080" } 
               },
               {
-                "ref": "qwerty.enter"
+                "ref": "qwerty.enter", "colors": {"text": "#FFFFFFFF", "background": "#FF4876FF", "hint": "#FFFFFFFF" } 
               }
             ]
           ]
@@ -733,35 +725,97 @@
           "type": "rows",
           "rows": [
             [
-              { "ref": "editor.escape" },
-              { "ref": "editor.home" },
+              { "ref": "editor.selectAll", "keyType": "ACTION", "colors": {"text": "#FF212121", "background": "#FFEEEE00" } },
+              { "ref": "editor.undo", "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
               { "ref": "editor.up" },
-              { "ref": "editor.end" },
-              { "ref": "editor.delete" }
+              { "ref": "editor.redo", "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
+              { "ref": "editor.default", "override": { "label": "返回", "keyType": "ACTION" }, "colors": {"text": "#FFFFFFFF", "background": "#FFFFBE00" } }
             ],
             [
-              { "ref": "editor.selectAll" },
-              { "ref": "editor.selectLeft" },
-              { "ref": "editor.selectDown" },
-              { "ref": "editor.selectUp" },
-              { "ref": "editor.selectRight" }
-            ],
-            [
-              { "ref": "editor.pageUp" },
+              { "ref": "editor.cut", "keyType": "ACTION", "colors": {"text": "#FF212121", "background": "#FFEEEE00" } },
               { "ref": "editor.left" },
-              { "ref": "editor.down" },
+              { "ref": "editor.toggle_locked", "keyType": "ACTION", "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
               { "ref": "editor.right" },
-              { "ref": "editor.pageDown" }
+              { "ref": "rime.space", "override": { "label": "空格", "keyType": "ACTION" }, "longPress": { "repeat": true, "action": { "type": "key", "key": "SPACE" } }, "colors": {"text": "#FFFFFFFF", "background": "#FFFFBE00" } }
             ],
             [
-              { "ref": "editor.default" },
-              { "ref": "editor.insert" },
-              { "ref": "editor.undo" },
-              { "ref": "editor.redo" },
+              { "ref": "editor.copy", "keyType": "ACTION", "colors": {"text": "#FF212121", "background": "#FFEEEE00" } },
+              { "ref": "editor.home", "keyType": "FUNCTION", "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
+              { "ref": "editor.down" },
+              { "ref": "editor.end", "keyType": "FUNCTION", "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
+              { "ref": "rime.BackSpace", "override": { "label": "退格", "keyType": "ACTION" } , "longPress": { "repeat": true, "action": { "type": "key", "key": "BACKSPACE" } }, "colors": {"text": "#FFFFFFFF", "background": "#FFDE537D" } }
+            ],
+            [
+              { "ref": "editor.paste", "keyType": "ACTION", "colors": {"text": "#FF212121", "background": "#FFEEEE00" } },
+              { "ref": "editor.pageUp", "override": { "label": "上页" } },
+              { "ref": "rime.Tab", "keyType": "ACTION", "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
+              { "ref": "editor.pageDown", "override": { "label": "下页" } },
+              { "ref": "rime.Return", "override": { "label": "回车", "keyType": "ACTION" } , "longPress": { "repeat": true, "action": { "type": "key", "key": "ENTER" } }, "colors": {"text": "#FFFFFFFF", "background": "#FF4876FF" } }
+            ]
+          ]
+        }
+      ]
+    },
+
+
+
+    "editor2": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              { "ref": "editor.escape", "keyType": "FUNCTION" },
+              { "ref": "editor.selectAll" },
               { "ref": "editor.cut" },
               { "ref": "editor.copy" },
-              { "ref": "editor.paste" },
-              { "ref": "editor.backspace" }
+              { "ref": "editor.paste" }
+            ],
+            [
+              { "ref": "editor.pageUp", "keyType": "FUNCTION" },
+              { "ref": "editor.selectLeft" },
+              { "ref": "editor.selectUp" },
+              { "ref": "editor.selectDown" },
+              { "ref": "editor.selectRight" }
+            ],
+
+            [
+              { "ref": "editor.pageDown", "keyType": "FUNCTION" },
+              { "ref": "editor.left" },
+              { "ref": "editor.up" },
+              { "ref": "editor.down" },
+              { "ref": "editor.right" }
+            ],
+            [
+              { "ref": "editor.default", "keyType": "ACTION" },
+              { "ref": "editor.home", "keyType": "FUNCTION" },
+              { "ref": "editor.undo", "keyType": "FUNCTION" },
+              { "ref": "editor.delete", "keyType": "FUNCTION" },
+              { "ref": "editor.redo", "keyType": "FUNCTION" },
+              { "ref": "editor.end", "keyType": "FUNCTION" },
+              { "ref": "editor.backspace", "keyType": "ACTION" }
+            ]
+          ]
+        }
+      ]
+    },
+
+
+
+    "text_editor": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              { "ref": "foxy.LayoutDefault", "override": { "label": "返回", "keyType": "ACTION" }, "colors": {"text": "#FFFFFFFF", "background": "#FFFFBE00" } },
+              { "ref": "foxy.SelectAll", "override": { "label": "全选", "keyType": "FUNCTION" }, "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
+              { "ref": "foxy.Cut", "override": { "label": "剪切", "keyType": "FUNCTION" }, "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
+              { "ref": "foxy.Copy", "override": { "label": "复制", "keyType": "FUNCTION" }, "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
+              { "ref": "foxy.Paste", "override": { "label": "粘贴", "keyType": "FUNCTION" }, "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
+              { "ref": "rime.space", "override": { "label": "空格", "keyType": "FUNCTION" }, "longPress": { "repeat": true, "action": { "type": "key", "key": "SPACE" } }, "colors": {"text": "#FFFFFFFF", "background": "#FFFFBE00" } },
+              { "ref": "rime.BackSpace", "override": { "label": "退格", "keyType": "FUNCTION" } , "longPress": { "repeat": true, "action": { "type": "key", "key": "BACKSPACE" } }, "colors": {"text": "#FFFFFFFF", "background": "#FFDE537D" } },
+              { "ref": "rime.Return", "override": { "label": "回车", "keyType": "ACTION" } , "longPress": { "repeat": true, "action": { "type": "key", "key": "ENTER" } }, "colors": {"text": "#FFFFFFFF", "background": "#FF4876FF" }}
             ]
           ]
         }
@@ -778,40 +832,40 @@
           "rows": 5,
           "keys": [
 
-            { "column": 0, "row": 0, "label": "@", "tap": { "type": "text", "text": "@" }, "keyType": "FUNCTION" },
-            { "column": 0, "row": 1, "label": "&", "tap": { "type": "text", "text": "&" }, "keyType": "FUNCTION" },
-            { "column": 0, "row": 2, "label": ",", "tap": { "type": "text", "text": "," }, "keyType": "FUNCTION" },
-            { "column": 0, "row": 3, "label": "^", "tap": { "type": "text", "text": "^" }, "keyType": "FUNCTION" },
-            { "column": 0, "row": 4, "label": "%", "tap": { "type": "text", "text": "%" }, "keyType": "FUNCTION" },
+            { "column": 0, "row": 0, "label": "@", "tap": { "type": "text", "text": "@" }, "keyType": "FUNCTION" , "colors": {"text": "#FFFFFFFF", "background": "#FFFFBE00" } },
+            { "column": 0, "row": 1, "label": "&", "tap": { "type": "text", "text": "&" }, "keyType": "FUNCTION" , "colors": {"text": "#FF212121", "background": "#FFEEEE00" } },
+            { "column": 0, "row": 2, "label": ",", "tap": { "type": "text", "text": "," }, "keyType": "FUNCTION" , "colors": {"text": "#FF212121", "background": "#FFEEEE00" } },
+            { "column": 0, "row": 3, "label": "^", "tap": { "type": "text", "text": "^" }, "keyType": "FUNCTION" , "colors": {"text": "#FF212121", "background": "#FFEEEE00" } },
+            { "column": 0, "row": 4, "label": "%", "tap": { "type": "text", "text": "%" }, "keyType": "FUNCTION" , "colors": {"text": "#FF212121", "background": "#FFEEEE00" } },
 
-            { "column": 1, "row": 0, "label": "#", "tap": { "type": "text", "text": "#" }, "keyType": "FUNCTION" },
-            { "column": 1, "row": 1, "ref": "rime.KP_Add", "override": { "keyType": "FUNCTION" } },
-            { "column": 1, "row": 2, "ref": "rime.KP_Subtract", "override": { "keyType": "FUNCTION" } },
-            { "column": 1, "row": 3, "ref": "rime.KP_Multiply", "override": { "keyType": "FUNCTION" } },
-            { "column": 1, "row": 4, "ref": "rime.KP_Divide", "override": { "keyType": "FUNCTION" } },
+            { "column": 1, "row": 0, "label": "#", "tap": { "type": "text", "text": "#" }, "keyType": "FUNCTION" , "colors": {"text": "#FFFFFFFF", "background": "#FFFFBE00" } },
+            { "column": 1, "row": 1, "ref": "rime.KP_Add", "override": { "keyType": "FUNCTION" } , "colors": {"text": "#FF212121", "background": "#FF52F7BD" }  },
+            { "column": 1, "row": 2, "ref": "rime.KP_Subtract", "override": { "keyType": "FUNCTION" } , "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
+            { "column": 1, "row": 3, "ref": "rime.KP_Multiply", "override": { "keyType": "FUNCTION" } , "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
+            { "column": 1, "row": 4, "ref": "rime.KP_Divide", "override": { "keyType": "FUNCTION" } , "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
 
-            { "column": 2, "row": 0, "label": "()", "tap": { "macro": "bracket_pair1" }, "keyType": "FUNCTION" },
+            { "column": 2, "row": 0, "label": "()", "tap": { "macro": "bracket_pair1" }, "keyType": "FUNCTION" , "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
             { "column": 2, "row": 1, "ref": "rime.KP_1" },
             { "column": 2, "row": 2, "ref": "rime.KP_4" },
             { "column": 2, "row": 3, "ref": "rime.KP_7" },
             { "column": 2, "row": 4, "ref": "rime.KP_Equal" },
 
-            { "column": 3, "row": 0, "label": "[]", "tap": { "macro": "bracket_pair2" }, "keyType": "FUNCTION" },
+            { "column": 3, "row": 0, "label": "[]", "tap": { "macro": "bracket_pair2" }, "keyType": "FUNCTION" , "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
             { "column": 3, "row": 1, "ref": "rime.KP_2" },
             { "column": 3, "row": 2, "ref": "rime.KP_5" },
             { "column": 3, "row": 3, "ref": "rime.KP_8" },
             { "column": 3, "row": 4, "ref": "rime.KP_0" },
 
-            { "column": 4, "row": 0, "label": "{}", "tap": { "macro": "bracket_pair3" }, "keyType": "FUNCTION" },
+            { "column": 4, "row": 0, "label": "{}", "tap": { "macro": "bracket_pair3" }, "keyType": "FUNCTION" , "colors": {"text": "#FF212121", "background": "#FF52F7BD" } },
             { "column": 4, "row": 1, "ref": "rime.KP_3" },
             { "column": 4, "row": 2, "ref": "rime.KP_6" },
             { "column": 4, "row": 3, "ref": "rime.KP_9" },
             { "column": 4, "row": 4, "ref": "rime.KP_Decimal" },
 
-            { "column": 5, "row": 0, "ref": "foxy.LayoutDefault" },
-            { "column": 5, "row": 1, "ref": "rime.space", "label": "␣" , "longPress": { "label": "␣", "repeat": true, "action": { "type": "key", "key": "SPACE" } } },
-            { "column": 5, "row": 2, "ref": "rime.BackSpace" , "longPress": { "label": "⌫", "repeat": true, "action": { "type": "key", "key": "BACKSPACE" } } },
-            { "column": 5, "row": 3, "rowSpan": 2, "ref": "rime.KP_Enter" , "longPress": { "repeat": true, "action": { "type": "key", "key": "ENTER" } } , "override": { "keyType": "ACTION", "icon": "enter" } }
+            { "column": 5, "row": 0, "ref": "foxy.LayoutDefault" , "colors": {"text": "#FFFFFFFF", "background": "#FFFFBE00" } },
+            { "column": 5, "row": 1, "ref": "rime.space", "label": "␣" , "colors": {"text": "#FFFFFFFF", "background": "#FFFFBE00" } , "longPress": { "label": "␣", "repeat": true, "action": { "type": "key", "key": "SPACE" } } },
+            { "column": 5, "row": 2, "ref": "rime.BackSpace" , "colors": {"text": "#FFFFFFFF", "background": "#FFDE537D" } , "longPress": { "label": "⌫", "repeat": true, "action": { "type": "key", "key": "BACKSPACE" } } },
+            { "column": 5, "row": 3, "rowSpan": 2, "ref": "rime.KP_Enter" , "colors": {"text": "#FFFFFFFF", "background": "#FF4876FF" } , "longPress": { "repeat": true, "action": { "type": "key", "key": "ENTER" } } , "override": { "keyType": "ACTION", "icon": "enter" } }
           ]
         }
       ]

@@ -15,7 +15,11 @@
     "DY.Copy": { "type": "key", "key": "C", "meta": ["CTRL"] },
     "DY.Paste": { "type": "key", "key": "V", "meta": ["CTRL"] },
 
+    "DY.BianMa": { "type": "key", "key": "ENTER", "meta": ["CTRL", "SHIFT"] },
+
     "DY.Layout_editor": { "type": "switch_layout", "layout": "editor" },
+    "DY.Layout_editor2": { "type": "switch_layout", "layout": "editor2" },
+    "DY.text_editor": { "type": "app", "command": "text_editor" },
     "DY.data_directory": { "type": "app", "command": "data_directory_list" }
 
   },
@@ -59,8 +63,8 @@
       "x": { "normal": [ { "action": "DY.Cut", "label": "剪切" }, "x", "ẋ", "ẍ", "ᶍ"], "shifted": [ { "action": "DY.Cut", "label": "剪切" }, "X", "Ẋ", "Ẍ", "Ꭓ"] },
       "c": { "normal": [ { "action": "DY.Copy", "label": "复制" }, "c", "ç", "ć", "ĉ", "č", "ċ", "ḉ", "ȼ"], "shifted": [ { "action": "DY.Copy", "label": "复制" }, "C", "Ç", "Ć", "Ĉ", "Č", "Ċ", "Ḉ", "Ȼ"] },
       "v": { "normal": [ { "action": "DY.Paste", "label": "粘贴" }, "v", "ṽ", "ṿ", "ʋ"], "shifted": [ { "action": "DY.Paste", "label": "粘贴" }, "V", "Ṽ", "Ṿ", "Ʋ"] },
-      "b": { "normal": ["b", "ƀ", "ƃ", "ƅ", "ḃ", "ḅ", "ḇ", "ɓ"], "shifted": ["B", "Ƀ", "Ƃ", "Ƅ", "Ḃ", "Ḅ", "Ḇ", "Ɓ"] },
-      "n": { "normal": [ { "action": "DY.Layout_editor", "label": "编辑" }, "n", "ń", "ñ", "ņ", "ň", "ŉ", "ŋ", "ṅ", "ṇ", "ṉ", "ṋ", "ɲ"], "shifted": [ { "action": "DY.Layout_editor", "label": "编辑" }, "N", "Ń", "Ñ", "Ņ", "Ň", "ŉ", "Ŋ", "Ṅ", "Ṇ", "Ṉ", "Ṋ", "Ɲ"] },
+      "b": { "normal": [ { "action": "DY.BianMa", "label": "编码" }, "b", "ƀ", "ƃ", "ƅ", "ḃ", "ḅ", "ḇ", "ɓ"], "shifted": [ { "action": "DY.BianMa", "label": "编码" }, "B", "Ƀ", "Ƃ", "Ƅ", "Ḃ", "Ḅ", "Ḇ", "Ɓ"] },
+      "n": { "normal": [ { "action": "DY.text_editor", "label": "💠" }, { "action": "DY.Layout_editor", "label": "辑" }, { "action": "DY.Layout_editor2", "label": "编" }, "n", "ń", "ñ", "ņ", "ň", "ŉ", "ŋ", "ṅ", "ṇ", "ṉ", "ṋ", "ɲ"], "shifted": [ { "action": "DY.text_editor", "label": "💠" }, { "action": "DY.Layout_editor", "label": "辑" }, { "action": "DY.Layout_editor2", "label": "编" }, "N", "Ń", "Ñ", "Ņ", "Ň", "ŉ", "Ŋ", "Ṅ", "Ṇ", "Ṉ", "Ṋ", "Ɲ"] },
       "m": { "normal": [ { "action": "DY.data_directory", "label": "方案" }, "m", "ḿ", "ṁ", "ṃ", "ɱ"], "shifted": [ { "action": "DY.data_directory", "label": "方案" }, "M", "Ḿ", "Ṁ", "Ṃ", "Ɱ"] }
     }
   }
