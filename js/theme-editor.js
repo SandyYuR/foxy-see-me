@@ -46,16 +46,21 @@ FE.THEME_KEYTYPE_FIELDS = [
 ];
 
 /* 颜色值解析宽容：接受 #RGB / #ARGB / #RRGGBB / #AARRGGBB（App 端同样宽容），
- * 其他长度视为无效。导出统一 #AARRGGBB。 */
-FE.THEME_COLOR_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+ * 其他长度视为无效。导出统一 #AARRGGBB。
+ * ⚠️ **前导 `#` 是可选的** —— App 端 `uk.java:267` 是
+ * `lu0.N(lu0.X(str), "#")`，即"去首尾空白后**无条件剥掉前导 #**"，
+ * 所以 `"FFFFFF"` 与 `"#FFFFFF"` 在手机上都合法。
+ * 编辑器早先强制要求 `#`，会把 App 能吃的值误报成非法。 */
+FE.THEME_COLOR_RE = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
 /* 颜色 → 规范 #AARRGGBB（非法返回 null）。#RGB 补成 #FFRRGGBB，
- * #ARGB 的 alpha 与各通道按位复制（与 CSS 简写展开规则一致）。 */
+ * #ARGB 的 alpha 与各通道按位复制（与 CSS 简写展开规则一致）。
+ * 省略 # 的写法同样接受（见上方 THEME_COLOR_RE 注释）。 */
 FE.normalizeThemeColor = function (v) {
   if (typeof v !== 'string') return null;
-  var t = v.trim();
-  if (!FE.THEME_COLOR_RE.test(t)) return null;
-  var h = t.slice(1).toUpperCase();
+  var m = v.trim().match(FE.THEME_COLOR_RE);
+  if (!m) return null;
+  var h = m[1].toUpperCase();
   function dup(s) { return s.charAt(0) + s.charAt(0) + s.charAt(1) + s.charAt(1) + s.charAt(2) + s.charAt(2); }
   if (h.length === 3) return '#FF' + dup(h);
   if (h.length === 4) return '#' + h.charAt(0) + h.charAt(0) + dup(h.slice(1));
@@ -93,15 +98,26 @@ var BUILTIN_LIGHT = {
   preeditBackgroundColor: '#CCFFFFFF', popupTextColor: '#FF212121', popupBackgroundColor: '#FFEEEEEE',
   popupBorderColor: '#FFD0D0D0', voiceWaveColor: '#FF4285F4', accentColor: '#FF4285F4'
 };
-/* 内置默认的 keyTypes 只给 FUNCTION / ACTION（LETTER 走回落链到全局字段） */
+/* 内置默认的 keyTypes 只给 FUNCTION / ACTION（LETTER 走回落链到全局字段）。
+ *
+ * ⚠️ 取值**必须是 App 内置默认的真实值**，不能凭观感补全 —— 它们是「新建主题」的初值，
+ * 也是「未导入主题」时预览 keyTypes 级的兜底，写错就直接表现为预览与手机不一致。
+ *
+ * 来源：`xw0.java:159`（dark）/ `xw0.java:190`（light）里 `u40` 的构造参数直接解码
+ * （`u40` 合成构造器 `u40.java:17-19` 的位掩码给的是**字段下标**：
+ *  bit0→a(text) / bit1→b(background) / bit2→c(pressed) / bit5→f(hint)，
+ *  置位即该字段为 null = **继承**该槽位的全局色）。
+ * 即 App 内置只显式给了下表这些字段，**其余一律 null（继承）** ——
+ * 所以这里也**不能**自行填 text/border/shadow：虽然当前取值恰好与继承值相同，
+ * 但一旦内置默认色调整，多写的值就会与手机分叉。 */
 var BUILTIN_KEYTYPES = {
   dark: {
-    FUNCTION: { text: '#FFFAFAFA', background: '#FF3A3A3A', pressed: '#33FFFFFF', border: '#1FFFFFFF', shadow: '#FF252525', hint: '#FFB8B8B8' },
-    ACTION: { text: '#FFFFFFFF', background: '#FF5E97F6', pressed: '#33FFFFFF', border: '#1FFFFFFF', shadow: '#FF252525', hint: '#FFB8B8B8' }
+    FUNCTION: { background: '#FF373737', pressed: '#33FFFFFF', hint: '#FFB8B8B8' },
+    ACTION: { text: '#FFFFFFFF', background: '#FF5E97F6', pressed: '#FF4A85E4', hint: '#B3FFFFFF' }
   },
   light: {
-    FUNCTION: { text: '#FF212121', background: '#FFE4E4E4', pressed: '#1F000000', border: '#1F000000', shadow: '#FFC2C2C2', hint: '#FF808080' },
-    ACTION: { text: '#FFFFFFFF', background: '#FF4285F4', pressed: '#1F000000', border: '#1F000000', shadow: '#FFC2C2C2', hint: '#FF808080' }
+    FUNCTION: { background: '#FFE1E1E1', pressed: '#1F000000', hint: '#FF808080' },
+    ACTION: { text: '#FFFFFFFF', background: '#FF4285F4', pressed: '#FF3B78E7', hint: '#B3FFFFFF' }
   }
 };
 
@@ -138,6 +154,50 @@ FE.themeNewProfile = function () {
     light: FE.themeBuiltinSlot('light'),
     dark: FE.themeBuiltinSlot('dark')
   };
+};
+
+/* 主题名 → 文件名（基线 §1.1.1，App 端 `uk.java:230-252` 的逐字对应实现）。
+ *
+ * 规则：
+ *   1. 先对 name 去首尾空白（`lu0.X`）；
+ *   2. 结果**全为空白** → 文件名兜底 `theme`（`lu0.I` 全空白判定）；
+ *   3. 逐字符转义——`%` `\` `/` `:` `*` `?` `"` `<` `>` `|` 与所有
+ *      **码位 < 0x20 的控制字符** → `%` + **4 位十六进制**（左侧补 0）；
+ *   4. 追加 `.json`。
+ *
+ * ⚠️ 十六进制是**小写**：App 端是 `Integer.toString(charAt, 16)`
+ * （`uk.smali` 的 `h()` 内 `invoke-static {v2, v3}, Ljava/lang/Integer;->toString(II)`，
+ * v3=0x10）+ `lu0.L(4, …)` 只负责左补 '0'（`lu0.java:186-212`），
+ * 全程**没有** `toUpperCase`（该方法的 smali 里 grep 不到）。
+ * Java 的 `Integer.toString(n, 16)` 产出小写，故 `name="a/b"` → `a%002fb.json`。
+ * （基线 §1.1.1 写作"大写"、例子给 `%002F`，与反编译源码不符；此处以源码为准。）
+ *
+ * ⚠️ 为什么必须照这条实现、不能自己另发明一套（如把 `/` 换成 `_`）：
+ * 文件名与主题名**不同源**的话，用户把文件放进 `frontend/themes/` 后，
+ * App 按 `name` 反推文件名去扫描，就会找不到这份主题 —— 表现为"设置了却不生效"。
+ * 例：`name = "a/b"` → 文件名 `a%002Fb.json`。
+ *
+ * 注意：编辑器**不阻止**用户在 name 里用这些字符（App 也不阻止），
+ * 只是导出时按同一条规则算出文件名，并在界面上把结果告诉用户。 */
+FE.themeFileNameFor = function (name) {
+  var s = (name == null ? '' : String(name));
+  /* 与 App `lu0.X` 同口径：去首尾空白。用 trim 覆盖 Unicode 空白即可
+   * （App 的 oy0.G 判 Character.isWhitespace，二者对本场景等价）。 */
+  var t = s.trim();
+  /* 全为空白（含空串）→ 兜底 "theme" */
+  if (t === '') t = 'theme';
+  var out = '';
+  for (var i = 0; i < t.length; i++) {
+    var ch = t.charAt(i);
+    var code = t.charCodeAt(i);
+    if (ch === '%' || ch === '\\' || ch === '/' || ch === ':' || ch === '*' ||
+      ch === '?' || ch === '"' || ch === '<' || ch === '>' || ch === '|' || code < 0x20) {
+      out += '%' + code.toString(16).padStart(4, '0');
+    } else {
+      out += ch;
+    }
+  }
+  return out + '.json';
 };
 
 /* ---------------- 归一化 ----------------
@@ -185,10 +245,14 @@ function normalizeColorMap(map, known) {
 }
 
 /* ---------------- 校验 ----------------
- * **只断能确证的事**（宁可少报，不要乱报）：
- *   err —— type 不对（App 直接不扫描）、槽位不是对象、颜色值不合正则；
- *   warn —— name 空、槽位缺失、keyTypes 缺分组 / 缺字段 / 含未识别键名。
- * 每个 err 都会让这份主题在 App 端不可用，所以宁可降级成 warn。 */
+ * **只断能确证的事**（宁可少报，不要乱报），判 err 的唯一标准是
+ * 「App 端会不会因此整份主题不生效」（`uk.a` 里解析失败的主题会被静默跳过）：
+ *   err —— type 不对（`uk.c:93` 直接返回 null）、**name 全空白**（`uk.e:159-162`
+ *          判无效）、**槽位缺失**（`uk.c:100/104` 的 getJSONObject 抛异常）、
+ *          槽位/keyTypes 不是对象、颜色值非法；
+ *   warn —— 槽位没给任何颜色字段（这层才回落内置默认）、keyTypes 缺分组 /
+ *          缺字段 / 含未识别键名。
+ * 拿不准的一律 warn，别急着 err —— 一个 err 会让整份主题被判为不可用。 */
 FE.validateThemeProfile = function (p) {
   var errors = [], warnings = [];
   function err(m) { errors.push(m); }
@@ -201,21 +265,42 @@ FE.validateThemeProfile = function (p) {
     err('type 必须为 "foxy.keyboard-theme"，当前为 ' + JSON.stringify(p.type));
   }
   if (typeof p.name !== 'string' || p.name.trim() === '') {
-    warn('name 缺失或为空 —— App 以「name 去空白后非空」为扫描条件，且文件名 = name + .json');
+    /* ⚠️ 是 **err** 不是 warn：App 端 `uk.java:97-99` 取 name 去空白后，
+     * `uk.e()` 在 :159-162 用 `lu0.I(名字)` 判"是否全为空白"，全空白（含空串）
+     * 直接返回 **null** = 整份主题**无效**；再叠加扫描条件要求 name 非空
+     * （`uk.java:25-39`），空 name 的主题在手机上根本不生效。
+     * 基线 §1.1.1 也明确"编辑器应把空 name 判为错误"。 */
+    err('name 缺失或为空 —— App 的扫描条件要求 name 去空白后非空（空 name 的主题不会被加载），' +
+      '且文件名 = name 转义 + .json');
   }
 
   ['light', 'dark'].forEach(function (slot) {
     var s = p[slot];
-    if (s == null) { warn(slot + ' 槽位缺失 —— App 会回退内置默认主题'); return; }
+    if (s == null) {
+      /* ⚠️ 是 **err** 不是 warn：App 用 `getJSONObject("light"/"dark")`
+       * （`uk.java:100` / `:104`）—— **键缺失会抛异常**，被 `uk.e()` 的 catch
+       * 吞掉后返回 null = 整份主题**失效**。它**不会**回退内置默认主题
+       * （回退内置只发生在"字段缺"和"槽位对象为空"这两层，见 `uk.d`）。 */
+      err(slot + ' 槽位缺失 —— App 用 getJSONObject 读取，缺键会抛异常导致整份主题失效（不会回退内置默认）');
+      return;
+    }
     if (!FE.isPlainObject(s)) { err(slot + ' 必须是对象'); return; }
+    /* 槽位对象**存在但没给任何颜色字段** → 这一层才是真正回落内置默认
+     * （`uk.d` 以 `xw0.i()/e()` 为基逐字段合并，见 themeSlotColors）。*/
     var filled = FE.THEME_COLOR_FIELDS.filter(function (f) { return s[f] != null; });
     if (!filled.length) {
-      warn(slot + ' 槽位没有给出任何颜色字段 —— 该槽位会整块回退内置默认主题');
+      warn(slot + ' 槽位没有给出任何颜色字段 —— 该槽位的 26 色会全部采用 App 内置默认主题的取值');
     }
     checkColorMap(s, slot, err, warn, false);
     checkKeyTypes(s.keyTypes, slot + '.keyTypes', err, warn);
   });
   if (p.keyTypes != null) {
+    /* ⚠️ 顶层 keyTypes **App 完全不读** —— `uk.d` 只在**槽位对象**上取 keyTypes
+     * （`uk.java:112`，入参来自 `uk.c:100/104` 的 getJSONObject("light"/"dark")）。
+     * 所以放在顶层等于白写：手机上不生效。编辑器把它保留在文件里（是用户数据），
+     * 但要明确提示它无效，别让用户以为配上了。 */
+    warn('顶层 keyTypes **不会被 App 读取**（App 只在 light / dark 槽位内读 keyTypes）' +
+      '—— 该配置在手机上不生效，请移到对应槽位里');
     checkKeyTypes(p.keyTypes, 'keyTypes', err, warn);
   }
   return { errors: errors, warnings: warnings };
@@ -257,7 +342,11 @@ function checkKeyTypes(kt, where, err, warn) {
   });
   FE.THEME_KEY_TYPE_NAMES.forEach(function (g) {
     if (kt[g] == null) {
-      warn(where + ' 缺 ' + g + ' 分组 —— 该类按键将回落该槽位的全局 26 色字段');
+      /* ⚠️ 措辞必须准确：分组**整体缺失**时，App 保留的是**内置默认的同名分组**，
+       * 而**不是**回落全局 26 色 —— `uk.java:133-137` 把用户给的分组 putAll 到
+       * "内置默认 keyTypes"的副本上，没写的分组仍是内置分组。
+       * 只有**分组存在但其字段为 null** 时，该字段才回落全局 26 色（`uk.java:121`）。 */
+      warn(where + ' 缺 ' + g + ' 分组 —— 该类按键将采用 App 内置默认主题的 ' + g + ' 配色');
     }
   });
 }
@@ -328,10 +417,48 @@ FE.themeSlotColors = function (slot) {
   var p = st.themeProfile;
   slot = slot || st.themeSlot || 'light';
   if (slot !== 'dark') slot = 'light';
-  if (!FE.isPlainObject(p)) return FE.themeBuiltinSlot(slot);
+  var builtin = FE.themeBuiltinSlot(slot);
+  if (!FE.isPlainObject(p) || !FE.isPlainObject(p[slot])) return builtin;
   var s = p[slot];
-  if (!FE.isPlainObject(s)) return FE.themeBuiltinSlot(slot);
-  return s;
+  /* ⭐ **逐字段**与内置默认合并（`uk.java:142-149`）——不是"有主题就整块用主题"。
+   *
+   * App 的解析是：以内置默认主题为基（`xw0.i()` / `xw0.e()`），对 26 个字段逐个
+   * 判断"JSON 里有没有这个键且非 null"，有就用它、**没有就保留内置默认值**
+   * （非法值解析失败也保留内置默认，`uk.java:145-148`）。
+   *
+   * 为什么必须照做：用户写一份只给了几个字段的主题（如只改键盘底色），
+   * 手机上其余字段仍是**内置默认色**，而编辑器若直接返回用户那份稀疏对象，
+   * 缺失字段就落到编辑器自己的 CSS 兜底色 —— 预览与手机明显不同，
+   * 用户会以为"漏了字段就变透明/变默认灰"。 */
+  var out = {};
+  FE.THEME_COLOR_FIELDS.forEach(function (f) {
+    var n = FE.normalizeThemeColor(s[f]);
+    out[f] = (s[f] != null && n) ? n : builtin[f];
+  });
+  /* keyTypes：**分组级替换**再由内置补缺（`uk.java:121-137`）。
+   *
+   * App 对每个键类型分组都是**整组重建**一个 `u40`（`uk.java:121` 一次 new u40），
+   * 再 `putAll` 到"内置默认 keyTypes"的副本上（`:133-137`）——所以：
+   *   · 某分组**整体缺失**（如只写了 FUNCTION）→ 该分组仍是**内置分组**
+   *     （ACTION 键在手机上显示内置蓝，不是全局 26 色的背景）；
+   *   · 分组**存在但字段缺**（如 FUNCTION 只给 background）→ 该字段为 null，
+   *     走 §1.4 的回落链到**全局 26 色**，而**不是**继承内置同组的值。
+   * 这两种情形必须分开处理 —— 早先一律回落全局 26 色，ACTION 键的预览色就是错的。 */
+  var kt = {};
+  var bkt = FE.isPlainObject(builtin.keyTypes) ? builtin.keyTypes : {};
+  Object.keys(bkt).forEach(function (g) { kt[g] = bkt[g]; });
+  if (FE.isPlainObject(s.keyTypes)) {
+    Object.keys(s.keyTypes).forEach(function (g) {
+      if (!FE.isPlainObject(s.keyTypes[g])) return;
+      var g2 = {};
+      FE.THEME_KEYTYPE_FIELDS.forEach(function (f) {
+        if (s.keyTypes[g][f] != null) g2[f] = s.keyTypes[g][f];
+      });
+      kt[g] = g2;
+    });
+  }
+  out.keyTypes = kt;
+  return out;
 };
 
 /* 键类型 → 该按键的**主题兜底基色**（映射见基线 §1.4）。
@@ -363,10 +490,10 @@ FE.themeKeyColors = function (keyType) {
     hintUp: g('keyHintTextTopColor'), hintDown: g('keyHintTextBottomColor'),
     hintLeft: g('keyHintTextLeftColor'), hintRight: g('keyHintTextRightColor')
   };
-  var kt = null;
-  if (FE.isPlainObject(slotObj.keyTypes)) kt = slotObj.keyTypes;
-  else if (FE.isPlainObject((FE.state || {}).themeProfile) &&
-    FE.isPlainObject(FE.state.themeProfile.keyTypes)) kt = FE.state.themeProfile.keyTypes;
+  /* ⚠️ keyTypes **只取槽位内的** —— App `uk.d:112` 是在槽位对象上 `optJSONObject("keyTypes")`，
+   * 顶层 keyTypes 根本读不到（color-source.js 的 themeKeyTypeGroup 已同步去掉那条回落）。
+   * 早先这里还回落 `themeProfile.keyTypes`，会让预览显示手机上不会出现的颜色。 */
+  var kt = FE.isPlainObject(slotObj.keyTypes) ? slotObj.keyTypes : null;
   var grp = (kt && FE.isPlainObject(kt[String(keyType || 'LETTER')])) ? kt[String(keyType || 'LETTER')] : null;
   if (grp) {
     FE.THEME_KEYTYPE_FIELDS.forEach(function (f) {
@@ -734,8 +861,10 @@ function renderThemeJson() {
 function renderThemeToolbar() {
   var slotSel = $('th-slot');
   if (slotSel) slotSel.value = state.themeSlot || 'light';
-  var bm = $('th-bordermode');
-  if (bm) bm.value = state.keyBorderEnabled === false ? 'off' : 'on';
+  /* NOTE: 这里原有一个 `#th-bordermode`（键边框）下拉的回填。它已随需求**移到
+   * 预览键盘的滑杆行**（`#pt-border` / `#pt-stroke`）—— 因为 `key_border_enabled`
+   * / `key_stroke_enabled` 是 App 的**全局设置**（SharedPreferences `foxy_theme`），
+   * 不属于主题文件内容，摆在「主题文件」卡片里会让人误以为要写进主题 JSON。 */
   var nm = $('th-name');
   if (nm && document.activeElement !== nm) nm.value = FE.isPlainObject(tp()) && tp().name != null ? String(tp().name) : '';
   var au = $('th-author');
@@ -836,18 +965,30 @@ FE.loadThemeProfileText = function (text, fileName) {
 function exportTheme() {
   if (!FE.isPlainObject(tp())) { setThemeStatus('尚未导入主题，无法导出', 'error'); return; }
   var text = FE.serializeThemeProfile(tp());
+  /* ⭐ 导出文件名**按当前 name 现算**（基线 §1.1.1）—— 不能只用 themeFileName。
+   *
+   * 原因：App 是按主题 JSON 里的 `name` 反推文件名去扫描 `frontend/themes/` 的
+   * （`uk.java:230-252`）。若用户导入了一份 `foo.json`、然后把 name 改成 `bar`
+   * 再导出，文件名必须跟着变成 `bar.json`（含转义）；否则 App 找 `bar.json`
+   * 找不到，表现为"主题放进去了却不生效"。
+   * `themeFileName` 只在拿不到 name 时兜底（如未填 name 的新建主题）。 */
+  var p = tp();
+  var outName = (typeof p.name === 'string' && p.name.trim() !== '')
+    ? FE.themeFileNameFor(p.name)
+    : (state.themeFileName || 'theme.json');
+  state.themeFileName = outName;
   if (FE.downloadJson) {
-    FE.downloadJson(text, state.themeFileName || 'theme.json');
+    FE.downloadJson(text, outName);
   } else {
     var blob = new Blob([text], { type: 'application/json;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = state.themeFileName || 'theme.json';
+    a.download = outName;
     document.body.appendChild(a);
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   }
-  setThemeStatus('已导出 ' + (state.themeFileName || 'theme.json'), 'ok');
+  setThemeStatus('已导出 ' + outName, 'ok');
 }
 
 /* ---------------- 初始化 ---------------- */
@@ -938,12 +1079,30 @@ function initThemeTab() {
 
   var nameInp = $('th-name');
   if (nameInp) {
+    /* 派生文件名回显：App 是按 name 反推文件名去扫描的（uk.java:230-252），
+     * 所以名字里含 / : * 等字符时文件名与主题名**不再字面相同**。
+     * 这里实时把"实际会导出成什么文件名"显示出来，用户才不用猜转义结果。 */
+    var nameHint = h('span', { class: 'status dim', id: 'th-name-file' });
+    nameInp.parentNode.appendChild(nameHint);
+    var refreshNameHint = function () {
+      var v = FE.isPlainObject(tp()) && typeof tp().name === 'string' ? tp().name : '';
+      if (v.trim() === '') {
+        nameHint.textContent = '（name 为空 —— App 不会扫描该主题；文件名将兜底为 theme.json）';
+        return;
+      }
+      var fn = FE.themeFileNameFor(v);
+      nameHint.textContent = '导出文件名：' + fn +
+        (fn === v.trim() + '.json' ? '' : '（name 含需转义字符，文件名已按 App 规则转义）');
+    };
+    refreshNameHint();
+    FE.refreshThemeNameHint = refreshNameHint;
     nameInp.addEventListener('change', function () {
       FE.mutate(function () {
         var p = ensureTheme();
         if (nameInp.value.trim() === '') delete p.name;
         else p.name = nameInp.value.trim();
       });
+      refreshNameHint();
       setThemeStatus('主题名已更新', 'ok');
     });
   }
@@ -968,11 +1127,8 @@ function initThemeTab() {
     /* 只切槽位不动数据：不算一次编辑，不压历史，但要重画预览与表单 */
     if (FE.renderAll) FE.renderAll();
   });
-  var bmSel = $('th-bordermode');
-  bmSel.addEventListener('change', function () {
-    state.keyBorderEnabled = bmSel.value !== 'off';
-    if (FE.renderAll) FE.renderAll();
-  });
+  /* NOTE: 键边框/键描边的 change 监听已随控件移到 app.js 的预览滑杆行
+   * （`FE.applyGlobalToggles`），这里不再接线。 */
 
   /* JSON 应用 / 格式化 */
   var ta = $('th-json');

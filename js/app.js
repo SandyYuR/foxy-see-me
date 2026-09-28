@@ -30,6 +30,19 @@ FE.deepClone = deepClone;
 FE.omit = omit;
 FE.clamp = clamp;
 
+/* `switch_layout` 的**保留布局名**（基线 foxy-app-baseline.md §2.4）。
+ *
+ * 下游 `cv.I(String)` 按字符串分派时**优先把这三个名字当作符号 / emoji / 颜文字面板**，
+ * 即使该动作来自 `switch_layout` 也一样（`cv.java:821-873`、`fo.java:587-597`）。
+ * 后果：用户**无法**通过 `switch_layout` 打开一个名字恰好叫 symbols/emoji/kaomoji
+ * 的自定义布局 —— 请求会被符号面板分支截胡（基线 §2.4 已确认此副作用）。
+ *
+ * 因此这份清单两处都用：
+ *   · 校验 `switch_layout` 时**豁免**"目标不存在"（这三个名字合法，指面板而非布局）；
+ *   · 布局**新建 / 复制 / 重命名**时**直接拦下**并说明原因 —— 否则用户能造出一份
+ *     永远打不开的布局，且要到手机上才发现。 */
+FE.RESERVED_LAYOUT_NAMES = ['symbols', 'emoji', 'kaomoji'];
+
 /* ================================================================
  * 二、编辑器状态
  * ================================================================ */
@@ -81,6 +94,27 @@ var state = {
    * ⚠️ 这是 App 的全局设置，**不写进主题 JSON**；这里只为让预览的键盘底色
    * 精确建模（为真用 altKeyboardColor，为假回落 keyboardColor，§1.4）。 */
   keyBorderEnabled: true,
+  /* 键描边开关（基线 §1.3 的 key_stroke_enabled，默认 false）。
+   * 与 keyBorderEnabled 组合出**三种**画法（`v40.smali` 的 `b()` 已逐分支确证）：
+   *   B &&  C → `setStroke(1dp, keyBorderColor)`         描边
+   *   B && !C → LayerDrawable[阴影层 + 纯色键面]          **没有 keyBorderColor 边框**（App 默认）
+   *   !B      → 纯色圆角块                               无边框无阴影
+   * ⚠️ 只有 **B && C** 才画 keyBorderColor 边框 —— 早先"只要 B 就画"是错的
+   * （那会在 App 默认外观上凭空多出一圈边框）。 */
+  keyStrokeEnabled: false,
+  /* ---- 滑动提示开关（App「设置 → 主题效果」；SharedPreferences `foxy_theme`）----
+   * 与边框/描边同类：都是 App **全局设置**，**不写进任何 Foxy 文件**。
+   * 消费点 `v40.java:515-548`（`i()` 方法）：
+   *   `if (xw0.g(ctx)) { if (xw0.f(ctx, dir)) { …显示提示… } }`
+   * 即**两级**判定 —— 总开关 `show_swipe_hints`（`xw0.java:180-182`，默认 true）
+   * 先拦住一切；总开关开着才逐方向看 `show_swipe_hints_{side,up,down}`
+   * （`xw0.java:162-178`，默认各 true）。
+   * ⚠️ 方向与键名的映射（`xw0.java:166-176` + `fv0.java:16-23`）：
+   *   LEFT(0) / RIGHT(1) → `side`（**左滑右滑共用一个开关**）；UP(2) → `up`；DOWN(3) → `down`。 */
+  swipeHints: true,      // show_swipe_hints，默认 true
+  swipeHintUp: true,     // show_swipe_hints_up，默认 true
+  swipeHintDown: true,   // show_swipe_hints_down，默认 true
+  swipeHintSide: true,   // show_swipe_hints_side，默认 true（控制左滑 + 右滑）
   /* ---- 按键外观三项（App「设置 → 键盘外观」的对应项，foxy-render-spec.md §2.7）----
    * App 存在 SharedPreferences `foxy_size`，纵/横屏各一份；编辑器只做**纵屏**那套
    * （预览就是竖屏口径），不写进任何 Foxy 文件 —— 它们纯属预览建模。
@@ -514,6 +548,26 @@ function appearanceValue(spec) {
   return v;
 }
 
+/* 当前方向 → 逐方向开关的 state 键名。
+ * 映射依据 `xw0.java:166-176`（`fv0` 序号）+ `fv0.java:16-23` 的枚举顺序：
+ *   LEFT(0) / RIGHT(1) → swipeHintSide（**左滑与右滑共用一个「侧滑」开关**）
+ *   UP(2)              → swipeHintUp
+ *   DOWN(3)            → swipeHintDown
+ * ⚠️ 这里接收的是**布局侧的方向名**（up/down/left/right），与 App 内部的
+ * UP/DOWN/LEFT/RIGHT 语义一致，只是大小写不同（见 foxy-render-spec.md §1.2 的提醒）。 */
+var SWIPE_HINT_KEY = { up: 'swipeHintUp', down: 'swipeHintDown', left: 'swipeHintSide', right: 'swipeHintSide' };
+
+/* 某方向的滑动提示是否该显示（App 的**两级**判定，`v40.java:515-548`）。
+ *   ① 总开关 `show_swipe_hints`（xw0.g，默认 true）为假 → 全部不显示；
+ *   ② 再看该方向的开关（xw0.f，默认 true）。
+ * 未知方向名一律按"不显示"处理（宁可少画，不要凭猜画出来）。 */
+FE.swipeHintVisible = function (dir) {
+  if (state.swipeHints === false) return false;
+  var key = SWIPE_HINT_KEY[dir];
+  if (!key) return false;
+  return state[key] !== false;
+};
+
 /* 当前生效的三项外观值（dp）。 */
 FE.keyAppearance = function () {
   var sp = FE.KEY_APPEARANCE_SPEC;
@@ -671,7 +725,7 @@ function validateAction(action, where, err, profile) {
     if (typeof action.layout !== 'string' || !action.layout) err(where + ' 的 switch_layout 动作缺少 layout');
     /* symbols/emoji/kaomoji 既是 app 命令名，实测也可作为 switch_layout 目标
      * （多个官方示例如此使用），因此豁免"目标不存在"检查。 */
-    else if (profile && isPlainObject(profile.layouts) && !profile.layouts[action.layout] && ['symbols', 'emoji', 'kaomoji'].indexOf(action.layout) < 0) {
+    else if (profile && isPlainObject(profile.layouts) && !profile.layouts[action.layout] && FE.RESERVED_LAYOUT_NAMES.indexOf(action.layout) < 0) {
       err(where + ' 的 switch_layout 目标不存在: ' + action.layout);
     }
   } else if (t === 'app') {
@@ -2118,7 +2172,16 @@ function autosave() {
        * 否则每次刷新都要重拖一遍。越界值在读取处回落默认。 */
       keyCornerRadiusDp: state.keyCornerRadiusDp,
       keyGapHorizontalDp: state.keyGapHorizontalDp,
-      keyGapVerticalDp: state.keyGapVerticalDp
+      keyGapVerticalDp: state.keyGapVerticalDp,
+      /* 全局开关四项（同样纯预览建模，不进 Foxy 文件）：
+       * key_border_enabled / key_stroke_enabled / show_swipe_hints 及三个方向。
+       * 存的是"用户当前选择"，读取时用 `!== false` 还原（缺省即 App 默认 true）。 */
+      keyBorderEnabled: state.keyBorderEnabled !== false,
+      keyStrokeEnabled: state.keyStrokeEnabled === true,
+      swipeHints: state.swipeHints !== false,
+      swipeHintUp: state.swipeHintUp !== false,
+      swipeHintDown: state.swipeHintDown !== false,
+      swipeHintSide: state.swipeHintSide !== false
     }));
   } catch (e) { /* 忽略存储失败 */ }
 }
@@ -2540,17 +2603,24 @@ function displayLabel(eff, status, statusSample) {
   return raw;
 }
 
-/* 提示字号：按方向查找（hintSizeOf 定义在纯逻辑段，方向名大小写不敏感） */
+/* 提示字号：按方向查找（hintSizeOf 定义在纯逻辑段，方向名大小写不敏感）。
+ *
+ * ⚠️ 基准是 **12sp**（`r40.java:57` 的 hintTextSize 默认值），用 FE.kbDp 换算成预览 px
+ * —— 预览 10 units 宽 = 360dp，故 1dp = unit/36（见 FE.kbDp 注释）。
+ * 早先写 `unit * 0.24`（≈8.6dp）且缩放基准用 `n / 11`，两处都与 App 不符：
+ * 0.24unit ≈ 8.6dp（应为 12dp），而布局给的 hintTextSize 默认就是 12，除数也该是 12。 */
 function hintFontPx(eff, dir, unit) {
-  var base = unit * 0.24;
+  var base = FE.kbDp(12, unit);
   var n = hintSizeOf(eff.hintTextSize, dir);
-  var scale = (typeof n === 'number') ? n / 11 : 1;
+  var scale = (typeof n === 'number') ? n / 12 : 1;
   return clamp(base * scale, 6, 16);
 }
 
+/* 键文字号：基准 **22sp**（`r40.java:57` 的 keyTextSize 默认值），可被布局每键
+ * `textSize` 覆盖（`v40.java:426-435`）。除数是 22，与 App 的"覆盖值就是 sp 值"一致。 */
 function keyFontPx(eff, unit) {
   var scale = (typeof eff.textSize === 'number') ? eff.textSize / 22 : 1;
-  return clamp(unit * 0.42 * scale, 8, 42);
+  return clamp(FE.kbDp(22, unit) * scale, 8, 42);
 }
 
 /* Foxy 布局颜色是 #AARRGGBB（alpha 在前），浏览器 CSS 的 8 位 hex 是
@@ -2571,10 +2641,17 @@ function foxyColorToCss(v) {
  * ⚠️ App 端的阴影**不是模糊阴影**：它是 LayerDrawable 里叠在键面背后的第二层
  * 纯色圆角 drawable，比键面层**向下多伸出 keyShadowOffsetDp**（默认 1dp），
  * 水平与上方内缩相同（foxy-render-spec.md §2.5，v40.java:113-124）。
- * 视觉上就是「向下偏移 1dp 的实心圆角色块」，所以这里用 0 模糊、0 扩散的实心投影：
- *   0 → 水平无偏移、1px → 向下偏移（对应 §2.1 的 keyShadowOffset=1dp）、0 → 无模糊。
- * 早先是 '0 1px 2px'（带模糊），与手机观感不符 —— 别改回去。 */
-function shadowCss(color) { return '0 1px 0 ' + color; }
+ * 视觉上就是「向下偏移 1dp 的实心圆角色块」，所以这里用 0 模糊、0 扩散的实心投影。
+ * 早先是 '0 1px 2px'（带模糊），与手机观感不符 —— 别改回去。
+ *
+ * ⚠️ 偏移量必须**按 dp 换算**（`FE.kbDp(1, unit)`），不能写死 1px：预览 unit 随
+ * 容器宽度变（分体/横屏时不同），写死会让偏移在不同宽度下与手机比例不一致。
+ * `unit` 缺省时用当前预览口径（portraitW/10）兜底。 */
+function shadowCss(color, unit) {
+  var u = (typeof unit === 'number' && unit > 0)
+    ? unit : (((state && state.portraitW) || 380) / 10);
+  return '0 ' + (Math.round(FE.kbDp(1, u) * 100) / 100) + 'px 0 ' + color;
+}
 
 /* ---------------- 键盘配色的 CSS 变量（⭐ 主题生效时供多个面板共用） ----------------
  * 预览键盘、编辑区行块/网格画布、弹出菜单舞台是**三处独立的 DOM 子树**，
@@ -2625,9 +2702,61 @@ function themeAccentCss() {
 }
 
 /* 全部变量名（含各 keyType 变体），写入与清空共用同一份清单，避免漏清。 */
+/* 全部变量名（含各 keyType 变体），写入与清空共用同一份清单，避免漏清。
+ * ⚠️ 不再有 `--kb-key-border`：style.css 里从来没有消费点（边框色是行内
+ * `borderColor` 写的），而边框是否可见由 keyBorderState().strokeOn 决定。
+ * 留着它只会让人以为"写了个变量但没生效"。 */
 var KB_CSS_VARS = ['--kb-bg', '--kb-inset', '--kb-icon-active',
-  '--kb-key-bg', '--kb-key-fg', '--kb-key-border', '--kb-key-shadow',
+  '--kb-key-bg', '--kb-key-fg', '--kb-key-shadow',
   '--kb-key-bg-fn', '--kb-key-fg-fn', '--kb-key-bg-action', '--kb-key-fg-action'];
+
+/* 边框两开关 → 三种画法的**唯一判定入口**（规范 §2.4；`v40.smali` 的 `b()` 逐分支确证）。
+ *
+ *   B = keyBorderEnabled（默认 true）：键面是否**内缩**并用 altKeyboardColor 系底色
+ *   C = keyStrokeEnabled（默认 false）：是否给键面 `setStroke(1dp, keyBorderColor)`
+ *
+ *   B &&  C → 描边（唯一会画 keyBorderColor 边框的情形）
+ *   B && !C → LayerDrawable[**阴影层** + 纯色键面] —— **不画边框**（App 默认外观）
+ *   !B      → 纯色圆角块（**无边框、也无阴影层**）
+ *
+ * 阴影层的存在条件取自 `v40.java:206`：`g4 = z3 ? shadowOffset : 0`，`z3 = B && !C`
+ * —— 只有 B 开且 C 关时才叠阴影层；C 开走带描边的 InsetDrawable，没有阴影层。
+ *
+ * ⚠️ 抽成单一入口是必须的：预览的 box-shadow 有**两条**来源（applyKeyColors 写行内
+ * 样式、applyKeyboardCssVars 写 `--kb-key-shadow` 变量），两处各判一次必然漂移 ——
+ * 实测就漏掉了后者，表现为「按键边框关闭后键上仍有一圈向下偏移的实色块」
+ * （那就是阴影层，看起来像边框）。 */
+function keyBorderState() {
+  var b = state.keyBorderEnabled !== false;
+  var c = state.keyStrokeEnabled === true;
+  return { borderB: b, strokeOn: b && c, shadowLayerOn: b && !c };
+}
+
+/* 边框**关闭**时，非 ACTION 键的底色 = 主题的 `keyboardColor`（与键盘容器同色）。
+ *
+ * 依据 `v40.java:218` / `m00.java:218`（同一处逻辑）：
+ *   h = (键类型 == ACTION) ? m00.h(…, 14)          // ACTION 键走正常链
+ *       : (B || z4)        ? m00.h(…, 2)
+ *       : this.c.b;                                // ← c.b = keyboardColor
+ * `z4` 在该分支恒为 false（无修饰键状态色），所以就是 **B=false → keyboardColor**。
+ *
+ * 效果：边框一关，普通键与键盘底**融为一体**（看起来"按键颜色没了"），
+ * 只有 ACTION 键（回车、空格等）仍按 keyTypes 上色 —— 用户实机确认过这一条。
+ *
+ * ⚠️ 只作用于**没有自己背景色**的键：调用方把它垫在主题兜底层（③④），
+ * 布局每键 `colors.background`（②）与状态色（①）仍会照常盖上去。 */
+function borderOffKeyBgCss() {
+  if (!FE.resolveThemeField) return null;
+  var r = FE.resolveThemeField('keyboardColor', { includeBuiltin: true });
+  return (r && r.value) ? foxyColorToCss(r.value) : null;
+}
+
+/* 该键类型是否 ACTION（决定边框关闭时是否沿用 keyTypes 底色）。
+ * 键未写 `keyType` 时 App 端走的是**非 ACTION** 分支（`v40.java:215`
+ * 的 `i30Var.e == t40.c` 对 null 判等为假），所以默认按非 ACTION 处理。 */
+function isActionKeyType(keyType) {
+  return String(keyType == null ? '' : keyType).toUpperCase() === 'ACTION';
+}
 
 /* 计算并写入「键盘配色」变量。bgCss 为 null（未导入主题）时全部清空。 */
 function applyKeyboardCssVars(el, bgCss) {
@@ -2639,18 +2768,30 @@ function applyKeyboardCssVars(el, bgCss) {
     v['--kb-inset'] = 'none';
     /* 修饰键激活的图标改跟键文字色走（= 主题 accentColor，规范 §1.4） */
     v['--kb-icon-active'] = 'currentColor';
+    var bs = keyBorderState();
+    /* 边框关闭时 LETTER / FUNCTION 的底色基色改为 keyboardColor
+     * （见 applyKeyColors 里 offBg 的注释，依据 v40.java:218）。
+     * ACTION 仍用 keyTypes —— 这正是"回车键保持不变"那条。 */
+    var offBg = bs.borderB ? null : borderOffKeyBgCss();
     if (FE.themeKeyColors) {
       var put = function (suffix, kt) {
         var c = FE.themeKeyColors(kt);
         if (!c) return;
-        var bg = c.background ? foxyColorToCss(c.background) : null;
+        var isAction = isActionKeyType(kt);
+        var bg = (offBg && !isAction) ? offBg
+          : (c.background ? foxyColorToCss(c.background) : null);
         var fg = c.text ? foxyColorToCss(c.text) : null;
-        var bd = c.border ? foxyColorToCss(c.border) : null;
         var sh = c.shadow ? foxyColorToCss(c.shadow) : null;
         if (bg) v['--kb-key-bg' + suffix] = bg;
         if (fg) v['--kb-key-fg' + suffix] = fg;
-        if (bd) v['--kb-key-border' + suffix] = bd;
-        if (sh) v['--kb-key-shadow' + suffix] = shadowCss(sh);
+        /* ⚠️ 阴影变量必须**按 shadowLayerOn 收口**，不能"有 shadow 色就写"：
+         * 它在 style.css 里是 `box-shadow: var(--kb-key-shadow, <写死的默认投影>)`，
+         * 而**空字符串会被 setCssVar 转成 removeProperty** → var() 回落到那个写死的
+         * 默认投影，于是 B=false（应无阴影层）时键上仍有投影。必须显式写 `none`
+         * 才能真正压掉回落值。 */
+        v['--kb-key-shadow' + suffix] = bs.shadowLayerOn
+          ? (sh ? shadowCss(sh) : '')      /* 无阴影色 → 清空，回落 CSS 默认 */
+          : 'none';                         /* 该状态下本就没有阴影层 → 显式压掉 */
       };
       put('', 'LETTER');
       put('-fn', 'FUNCTION');
@@ -2678,24 +2819,32 @@ function applyKeyColors(el, eff, pressed, status) {
   var tc = (FE.themeKeyColors && eff.spacer !== true) ? FE.themeKeyColors(eff.keyType) : null;
   if (!c && !tc) return;
   var col = {};
-  /* 边框开关（规范 §2.4）：B=keyBorderEnabled 决定**是否画键边框**；
-   * 为真时再由 C=keyStrokeEnabled 决定画「内缩实线边框」还是「描边」。
-   * ⚠️ 早先只要有边框色就无条件加 kb-key-hasborder，开关形同虚设 —— 现在真正起作用。
-   * 这是 App 的**全局设置**（state.keyBorderEnabled，默认 true），不写进任何文件。 */
-  var borderOn = state.keyBorderEnabled !== false;
+  /* 边框两开关的三态判定 —— 走**唯一入口** keyBorderState()（定义见上方），
+   * 不要在这里另算一遍：预览的阴影有两条来源（此处行内样式 + CSS 变量），
+   * 各判一次必然漂移。 */
+  var bs = keyBorderState();
+  var strokeOn = bs.strokeOn;
+  var shadowLayerOn = bs.shadowLayerOn;
+  /* ⭐ 边框关闭时，**非 ACTION** 键的底色（含按下态）直接取 `keyboardColor`
+   * —— 于是按键与键盘底融为一体（"按键颜色没有了"），只有 ACTION 键
+   * （回车、空格等）仍按 keyTypes 上色。依据 `v40.java:218` / `:225`：
+   *   h = ACTION ? m00.h(…, 14) : (B || z4) ? m00.h(…, 2) : this.c.b;   // 背景
+   *   g = ACTION ? m00.c(…).c   : (B || z4) ? …           : this.c.b;   // 按下态
+   * 这里的 `z4` 恒为 false，所以就是 B=false → keyboardColor。 */
+  var offBg = (!bs.borderB && !isActionKeyType(eff.keyType)) ? borderOffKeyBgCss() : null;
   if (tc) {
-    var tbg = tc.background ? foxyColorToCss(tc.background) : null;
+    var tbg = offBg || (tc.background ? foxyColorToCss(tc.background) : null);
     if (tbg) col.background = tbg;
     var ttx = tc.text ? foxyColorToCss(tc.text) : null;
     if (ttx) col.color = ttx;
     var tbd = tc.border ? foxyColorToCss(tc.border) : null;
-    if (tbd && borderOn) { col.borderColor = tbd; el.classList.add('kb-key-hasborder'); }
+    if (tbd && strokeOn) { col.borderColor = tbd; el.classList.add('kb-key-hasborder'); }
     var tsh = tc.shadow ? foxyColorToCss(tc.shadow) : null;
-    if (tsh) col.boxShadow = shadowCss(tsh);
+    if (tsh && shadowLayerOn) col.boxShadow = shadowCss(tsh);
     /* 主题的按下色是**基础** pressed：布局若给了 colors.pressed 或 states.pressed，
-     * 会在下面被覆盖（② 与 ① 都在 ④ 之上）。 */
-    if (pressed && tc.pressed) {
-      var tpr = foxyColorToCss(tc.pressed);
+     * 会在下面被覆盖（② 与 ① 都在 ④ 之上）。边框关闭时同样回落 keyboardColor。 */
+    if (pressed) {
+      var tpr = offBg || (tc.pressed ? foxyColorToCss(tc.pressed) : null);
       if (tpr) col.background = tpr;
     }
   }
@@ -2705,9 +2854,9 @@ function applyKeyColors(el, eff, pressed, status) {
   var tx = typeof c.text === 'string' ? foxyColorToCss(c.text) : null;
   if (tx) col.color = tx;
   var bd = typeof c.border === 'string' ? foxyColorToCss(c.border) : null;
-  if (bd && borderOn) { col.borderColor = bd; el.classList.add('kb-key-hasborder'); }
+  if (bd && strokeOn) { col.borderColor = bd; el.classList.add('kb-key-hasborder'); }
   var sh = typeof c.shadow === 'string' ? foxyColorToCss(c.shadow) : null;
-  if (sh) col.boxShadow = shadowCss(sh);
+  if (sh && shadowLayerOn) col.boxShadow = shadowCss(sh);
   /* 基础 pressed 角色：手指按住该键时的背景色（优先级低于 states.pressed） */
   if (pressed && typeof c.pressed === 'string') {
     var pr = foxyColorToCss(c.pressed);
@@ -2895,11 +3044,19 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
     }
   }
 
-  /* 滑动提示：文字与动作摘要在编译期已算好 */
+  /* 滑动提示：文字与动作摘要在编译期已算好。
+   *
+   * ⚠️ 显隐要按 App 的**两级开关**判定（`v40.java:515-548`）：
+   *   ① 总开关 `show_swipe_hints` 为假 → **所有**方向的提示都不画；
+   *   ② 总开关开着，再看逐方向开关 `show_swipe_hints_{up,down,side}`。
+   * 方向 → 开关的映射见 `xw0.java:166-176`：left/right 共用 `side`。
+   * 关掉的提示**不生成元素**（而不是隐藏），与 App 的 setVisibility(8) 观感一致
+   * —— 位置不留白，避免与开启时的排版对比产生错觉。 */
   var hasHints = false;
   FE.SWIPE_DIRS.forEach(function (d) {
     var hh = item.hints[d];
     if (!hh) return;
+    if (!FE.swipeHintVisible(d)) return;
     hasHints = true;
     var hs = { fontSize: capFont(hintFontPx(eff, d, unit)) + 'px' };
     if (tight) {
@@ -3019,26 +3176,34 @@ function buildRowsSection(compiledSection, unit) {
   return wrap;
 }
 
-/* 网格预览的**实际生效间隙**（px）：按键外观配置值（×2，见下）与该网格
- * 安全上限的较小者。抽成函数是为了**渲染与测试共用同一份口径** —— 别在两处
- * 各算一遍，否则测试钉的期望值和渲染实际值会悄悄漂开。
+/* 网格预览的**实际生效间隙**（px）：按键外观配置值（×2，见下）；
+ * 仅当间隙会把格子压到病态（总占用 > 可用宽的一半）时才回落到安全上限。
+ * 抽成函数是为了**渲染与测试共用同一份口径** —— 别在两处各算一遍，
+ * 否则测试钉的期望值和渲染实际值会悄悄漂开。
  *
  * 为什么 ×2：App 的 gap 是「每键四周内缩」（v40.setPadding + InsetDrawable），
  * 所以相邻两键的可见间隙 = 2 × gap。网格这里用 CSS `gap`（本身就表达"相邻间距"），
  * 故要写成 2 × 配置值，视觉口径才与行区段（用 margin 内缩）一致。
  *
- * 为什么还要套上限：大网格下照搬 16dp 会让间隙总和吃掉整个宽度、格子被压成负数
- * （历史上"大网格撑爆预览"就是这么来的）。上限取 gridMetrics 的收缩值 ×2。
- * 小网格下配置值远小于上限 → 用配置值，与手机一致；差异只出现在病态网格上。 */
+ * ⚠️ 这里**不能**简单地 `min(配置, gridMetrics 的收缩值)`：gridMetrics 的
+ * 10% 规则与 5px 上限是为「48 列这种病态网格」防崩塌用的，在小网格上它会把
+ * 用户设的间隙吃掉 —— 例如 5 列 numpad 设垂直 16dp 时想要 ~54px，却被压到 10px，
+ * 于是"调大了却没变化"，与手机不符（用户会以为设置没生效）。
+ * 判据改为「配置值是否真的会让格子退化」：总间隙超过可用尺寸一半时才算病态。 */
 FE.gridGaps = function (columns, rows, unit, totalUnits) {
   var m = FE.gridMetrics(columns, rows, unit, totalUnits);
   var app = FE.keyAppearance();
   var wantCol = Math.max(0, FE.kbDp(app.gapHDp, unit) * 2);
   var wantRow = Math.max(0, FE.kbDp(app.gapVDp, unit) * 2);
+  var cols = Math.max(1, m.columns), rws = Math.max(1, m.rows);
+  var colFits = cols < 2 || wantCol * (cols - 1) <= m.contentW * 0.5;
+  var rowFits = rws < 2 || wantRow * (rws - 1) <= m.contentH * 0.5;
   return {
-    colGap: Math.min(wantCol, m.colGap * 2),
-    rowGap: Math.min(wantRow, m.rowGap * 2),
-    metrics: m
+    colGap: colFits ? wantCol : Math.min(wantCol, m.colGap * 2),
+    rowGap: rowFits ? wantRow : Math.min(wantRow, m.rowGap * 2),
+    metrics: m,
+    /* 供注释/测试区分：是否为病态网格（间隙被安全上限压过） */
+    colCapped: !colFits, rowCapped: !rowFits
   };
 };
 
@@ -3051,6 +3216,17 @@ function buildGridSection(compiledSection, unit) {
   var m = g.metrics;
   var colGap = g.colGap, rowGap = g.rowGap;
   el.style.gap = colGap + 'px ' + rowGap + 'px';
+  /* ⭐ 首尾也要内缩（App 口径：`v40.setPadding(gapH, gapV, gapH, gapV)` +
+   * 背景 InsetDrawable 内缩，`v40.java:92-94`/`113-124`）。
+   *
+   * CSS `gap` 只作用于**相邻**格子之间，四边贴边 —— 少的是"每键四周内缩"这一半：
+   * 相邻可见间隙 = 2×gap（gap 已写成 2×配置值），而行的**首尾**键还该再内缩 gap。
+   * 所以给容器补一圈 gap/2 的 padding，正好等价：
+   *   首格左边距 = gap/2(容器) + gap/2(自身) = gap ← 与 App 的每键内缩一致。
+   * ⚠️ 必须配 box-sizing:border-box，否则 padding 会把高度撑出去、破坏
+   * "预览高度 = 布局单位数 × unit × 系数"这条与布局预览严格对齐的要求。 */
+  el.style.boxSizing = 'border-box';
+  el.style.padding = (rowGap / 2) + 'px ' + (colGap / 2) + 'px';
   el.style.gridTemplateColumns = 'repeat(' + compiledSection.columns + ', 1fr)';
   if (compiledSection.rowHeights && compiledSection.rowHeights.length) {
     el.style.gridTemplateRows = compiledSection.rowHeights.map(function (x) { return (Number(x) || 1) + 'fr'; }).join(' ');
@@ -3059,12 +3235,17 @@ function buildGridSection(compiledSection, unit) {
   }
   el.style.height = Math.max(24, compiledSection.totalUnits * unit * (FE.PREVIEW_HEIGHT_K || 1)) + 'px';
   /* 字号上限**按每个键自己的跨距**算：3×3 大键的可用面积是 1×1 小键的 9 倍，
-   * 若统一按 1×1 封顶，大键的字会小得离谱。取该键实际占位的较短边留出边距。 */
+   * 若统一按 1×1 封顶，大键的字会小得离谱。取该键实际占位的较短边留出边距。
+   * ⚠️ 要扣掉容器那一圈 padding：真实可用宽 = contentW − 2×(colGap/2) − 跨距间的 gap。 */
+  var innerW = Math.max(0, m.contentW - colGap);
+  var innerH = Math.max(0, m.contentH - rowGap);
+  var cellW = (innerW - (m.columns - 1) * colGap) / Math.max(1, m.columns);
+  var cellH = (innerH - (m.rows - 1) * rowGap) / Math.max(1, m.rows);
   (compiledSection.keys || []).forEach(function (item) {
     var cspan = Math.max(1, item.columnSpan || 1);
     var rspan = Math.max(1, item.rowSpan || 1);
-    var w = m.cellW * cspan + colGap * (cspan - 1);
-    var h = m.cellH * rspan + rowGap * (rspan - 1);
+    var w = cellW * cspan + colGap * (cspan - 1);
+    var h = cellH * rspan + rowGap * (rspan - 1);
     var fontCap = Math.max(3, Math.min(w, h) * 0.8);
     /* 网格里键面尺寸已知（格子宽高 × 跨距）→ 圆角按短边夹住，
      * 与 App 的 clamp(…, min(faceW,faceH)/2) 同口径。 */
@@ -5261,6 +5442,24 @@ function initTabs() {
   });
 }
 
+/* 布局命名保留名守卫（新建 / 复制 / 重命名共用）。
+ *
+ * 返回 true 表示**已拦下**（调用方应立即 return）。
+ * 判据见 FE.RESERVED_LAYOUT_NAMES 的注释：这三个名字在 App 下游被符号面板截胡，
+ * 同名自定义布局**永远打不开**，所以不该让用户造出来。
+ * 名称比较用**精确匹配**（App 侧 `cv.I(String)` 就是按字面量分派，大小写敏感）。 */
+function reservedLayoutNameGuard(name, verb) {
+  if (FE.RESERVED_LAYOUT_NAMES.indexOf(name) < 0) return false;
+  FE.uiAlert('“' + name + '” 是符号面板的保留名，无法' + verb + '同名布局。\n\n' +
+    '原因：App 端 switch_layout 会优先把 symbols / emoji / kaomoji 当作符号 / emoji / ' +
+    '颜文字面板打开（即使是自定义布局名也一样），同名布局**永远打不开**。\n' +
+    '请换一个名字（例如 “my_' + name + '”）。',
+  { title: '无法' + verb + '布局' });
+  return true;
+}
+
+FE.reservedLayoutNameGuard = reservedLayoutNameGuard;
+
 function initToolbar() {
   /* 布局选择 */
   $('layout-select').addEventListener('change', function () {
@@ -5276,6 +5475,7 @@ function initToolbar() {
     if (name == null) return;
     name = String(name).trim();
     if (!name) return;
+    if (reservedLayoutNameGuard(name, '新建')) return;
     if (state.profile.layouts[name]) { FE.uiAlert('布局已存在：' + name, { title: '无法新建' }); return; }
     mutate(function () {
       state.profile.layouts[name] = { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }] };
@@ -5292,6 +5492,7 @@ function initToolbar() {
     if (name == null) return;
     name = String(name).trim();
     if (!name) return;
+    if (reservedLayoutNameGuard(name, '复制')) return;
     if (state.profile.layouts[name]) { FE.uiAlert('布局已存在：' + name, { title: '无法复制' }); return; }
     mutate(function () {
       state.profile.layouts[name] = deepClone(state.profile.layouts[src]);
@@ -5308,6 +5509,7 @@ function initToolbar() {
     if (name == null) return;
     name = String(name).trim();
     if (!name || name === old) return;
+    if (reservedLayoutNameGuard(name, '重命名')) return;
     if (state.profile.layouts[name]) { FE.uiAlert('布局已存在：' + name, { title: '无法重命名' }); return; }
     mutate(function () {
       var layouts = state.profile.layouts;
@@ -5764,33 +5966,35 @@ function initToolbar() {
     }
     FE.applyPreviewHeight = applyHeight;
   })();
-  /* 按键外观三项滑杆（圆角 / 水平间隙 / 垂直间隙）。
+  /* 按键外观三项（圆角 / 水平间隙 / 垂直间隙）。
    * 对应 Foxy「设置 → 键盘外观」的同名设置，只影响**预览**建模，不写进任何文件。
    * 取值范围与默认值照 App（foxy-render-spec.md §2.7）：
    *   圆角 0–24 默认 6；水平 0–16 默认 3；垂直 0–16 默认 4。
-   * 拖 `input` 只重渲染预览（不动布局数据、不进撤销栈）—— 这是"看效果"的旋钮，不是数据编辑。 */
+   * ⚠️ 控件是**数字输入框**（不是滑杆）：这三项范围都窄，滑杆却固定占一长条横向空间，
+   * 换成数字框后这一行能腾出位置给六个开关。故事件用 `input`（含上下箭头点击与手输）
+   * 与 `change`（失焦/回车），并在写 state 前**夹回合法范围** —— App 端
+   * `a60.e/f/g` 对越界值也是回落默认，这里夹紧更直观（用户敲 99 会看到它变回 24）。 */
   (function () {
     var binds = [
-      ['pt-corner', 'pt-corner-val', 'cornerRadius', 'dp'],
-      ['pt-gap-h', 'pt-gap-h-val', 'gapHorizontal', 'dp'],
-      ['pt-gap-v', 'pt-gap-v-val', 'gapVertical', 'dp']
+      ['pt-corner', 'pt-corner-unit', 'cornerRadius'],
+      ['pt-gap-h', 'pt-gap-h-unit', 'gapHorizontal'],
+      ['pt-gap-v', 'pt-gap-v-unit', 'gapVertical']
     ];
     function applyAppearance() {
       var spec = FE.KEY_APPEARANCE_SPEC, app = FE.keyAppearance();
       binds.forEach(function (b) {
-        var el = $(b[0]), lab = $(b[1]);
+        var el = $(b[0]);
         var sp = spec[b[2]];
         var v = sp.key === 'keyCornerRadiusDp' ? app.cornerDp
           : (sp.key === 'keyGapHorizontalDp' ? app.gapHDp : app.gapVDp);
         if (el && String(el.value) !== String(v)) el.value = String(v);
-        if (lab) lab.textContent = v + b[3];
       });
       autosave();
       renderPreview();
       /* ⚠️ **不要**在这里调 renderLayoutTab()：布局编辑区的 chip 与网格画布走的是
        * applyEditorKeyColors → applyKeyColors，**只管颜色、不消费几何**（圆角/间距
-       * 由 CSS 的 .chip / .gedit-cell 固定），所以它们本来就不跟随这三项滑杆；
-       * 而拖动滑杆每帧重建整个区段编辑器会明显卡顿。两者都不划算，故不调。 */
+       * 由 CSS 的 .chip / .gedit-cell 固定），所以它们本来就不跟随这三项；
+       * 而每次改数字都重建整个区段编辑器会明显卡顿。两者都不划算，故不调。 */
     }
     binds.forEach(function (b) {
       var el = $(b[0]);
@@ -5798,11 +6002,79 @@ function initToolbar() {
       var sp = FE.KEY_APPEARANCE_SPEC[b[2]];
       /* 范围由 index.html 的 min/max 给；这里再兜一层，防手改 HTML 后越界 */
       el.min = String(sp.min); el.max = String(sp.max);
-      el.addEventListener('input', function () { state[sp.key] = Number(el.value); applyAppearance(); });
-      el.addEventListener('change', function () { state[sp.key] = Number(el.value); applyAppearance(); });
+      var commit = function () {
+        var raw = el.value;
+        /* ⚠️ 空串必须单独判：`Number('')` 是 **0**（不是 NaN），
+         * 只写 `isFinite(raw)` 会把"清空输入框"当成"设成 0"，
+         * 于是圆角被夹到 0 而不是回落默认值。 */
+        var v = (raw == null || String(raw).trim() === '') ? sp.def : Number(raw);
+        if (!isFinite(v)) v = sp.def;
+        v = Math.max(sp.min, Math.min(sp.max, Math.round(v)));
+        el.value = String(v);
+        state[sp.key] = v;
+        applyAppearance();
+      };
+      el.addEventListener('input', commit);
+      el.addEventListener('change', commit);
     });
     FE.applyKeyAppearance = applyAppearance;
     applyAppearance();
+  })();
+  /* 四个全局开关（按键边框 / 按键描边 / 滑动提示 / 上滑 / 下滑 / 侧滑）。
+   * 都对应 Foxy「设置 → 主题效果」里的同名开关（SharedPreferences `foxy_theme`），
+   * **不写进任何 Foxy 文件**，纯预览建模（依据见各自 state 字段的注释）。
+   * 勾选后只重渲染预览 + 存草稿 —— 与那三项外观滑杆同一策略：
+   * 这是"改预览怎么画"的旋钮，不是数据编辑，所以不进撤销栈。 */
+  (function () {
+    var toggles = [
+      ['pt-border', 'keyBorderEnabled'],
+      ['pt-stroke', 'keyStrokeEnabled'],
+      ['pt-swipe-hints', 'swipeHints'],
+      ['pt-hint-up', 'swipeHintUp'],
+      ['pt-hint-down', 'swipeHintDown'],
+      ['pt-hint-side', 'swipeHintSide']
+    ];
+    function applyToggles() {
+      toggles.forEach(function (t) {
+        var el = $(t[0]);
+        if (el) el.checked = state[t[1]] !== false;
+      });
+      /* 逐方向开关在总开关关闭时失去意义 → 置灰并加说明（照 App 设置页的分组语义）。
+       * 只改可用性，**不改值** —— 总开关重新打开时用户原来的选择要还在。 */
+      var subOff = state.swipeHints === false;
+      ['pt-hint-up', 'pt-hint-down', 'pt-hint-side'].forEach(function (id) {
+        var el = $(id);
+        if (!el) return;
+        el.disabled = subOff;
+        if (el.parentNode) el.parentNode.style.opacity = subOff ? '0.45' : '';
+      });
+      /* 「按键描边」在「按键边框」未勾选时**不可选**：描边只在 B && C 时才画
+       * （`v40.smali` 的 `b()`：`z8 = B && C` 才 `setStroke`），边框关掉后
+       * 描边开关没有任何可见效果，留着可勾会让人以为它还在起作用。
+       * 同样**只改可用性、不改值** —— 重新勾上边框，用户原来的描边选择即恢复。 */
+      var strokeEl = $('pt-stroke');
+      if (strokeEl) {
+        var borderOff = state.keyBorderEnabled === false;
+        strokeEl.disabled = borderOff;
+        if (strokeEl.parentNode) strokeEl.parentNode.style.opacity = borderOff ? '0.45' : '';
+      }
+      autosave();
+      renderPreview();
+    }
+    toggles.forEach(function (t) {
+      var el = $(t[0]);
+      if (!el) return;
+      el.addEventListener('change', function () {
+        state[t[1]] = !!this.checked;
+        applyToggles();
+        /* 边框开关也影响键盘容器底色（altKeyboardColor ↔ keyboardColor），
+         * 那是写进 CSS 变量的，renderPreview 会重算，这里无需额外处理。
+         * 符号面板预览底也跟同一条规则走（symbol-preview.js 的 panelBgCss），
+         * 但它只在符号页渲染；切页时会重渲染，故不必在此强制刷新。 */
+      });
+    });
+    FE.applyGlobalToggles = applyToggles;
+    applyToggles();
   })();
   /* 横屏预览：只加宽容器（kb-split 的 1228px），**仍渲染当前常规布局**。
    * 与「分体」的区别就在这里 —— 分体会把编译目标换成 L.split 片段，本项不会。
@@ -6050,12 +6322,25 @@ function boot() {
           var sp = apSpec[k], v = Number(d2[sp.key]);
           if (isFinite(v) && v >= sp.min && v <= sp.max) state[sp.key] = v;
         });
+        /* 全局开关四项（纯预览设置）：用 `!== false` 还原 —— 缺省即 App 默认 true，
+         * 所以**只有草稿里明确写了 false 才算关**。旧草稿没有这几个键时自动保持默认开启。 */
+        ['swipeHints', 'swipeHintUp', 'swipeHintDown', 'swipeHintSide'].forEach(function (k) {
+          if (d2[k] === false) state[k] = false;
+          else if (d2[k] === true) state[k] = true;
+        });
+        if (d2.keyBorderEnabled === false) state.keyBorderEnabled = false;
+        else if (d2.keyBorderEnabled === true) state.keyBorderEnabled = true;
+        if (d2.keyStrokeEnabled === true) state.keyStrokeEnabled = true;
+        else if (d2.keyStrokeEnabled === false) state.keyStrokeEnabled = false;
       }
     }
   } catch (e2) { /* 忽略 */ }
   /* 草稿恢复后对齐三项外观滑杆（initToolbar 已在其之前跑过一遍，值为默认）。
    * 复用 FE.applyKeyAppearance —— 它同时回填滑杆文字与重渲染，别在这里手写一遍。 */
   if (FE.applyKeyAppearance) FE.applyKeyAppearance();
+  /* 全局开关的复选框同样要在草稿恢复后回填（initToolbar 跑在恢复之前，
+   * 那时勾的是一律默认值）。复用 FE.applyGlobalToggles，别在这儿重写一遍回填与置灰。 */
+  if (FE.applyGlobalToggles) FE.applyGlobalToggles();
   /* 草稿恢复后对齐高度滑杆：initToolbar 跑在恢复之前，滑杆还是默认值，
    * 这里按恢复出的百分比回填并换算 K（否则刷新后高度回到 31%）。 */
   try {

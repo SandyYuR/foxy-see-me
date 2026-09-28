@@ -69,10 +69,30 @@
             <!-- 按键外观三项：对应 Foxy「设置 → 键盘外观」的同名设置。
                  取值范围与默认值照 App 端（圆角 0–24 默认 6、水平 0–16 默认 3、
                  垂直 0–16 默认 4），依据见 foxy-render-spec.md §2.7。
+                 纯预览建模，不写进任何 Foxy 文件。
+                 ⚠️ 用**数字输入框**（带上下箭头）而不是滑杆：这三项的可选范围都很窄
+                 （0–24 / 0–16），滑杆占的横向空间却与范围无关，而这一行还要放
+                 六个开关 —— 换成数字框后整行能省下可观空间，也便于精确输入。 -->
+            <label class="mini-label" title="对应 Foxy「设置 → 键盘外观 → 按键圆角」（0–24dp，默认 6）。大圆角在小键上会被夹到键面短边的一半">圆角 <input id="pt-corner" type="number" min="0" max="24" step="1" value="6" class="mini-input num-input" aria-label="按键圆角 dp"><span id="pt-corner-unit" class="pt-unit">dp</span></label>
+            <label class="mini-label" title="对应 Foxy「设置 → 键盘外观 → 按键水平间隙」（0–16dp，默认 3）。App 是每个键四周内缩该值，故相邻两键的可见间隙为此值的 2 倍">水平间隙 <input id="pt-gap-h" type="number" min="0" max="16" step="1" value="3" class="mini-input num-input" aria-label="按键水平间隙 dp"><span id="pt-gap-h-unit" class="pt-unit">dp</span></label>
+            <label class="mini-label" title="对应 Foxy「设置 → 键盘外观 → 按键垂直间隙」（0–16dp，默认 4）。App 是每个键四周内缩该值，故上下相邻键的可见间隙为此值的 2 倍">垂直间隙 <input id="pt-gap-v" type="number" min="0" max="16" step="1" value="4" class="mini-input num-input" aria-label="按键垂直间隙 dp"><span id="pt-gap-v-unit" class="pt-unit">dp</span></label>
+            <!-- 按键边框 / 按键描边 / 滑动提示：都对应 Foxy「设置 → 主题效果」里的同名全局开关
+                 （SharedPreferences `foxy_theme`，**不在主题 JSON 里**）。
+                 取值范围与默认值照 App：key_border_enabled 默认 true、key_stroke_enabled 默认 false、
+                 show_swipe_hints 及其 up/down/side 各默认 true。
                  纯预览建模，不写进任何 Foxy 文件。 -->
-            <label class="mini-label" title="对应 Foxy「设置 → 键盘外观 → 按键圆角」（0–24dp，默认 6）。大圆角在小键上会被夹到键面短边的一半">圆角 <input id="pt-corner" type="range" min="0" max="24" step="1" value="6" class="mini-range" aria-label="按键圆角 dp"><span id="pt-corner-val">6dp</span></label>
-            <label class="mini-label" title="对应 Foxy「设置 → 键盘外观 → 按键水平间隙」（0–16dp，默认 3）。App 是每个键四周内缩该值，故相邻两键的可见间隙为此值的 2 倍">水平间隙 <input id="pt-gap-h" type="range" min="0" max="16" step="1" value="3" class="mini-range" aria-label="按键水平间隙 dp"><span id="pt-gap-h-val">3dp</span></label>
-            <label class="mini-label" title="对应 Foxy「设置 → 键盘外观 → 按键垂直间隙」（0–16dp，默认 4）。App 是每个键四周内缩该值，故上下相邻键的可见间隙为此值的 2 倍">垂直间隙 <input id="pt-gap-v" type="range" min="0" max="16" step="1" value="4" class="mini-range" aria-label="按键垂直间隙 dp"><span id="pt-gap-v-val">4dp</span></label>
+            <label class="mini-label" title="对应 Foxy「设置 → 主题效果 → 按键边框」（key_border_enabled，默认开）。开启时键面内缩、键盘底色改用 altKeyboardColor；关闭时按键（回车等功能键除外）底色直接与键盘底同色、也没有阴影层">
+              <input type="checkbox" id="pt-border" checked> 按键边框</label>
+            <label class="mini-label" title="对应 Foxy「设置 → 主题效果 → 按键描边」（key_stroke_enabled，默认关）。只有边框与描边同时开启，键上才会出现 keyBorderColor 那条 1dp 边框 —— 手机默认（边框开、描边关）下看不到它。边框关闭时描边不生效，故该项不可选">
+              <input type="checkbox" id="pt-stroke"> 按键描边</label>
+            <label class="mini-label" title="对应 Foxy「设置 → 主题效果 → 滑动提示」（show_swipe_hints，默认开）。关闭后所有方向的滑动提示都不显示；开启时下面三项可分别控制上/下/侧滑">
+              <input type="checkbox" id="pt-swipe-hints" checked> 滑动提示</label>
+            <label class="mini-label" title="对应 Foxy「设置 → 主题效果 → 上滑提示」（show_swipe_hints_up，默认开）。仅当「滑动提示」开启时才有意义">
+              <input type="checkbox" id="pt-hint-up" checked> 上滑</label>
+            <label class="mini-label" title="对应 Foxy「设置 → 主题效果 → 下滑提示」（show_swipe_hints_down，默认开）。仅当「滑动提示」开启时才有意义">
+              <input type="checkbox" id="pt-hint-down" checked> 下滑</label>
+            <label class="mini-label" title="对应 Foxy「设置 → 主题效果 → 侧滑提示」（show_swipe_hints_side，默认开）。控制左滑与右滑两个方向，仅当「滑动提示」开启时才有意义">
+              <input type="checkbox" id="pt-hint-side" checked> 侧滑</label>
           </div>
           <!-- 深浅键盘：**与主题编辑页的槽位（light/dark）是同一个状态**，
                改这里等于在主题页切槽位，反之亦然（见 app.js 的 setPreviewSlot）。
@@ -323,18 +343,17 @@
             <option value="light">light（浅色槽）</option>
             <option value="dark">dark（深色槽）</option>
           </select>
-          <label class="mini-label">键边框</label>
-          <select id="th-bordermode" class="mini-select">
-            <option value="on">启用（key_border_enabled = true）</option>
-            <option value="off">禁用（回落 keyboardColor）</option>
-          </select>
         </div>
         <div id="th-status" class="status"></div>
         <div class="status dim">文件名为主题的 <code>name</code> 字段（非法字符百分号转义）+ <code>.json</code>，放置于
           <code>&lt;外部存储&gt;/foxy/frontend/themes/</code>（精确路径
           <code>Android/data/com.fxliang.foxy/files/foxy/frontend/themes/</code>）。</div>
         <div class="status dim">注意：<code>light</code> / <code>dark</code> 是两套<strong>配色槽位</strong>，与预览右上角的深浅开关不是一回事。
-          <code>key_border_enabled</code> / <code>key_stroke_enabled</code> 属全局设置，<strong>不写入</strong>主题 JSON，此处仅作预览建模。</div>
+          <code>key_border_enabled</code> / <code>key_stroke_enabled</code> / <code>show_swipe_hints*</code>
+          都是 App 的<strong>全局设置</strong>（不在主题 JSON 里），已移到预览键盘的滑杆行上。</div>
+        <div class="status dim">建模边界：预览键盘<strong>只画键面</strong>，不含 App 的候选栏 / 工具栏。
+          因此 <code>candidateBarColor</code>、<code>accentColor</code>（工具栏选中态）等字段在预览里看不到效果
+          —— 它们只影响候选栏与工具栏，不是没生效。</div>
       </details>
       <details class="card" open>
         <summary>主题校验</summary>
@@ -387,7 +406,7 @@
         <summary>面板选项</summary>
         <div class="form-row form-inline">
           <label class="mini-label check">
-            <input id="sym-multiline" type="checkbox"> multiLine（每行 1 格；关闭时固定 40dp 高度、长条目会被裁切）
+            <input id="sym-multiline" type="checkbox"> multiLine（每行 1 格；关闭时固定 40dp 高度、长条目会被等比缩小）
           </label>
         </div>
       </details>

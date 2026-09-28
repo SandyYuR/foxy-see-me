@@ -323,6 +323,16 @@ button.danger:hover, .mini-button.danger:hover { background: #3a2321; }
 .mini-input:focus, .mini-select:focus, textarea:focus { outline: 1px solid var(--accent); }
 /* 高度比滑杆：跟 mini-label 一行，宽 110px 不抢位置；浅色下 track 用边框色 */
 .mini-range { width: 110px; accent-color: var(--accent); cursor: pointer; }
+/* 紧凑数字输入框（按键外观三项：圆角 / 水平间隙 / 垂直间隙）。
+ * 原来这三项用滑杆，占的横向空间与可选范围无关（都固定 110px），
+ * 而它们的范围很窄（0–24 / 0–16）—— 改成数字框后一行能省下可观空间，
+ * 让六个开关挤进同一行；上下箭头也便于精确微调。 */
+.num-input {
+  width: 56px; flex: 0 0 auto; font-family: var(--mono);
+  padding: 3px 4px 3px 6px; text-align: right;
+}
+/* 数字框右侧的单位（dp）：与输入框贴紧，不占额外换行点 */
+.pt-unit { font-size: 11px; color: var(--text-dim); margin-left: -2px; }
 #pt-height-val { font-family: var(--mono); font-size: 12px; min-width: 36px; display: inline-block; }
 .mini-label { font-size: 12px; color: var(--text-dim); white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 .mini-label.check { cursor: pointer; }
@@ -1290,7 +1300,17 @@ dialog.editor-dialog::backdrop { background: rgba(5, 6, 8, 0.6); backdrop-filter
   margin: 6px 0;
 }
 .th-color-grid .form-row.form-inline { margin: 0; }
-.th-color-grid .mini-label { flex: 1 1 auto; min-width: 0; }
+/* ⚠️ `flex: 1 1 100%`（不是 `1 1 auto`）—— 标签必须**恒定独占整行**。
+ *
+ * 用 `auto` 时标签按内容宽度参与计算：26 个字段里标签长短悬殊（`candidateBarColor`
+ * 的中文注释长、`accentColor` 只有「强调色」三个字），短标签省出的空间会让
+ * `.color-input`(150px) + `清除` 按钮挤上**同一行**，于是那一行变成
+ * 「标签 + 框」而 `清除` 掉到下一行 —— 与其余 25 行的「标签一行、框和按钮一行」
+ * 明显不一致（用户实机截图指出）。
+ * `100%` 的 flex-basis 在 `flex-wrap: wrap` 下保证标签独占一行，
+ * 输入框与按钮必然成组换到第二行，26 行排版彻底统一。
+ * 短标签因此会右侧留白 —— 这正是想要的"对齐"，且与 keyTypes 网格共用同一外观。 */
+.th-color-grid .mini-label { flex: 1 1 100%; min-width: 0; }
 
 /* 字段名很长（keyHintTextBottomColor 等），允许换行显示完整名，不省略 */
 .th-field-label { overflow-wrap: anywhere; }

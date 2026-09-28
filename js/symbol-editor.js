@@ -8,8 +8,8 @@
  * 证据见 foxy/foxy-app-format-baseline.md §2.2（App 反编译核对）。几个必须照抄的点：
  *   · §2.3 组名语言回退链（symbolGroupLabel）；
  *   · §2.3 空 names / 空 symbols 的组会被 App **整组静默丢弃** → 校验器报警；
- *   · §2.5 multiLine 语义：true → 每行 1 格、行高 WRAP_CONTENT（不裁切）；
- *                          false → 每行 6 格、**固定 40dp 高（会裁切长条目）**；
+ *   · §2.5 multiLine 语义：true → 每行 1 格、行高 WRAP_CONTENT（自适应）；
+ *                          false → 每行 6 格、**固定 40dp 高**（长条目被等比缩小到很小）；
  *   · §2.5 旧格式兼容：顶层直接是数组时按 {multiLine:false, groups:[…]} 处理；
  *   · §2.1 目录里的文件**不会被自动读取**：必须在「设置 → 符号布局」里选中该 catalog
  *     才生效（内置走 APK assets，放同名文件不会覆盖内置）。
@@ -209,7 +209,7 @@ FE.symbolGroupLabel = function (group, lang) {
 /* 校验。宁可少报不要乱报（一个 err 会让 App 端整份文件不可用）：
  *   err  —— 结构根本不合法（groups 不是非空数组、分组不是对象、names/symbols 类型错）；
  *   warn —— App 会**静默丢弃**或行为可疑的（空 names / 空 symbols 的组、缺 zh 组名、
- *           非字符串条目、以及 multiLine=false 时多字符条目的裁切风险）。 */
+ *           非字符串条目、以及 multiLine=false 时多字符条目的可读性风险）。 */
 FE.validateSymbolProfile = function (kind, p) {
   var errors = [], warnings = [];
   if (Array.isArray(p)) {
@@ -261,9 +261,13 @@ FE.validateSymbolProfile = function (kind, p) {
   }
   if (nonString) warnings.push(nonString + ' 个条目不是字符串（已按字符串处理）');
   if (multi) {
+    /* ⚠️ 后果是「等比缩小」而非「裁切」：格子设了 `setScaleMode(y9.a)` = Proportional
+     *（ly.java:206、y9.java:19），z9 会把文字整体缩放到 `min(1, 宽比, 高比)`
+     *（z9.java:102-105、259）—— 条目仍完整可见，只是小到难认。
+     * 基线 §2.5 的"裁切"表述与 z9 实现不符，此处按实机行为描述。 */
     warnings.push('multiLine 为 false 但有 ' + multi + ' 个多字符条目（如「' +
-      symEllipsis(multiSample, 12) + '」）：App 端格子固定 40dp 高**会被裁切**，' +
-      '建议开启 multiLine（每行 1 格、高度自适应）');
+      symEllipsis(multiSample, 12) + '」）：App 端格子固定 40dp 高，这类条目会被**等比缩小**' +
+      '到很小（不是裁掉，只是可读性差），建议开启 multiLine（每行 1 格、高度自适应）');
   }
   return { errors: errors, warnings: warnings };
 };
@@ -588,7 +592,7 @@ function buildSymGroupEditor(gi, g, displayName) {
     var cell = h('div', {
       class: 'sym-cell' + (k === selIdx ? ' sym-cell-sel' : ''),
       style: cellStyle(k === selIdx),
-      title: (multi ? '' : '格高固定 40dp，超出会被裁切：') + text
+      title: (multi ? '' : '格高固定 40dp，过长会等比缩小：') + text
     }, text === '' ? '（空）' : text);
     cell.addEventListener('click', function () { select(k); });
     cells.push(cell);
@@ -650,11 +654,16 @@ function buildSymGroupEditor(gi, g, displayName) {
   grid.appendChild(addCell);
   host.appendChild(grid);
 
-  /* multiLine 行为提示（基线 §2.5 / 行动项 8） */
+  /* multiLine 行为提示（基线 §2.5 / 行动项 8）。
+   * ⚠️ 用词是「等比缩小」不是「裁切」—— App 给格子设了 `setScaleMode(y9.a)`，
+   * `y9.a` = Proportional（ly.java:206、y9.java:19），z9 取 `min(1, 宽比, 高比)`
+   * 再 `canvas.scale(n, o)` 把文字**整体缩小**画进固定格子（z9.java:102-105、259）。
+   * 即条目不会溢出/截断，只是**小到影响可读性**。基线 §2.5 写作"裁切"与 z9 不符，
+   * 这里按实机行为表述，免得用户以为"少几个字能看到"。 */
   host.appendChild(h('div', { class: 'status dim' },
     multi
-      ? 'multiLine = true：预览为每行 1 格、高度自适应（App 端行高 WRAP_CONTENT，不裁切）。'
-      : 'multiLine = false：预览为每行 6 格、固定 40dp 高（App 端如此）—— 多字符条目在这里就能看到被裁切。'));
+      ? 'multiLine = true：预览为每行 1 格、高度自适应（App 端行高 WRAP_CONTENT，不缩小）。'
+      : 'multiLine = false：预览为每行 6 格、固定 40dp 高（App 端如此）—— 多字符条目在手机上会被**等比缩小**到很小、可读性差（不是裁掉），建议开启 multiLine。'));
 
   editBtn.addEventListener('click', async function () {
     if (selIdx < 0) return;
@@ -712,7 +721,7 @@ function buildSymGroupEditor(gi, g, displayName) {
   return host;
 }
 
-/* 校验 + 概览：组数 / 条目数 / multiLine 语义 / 裁切警告 */
+/* 校验 + 概览：组数 / 条目数 / multiLine 语义 / 可读性警告 */
 function renderSymStatus() {
   var host = $('sym-status');
   if (!host) return;

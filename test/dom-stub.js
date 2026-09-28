@@ -480,16 +480,27 @@ function buildSkeleton() {
           el('input', { type: 'range', id: 'pt-height', value: '31' }),
           el('span', { id: 'pt-height-val' })),
         /* 按键外观三项（对照 App「设置 → 键盘外观」；见 foxy-render-spec.md §2.7）。
-         * 范围与默认值必须与 index.html 一致，否则测试与真实页面行为会分叉。 */
+         * 范围与默认值必须与 index.html 一致，否则测试与真实页面行为会分叉。
+         * ⚠️ 是 **number 输入框**（不是 range）—— 范围窄、滑杆却占固定横向空间，
+         * 换成数字框后这一行能腾出位置给六个开关。桩必须同类型，
+         * 否则 `$('pt-corner').getAttribute('type')` 之类的断言会失真。 */
         el('label', null,
-          el('input', { type: 'range', id: 'pt-corner', min: '0', max: '24', value: '6' }),
-          el('span', { id: 'pt-corner-val' })),
+          el('input', { type: 'number', id: 'pt-corner', min: '0', max: '24', step: '1', value: '6' }),
+          el('span', { id: 'pt-corner-unit', class: 'pt-unit' }, 'dp')),
         el('label', null,
-          el('input', { type: 'range', id: 'pt-gap-h', min: '0', max: '16', value: '3' }),
-          el('span', { id: 'pt-gap-h-val' })),
+          el('input', { type: 'number', id: 'pt-gap-h', min: '0', max: '16', step: '1', value: '3' }),
+          el('span', { id: 'pt-gap-h-unit', class: 'pt-unit' }, 'dp')),
         el('label', null,
-          el('input', { type: 'range', id: 'pt-gap-v', min: '0', max: '16', value: '4' }),
-          el('span', { id: 'pt-gap-v-val' }))),
+          el('input', { type: 'number', id: 'pt-gap-v', min: '0', max: '16', step: '1', value: '4' }),
+          el('span', { id: 'pt-gap-v-unit', class: 'pt-unit' }, 'dp')),
+        /* 四个全局开关（对照 App「设置 → 主题效果」；SharedPreferences `foxy_theme`）。
+         * 默认值与 index.html 必须一致：边框开、描边关、滑动提示三项开。 */
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-border', checked: 'checked' })),
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-stroke' })),
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-swipe-hints', checked: 'checked' })),
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-hint-up', checked: 'checked' })),
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-hint-down', checked: 'checked' })),
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-hint-side', checked: 'checked' }))),
       /* 深浅键盘下拉：与主题页槽位联动，故**不**放进 pt-state-group（符号页也保留） */
       el('select', { id: 'pt-theme' },
         el('option', { value: 'light' }, '浅色'),
@@ -661,7 +672,6 @@ function buildSkeleton() {
         el('label', { class: 'mini-label' }, '作者 author'),
         el('input', { id: 'th-author', type: 'text', class: 'mini-input' })),
       el('select', { id: 'th-slot' }),
-      el('select', { id: 'th-bordermode' }),
       el('div', { id: 'th-status', class: 'status' })),
     el('details', { class: 'card', open: 'open' },
       el('summary', null, '主题校验'),

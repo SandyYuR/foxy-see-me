@@ -81,12 +81,14 @@ function panelBgCss() {
   return themeCss('keyboardColor');
 }
 
-/* 键边框开关：规范 §2.4 —— B 为真且 C 为真才画描边（ly.java:332-334）。
- * 编辑器没有 C(描边) 的 UI，取 App 默认值 false（xw0.java:56），
- * 所以**默认不画描边**；B 为假时同样不画。 */
+/* 键边框开关：规范 §2.4 —— **B 与 C 同时为真**才画描边（ly.java:332-334：
+ * `if (m00Var.B && m00Var.C) setStroke(...)`）。
+ * 编辑器没有 C(描边) 的 UI，取 App 默认值 false（xw0.java:56），所以默认不画。
+ * ⚠️ 必须**同时**判 B：只看 C 的话，一旦草稿里带了 `keyStrokeEnabled:true`
+ * 而用户把键边框关掉（B=false），编辑器仍会画描边，与实机不符。 */
 function cellStrokeEnabled() {
   var st = FE.state || {};
-  return st.keyStrokeEnabled === true;
+  return st.keyBorderEnabled !== false && st.keyStrokeEnabled === true;
 }
 
 /* ================================================================
@@ -113,7 +115,10 @@ FE.symbolPreviewData = function () {
  * "最近使用"运行时状态，凭空造一个只会误导用户以为文件里有这组。
  * 这里刻意不加，并在界面上说明。 */
 FE.symbolPreviewGroups = function (data) {
-  var lang = null;   /* null = 用 App 的默认回退链（FE.symbolGroupLabel 内部处理） */
+  /* 语言用 'zh'：App 取系统首选 locale（如 zh-TW / zh-Hant-TW），编辑器无从得知，
+   * 取 'zh' 与左侧分组列表同一个口径，两处显示名才不会各显各的。
+   * 传 null 会直接落到底链的「第一个值」，与左侧列表（用 'zh'）可能不一致。 */
+  var lang = 'zh';
   return (data.groups || []).map(function (g, i) {
     var name = FE.symbolGroupLabel ? (FE.symbolGroupLabel(g, lang) || '') : '';
     return {
@@ -333,10 +338,18 @@ FE.renderSymbolPreview = function (host, opts) {
   rightCol.style.overflowX = 'hidden';
 
   var grid = h('div', { class: 'sym-pv-cells' + (multi ? ' sym-pv-multiline' : '') });
-  grid.style.display = 'grid';
-  /* 每行 6 格 / multiLine 时每行 1 格（cu.java:85、ly.java:423） */
+  /* 每行格子数 = multiLine ? 1 : 6（cu.java:85、ly.java:45）。
+   *
+   * ⚠️ **必须按行分组渲染，不能用一个 grid 固定 6 等分** —— App 端每凑满一行就新开
+   * 一个独立的横向 LinearLayout，格子用 `LayoutParams(0, h, 1.0f)` 在**该行内**等分
+   * （ly.java:192-200 新建行、:215-218 加格子）。
+   * 后果：**末行不足 6 条时，那几条会各自拉宽占满整行**（2 条各占半宽），
+   * 而不是挤在左侧、右边留空。
+   * 早先用 `grid-template-columns: repeat(6, minmax(0,1fr))` 正是这个错 ——
+   * 末行看起来"缺了几格"，与实机明显不同。 */
   var cols = multi ? spec.columnsPerRowMultiLine : spec.columnsPerRow;
-  grid.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))';
+  grid.style.display = 'flex';
+  grid.style.flexDirection = 'column';
   grid.style.gap = FE.symbolPreviewDp(spec.cellRowGapDp, unit) + 'px';
 
   var cH = FE.symbolPreviewDp(spec.cellHeightDp, unit);
@@ -344,44 +357,66 @@ FE.renderSymbolPreview = function (host, opts) {
   var cRadius = FE.symbolPreviewDp(spec.cellCornerDp, unit);
   var cur = groups[sel];
   var cellEls = [];
-  (cur.symbols || []).forEach(function (sym) {
-    var cell = h('div', {
-      class: 'sym-pv-cell',
-      title: multi ? sym : (sym + '（格高固定 40dp，超出会被裁切）')
-    }, sym === '' ? '（空）' : sym);
-    /* multiLine=true → 行高自适应（WRAP_CONTENT）；false → 固定 40dp 且会裁切 */
-    if (multi) {
-      cell.style.minHeight = cH + 'px';
-      cell.style.whiteSpace = 'pre-wrap';
-      cell.style.wordBreak = 'break-all';
-      cell.style.padding = cGap + 'px';
-      cell.style.lineHeight = '1.3';
-    } else {
-      cell.style.height = cH + 'px';
-      cell.style.lineHeight = cH + 'px';
-      cell.style.padding = '0 ' + cGap + 'px';
-      cell.style.whiteSpace = 'nowrap';
-      cell.style.overflow = 'hidden';
-      cell.style.textOverflow = 'ellipsis';
-    }
-    cell.style.boxSizing = 'border-box';
-    cell.style.marginLeft = cGap + 'px';
-    cell.style.marginRight = cGap + 'px';
-    cell.style.fontSize = FE.symbolPreviewDp(spec.cellFontSp, unit) + 'px';
-    cell.style.textAlign = 'center';
-    /* 圆角 6dp 且 clamp 到「短边一半」（ly.java:335-340）。
-     * 预览不预先知道实际尺寸，用行高/字号估一个下界近似即可 —— 规范里
-     * clamp 的意义是"小格别圆成胶囊"，这里按固定高度算一半已达成同样效果。 */
-    cell.style.borderRadius = Math.min(cRadius, cH / 2) + 'px';
-    if (bgCell) cell.style.background = bgCell;
-    if (fgCell) cell.style.color = fgCell;
-    /* 描边：仅当 B(键边框) 与 C(描边) 同时开启（ly.java:332-334） */
-    if (strokeCss) {
-      cell.style.border = FE.symbolPreviewDp(spec.cellStrokeDp, unit) + 'px solid ' + strokeCss;
-    }
-    cellEls.push(cell);
-    grid.appendChild(cell);
-  });
+  var rowEls = [];
+  /* 按 cols 条切行：每行一个 flex 行容器，行内格子 `flex:1 1 0` 等分（ly.java:192-218）。
+   * margin 仍按「每格左右各 2dp」写（App 用 setMarginStart/End(b(2))），
+   * 行的首尾格因此也带 margin —— 与 App 一致。 */
+  var syms = (cur.symbols || []);
+  for (var ri = 0; ri < syms.length; ri += cols) {
+    var rowSyms = syms.slice(ri, ri + cols);
+    var rowEl = h('div', { class: 'sym-pv-row' });
+    rowEl.style.display = 'flex';
+    rowEl.style.flexDirection = 'row';
+    rowSyms.forEach(function (sym) {
+      var cell = h('div', {
+        class: 'sym-pv-cell',
+        /* 提示语按 App 实际行为描述：multiLine=false 时格子固定 40dp 高，
+         * 超长条目被**等比缩小**（z9 Proportional，见下）而不是裁掉。 */
+        title: multi ? sym : (sym + '（格高固定 40dp，过长会等比缩小）')
+      }, sym === '' ? '（空）' : sym);
+      cell.style.flex = '1 1 0';
+      cell.style.minWidth = '0';     /* flex 子项默认 min-width:auto 会被长内容顶宽 */
+      /* multiLine=true → 行高自适应（WRAP_CONTENT）；false → 固定 40dp */
+      if (multi) {
+        cell.style.minHeight = cH + 'px';
+        cell.style.whiteSpace = 'pre-wrap';
+        cell.style.wordBreak = 'break-all';
+        cell.style.padding = cGap + 'px';
+        cell.style.lineHeight = '1.3';
+      } else {
+        cell.style.height = cH + 'px';
+        cell.style.lineHeight = cH + 'px';
+        cell.style.padding = '0 ' + cGap + 'px';
+        /* ⚠️ 这里用 nowrap + overflow hidden 作**视觉近似**：
+         * App 给格子设了 `setScaleMode(y9.a)` = Proportional（ly.java:206、y9.java:19），
+         * z9 会取 `min(1, 宽比, 高比)` 再把文字**等比缩小**画进去（z9.java:102-105、259），
+         * 即"变小"而非"裁掉"。浏览器没有等价的自动缩字，故用截断近似；
+         * 想精确复现需按 文字宽/格宽 换算 font-size。 */
+        cell.style.whiteSpace = 'nowrap';
+        cell.style.overflow = 'hidden';
+        cell.style.textOverflow = 'ellipsis';
+      }
+      cell.style.boxSizing = 'border-box';
+      cell.style.marginLeft = cGap + 'px';
+      cell.style.marginRight = cGap + 'px';
+      cell.style.fontSize = FE.symbolPreviewDp(spec.cellFontSp, unit) + 'px';
+      cell.style.textAlign = 'center';
+      /* 圆角 6dp 且 clamp 到「短边一半」（ly.java:335-340）。
+       * 预览不预先知道实际尺寸，用行高/字号估一个下界近似即可 —— 规范里
+       * clamp 的意义是"小格别圆成胶囊"，这里按固定高度算一半已达成同样效果。 */
+      cell.style.borderRadius = Math.min(cRadius, cH / 2) + 'px';
+      if (bgCell) cell.style.background = bgCell;
+      if (fgCell) cell.style.color = fgCell;
+      /* 描边：仅当 B(键边框) 与 C(描边) 同时开启（ly.java:332-334） */
+      if (strokeCss) {
+        cell.style.border = FE.symbolPreviewDp(spec.cellStrokeDp, unit) + 'px solid ' + strokeCss;
+      }
+      cellEls.push(cell);
+      rowEl.appendChild(cell);
+    });
+    rowEls.push(rowEl);
+    grid.appendChild(rowEl);
+  }
   rightCol.appendChild(grid);
   panel.appendChild(rightCol);
 

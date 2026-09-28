@@ -398,5 +398,54 @@ console.log('\n== ★回归：主题页色框必须全都有取色器实例（�
   ok(same.jscolor === sameInst, '重复 installPendingColorPickers 不重建已有实例（幂等）');
 }
 
+/* ================================================================
+ * ⑦ ★回归：26 个颜色行的排版必须**完全一致**（标签独占整行）
+ *
+ * 现象（用户实机截图指出）：`accentColor` 那一行的色值框跑到与标签**同一行**，
+ * 「清除」按钮被挤到下一行；其余 25 行都是「标签一行、框 + 按钮一行」。
+ *
+ * 成因：`.th-color-grid .mini-label { flex: 1 1 auto }` —— 标签按**内容宽度**
+ * 参与 flex 计算。26 个字段标签长短悬殊（`candidateBarColor` 的中文注释长，
+ * `accentColor` 只有「强调色」三个字），**只有最短的那个**省出的空间刚好容得下
+ * `.color-input`(150px)，于是它不换行、其余 25 个换行 → 那一行看起来与众不同。
+ *
+ * 修法：标签 `flex-basis` 改为 **100%**，在 `flex-wrap: wrap` 下恒定独占整行，
+ * 色框与按钮必然成组换到第二行。
+ *
+ * ⚠️ DOM 桩没有布局引擎（量不到换行），所以这条只能查 CSS 源码 ——
+ * 与 test-ui.js 查 `::-webkit-scrollbar` 规则同一做法。
+ * 实机复核：headless Edge 截图，26 行签名（inpX|btnX|rowH）一致。
+ * ================================================================ */
+console.log('\n== ★回归：26 个颜色行排版一致（标签独占整行）==');
+{
+  const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+  const m = css.match(/\.th-color-grid\s+\.mini-label\s*\{([^}]*)\}/);
+  ok(!!m, '（前置）存在 .th-color-grid .mini-label 规则');
+  const body = m ? m[1].replace(/\s+/g, ' ').trim() : '';
+  ok(/flex\s*:\s*1\s+1\s+100%/.test(body),
+    '★ 标签 flex-basis = 100%（恒定独占整行）—— 实际声明: ' + JSON.stringify(body));
+  ok(!/flex\s*:\s*1\s+1\s+auto/.test(body),
+    '★ 不能是 flex: 1 1 auto（短标签会与色框挤同一行，accentColor 就是这样跑偏的）');
+  /* 行本身必须允许 wrap，100% 的 basis 才表现为「独占一行后换行」 */
+  const row = css.match(/\.th-color-grid\s+\.form-row\.form-inline\s*\{([^}]*)\}/);
+  ok(!!row, '（前置）存在 .th-color-grid 行规则');
+  /* 26 行共用同一 class，不存在「给某一行特调」的覆盖 */
+  FE.loadThemeProfileText(FE.serializeThemeProfile(FE.themeNewProfile()));
+  FE.state.themeSlot = 'light';
+  FE.renderThemeTab();
+  const labels = q('#th-colors .th-field-label');
+  eq(labels.length, 26, '26 行的标签都挂 .th-field-label（同一条规则一视同仁）');
+  const accRows = labels.filter(function (l) {
+    const c = l.querySelectorAll('code')[0];
+    return c && String(c.textContent) === 'accentColor';
+  });
+  eq(accRows.length, 1, 'accentColor 行没有单独覆盖（与其他行共用同一规则）');
+  /* 每行的子元素结构也必须同构：label + input + button（顺序一致） */
+  const sigs = q('#th-colors .form-row.form-inline').map(function (r) {
+    return r.children.map(function (c) { return c.tagName; }).join('+');
+  });
+  eq(new Set(sigs).size, 1, '★ 26 行的子元素序列完全一致（唯一签名: ' + sigs[0] + '）');
+}
+
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
 process.exit(failed ? 1 : 0);

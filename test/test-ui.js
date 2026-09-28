@@ -510,6 +510,49 @@ FE.mutate(() => {
 });
 eq(q('.kb-row').length, 2, '添加行后 2 行');
 
+/* ---- 保留布局名拦截（基线 §2.4 / 行动项 11） ----
+ * symbols / emoji / kaomoji 在 App 下游被符号面板分支截胡（cv.java:821-873），
+ * 同名自定义布局**永远打不开** —— 所以新建/复制/重命名都必须拦下并说明原因。
+ * 旧实现只在文档里提一句、校验 switch_layout 时豁免，命名路径毫无拦截。 */
+{
+  ok(FE.RESERVED_LAYOUT_NAMES && FE.RESERVED_LAYOUT_NAMES.length === 3,
+    'FE.RESERVED_LAYOUT_NAMES 导出三个保留名');
+  eq(FE.RESERVED_LAYOUT_NAMES, ['symbols', 'emoji', 'kaomoji'], '保留名集合正确');
+  /* 新建：点开 → 填保留名 → 确定 → 应被拦下（布局未创建，且给出说明弹窗） */
+  for (const reserved of ['symbols', 'emoji', 'kaomoji']) {
+    documentStub._openDialogs.length = 0;
+    $('layout-add').click();
+    const dlgAdd = lastDialog();
+    ok(!!dlgAdd, '新建布局弹窗已打开（保留名 ' + reserved + '）');
+    const inp = dlgAdd.querySelectorAll('.ui-dialog-input')[0];
+    if (inp) inp.value = reserved;
+    dlgAdd.querySelectorAll('.ui-dialog-ok')[0].click();
+    await sleep(0);
+    ok(!FE.state.profile.layouts[reserved], '★ 保留名 “' + reserved + '” 无法新建布局');
+    const warn = await uiReadAlert();
+    ok(warn && warn.indexOf('保留名') >= 0,
+      '★ 拦截时给出「保留名」说明（实际：' + String(warn).slice(0, 40) + '…）');
+  }
+  /* 重命名：把普通布局改成保留名 → 同样被拦下，原名不变 */
+  const before = Object.keys(FE.state.profile.layouts).filter(k => k === 'test_layout');
+  eq(before, ['test_layout'], '（前置）test_layout 存在，准备重命名');
+  documentStub._openDialogs.length = 0;
+  $('layout-rename').click();
+  const dlgRe = lastDialog();
+  ok(!!dlgRe, '重命名弹窗已打开');
+  const inpRe = dlgRe.querySelectorAll('.ui-dialog-input')[0];
+  if (inpRe) inpRe.value = 'symbols';
+  dlgRe.querySelectorAll('.ui-dialog-ok')[0].click();
+  await sleep(0);
+  ok(!!FE.state.profile.layouts.test_layout, '★ 保留名无法重命名（原名保留）');
+  ok(!FE.state.profile.layouts.symbols, '★ 未产生名为 symbols 的布局（否则它永远打不开）');
+  const warnRe = await uiReadAlert();
+  ok(warnRe && warnRe.indexOf('保留名') >= 0, '★ 重命名拦截同样给出「保留名」说明');
+  /* 非保留名不受影响：守卫只拦这三个名字 */
+  ok(FE.reservedLayoutNameGuard('symbols_x') === false, '带后缀的名字不被误拦');
+  ok(FE.reservedLayoutNameGuard('Symbols') === false, '大小写不同不误拦（App 按字面量分派）');
+}
+
 console.log('== 网格编辑器渲染 ==');
 $('layout-select').value = 'numpad';
 $('layout-select')._fire('change');
@@ -752,24 +795,41 @@ console.log('== 按键外观：圆角 / 水平间隙 / 垂直间隙 ==');
     ok(Math.abs(parseFloat(rowKeys[0].style.borderRadius) - FE.kbDp(8, unitNow)) < 0.6,
       '键圆角跟随设置（实际 ' + rowKeys[0].style.borderRadius + 'px）');
 
-    /* ⑦ 滑杆接线：改 value 触发 input → state 与预览同步 */
-    const sliderC = $('pt-corner');
-    ok(!!sliderC, '圆角滑杆存在');
-    eq(sliderC.getAttribute('min'), '0', '圆角滑杆下限 0');
-    eq(sliderC.getAttribute('max'), '24', '圆角滑杆上限 24');
-    sliderC.value = '16';
-    sliderC._fire('input');
-    eq(FE.state.keyCornerRadiusDp, 16, '拖动圆角滑杆写入 state');
+    /* ⑦ 接线：改 value 触发 input → state 与预览同步。
+     * ⚠️ 这三项现在是**数字输入框**（原为滑杆）—— 范围窄、滑杆却占固定横向空间，
+     * 换成数字框后整行能腾出位置给六个开关。断言按数字框写。 */
+    const numC = $('pt-corner');
+    ok(!!numC, '圆角数字输入框存在');
+    eq(String(numC.getAttribute('type')), 'number', '圆角控件是 number 类型');
+    eq(numC.getAttribute('min'), '0', '圆角下限 0');
+    eq(numC.getAttribute('max'), '24', '圆角上限 24');
+    numC.value = '16';
+    numC._fire('input');
+    eq(FE.state.keyCornerRadiusDp, 16, '改圆角数字框写入 state');
     ok(Math.abs(parseFloat(q('.kb-row')[0].querySelectorAll('.kb-key')[0].style.borderRadius) -
-      FE.kbDp(16, unitNow)) < 0.6, '拖动后预览圆角立即跟随');
-    eq($('pt-corner-val').textContent, '16dp', '滑杆数值标签同步');
-    const sliderV = $('pt-gap-v');
-    ok(!!sliderV, '垂直间隙滑杆存在');
-    sliderV.value = '7';
-    sliderV._fire('input');
-    eq(FE.state.keyGapVerticalDp, 7, '拖动垂直间隙滑杆写入 state');
+      FE.kbDp(16, unitNow)) < 0.6, '改动后预览圆角立即跟随');
+    /* 越界值被夹回范围（App 端 a60.e/f/g 对越界也是回落默认） */
+    numC.value = '99';
+    numC._fire('change');
+    eq(FE.state.keyCornerRadiusDp, 24, '★ 圆角超上限被夹到 24');
+    eq(String(numC.value), '24', '★ 夹紧后输入框回显夹后的值（用户能看到被夹）');
+    numC.value = '-5';
+    numC._fire('change');
+    eq(FE.state.keyCornerRadiusDp, 0, '★ 圆角低于下限被夹到 0');
+    /* 空值 / 非数字 → 回落默认值 */
+    numC.value = '';
+    numC._fire('change');
+    eq(FE.state.keyCornerRadiusDp, 6, '★ 空值回落默认 6');
+    numC.value = '16';
+    numC._fire('change');
+    eq(FE.state.keyCornerRadiusDp, 16, '恢复为 16');
+    const numV = $('pt-gap-v');
+    ok(!!numV, '垂直间隙数字输入框存在');
+    numV.value = '7';
+    numV._fire('input');
+    eq(FE.state.keyGapVerticalDp, 7, '改垂直间隙数字框写入 state');
     eq(String(q('.kb-row')[0].querySelectorAll('.kb-key')[0].style.marginTop),
-      FE.kbDp(7, unitNow) + 'px', '拖动后预览垂直内缩立即跟随');
+      FE.kbDp(7, unitNow) + 'px', '改动后预览垂直内缩立即跟随');
 
     /* ⑧ 随草稿持久化（纯预览设置，不进 Foxy 文件） */
     const draftAp = JSON.parse(localStorageStub.getItem('foxy-layout-editor-draft-v1'));
@@ -3544,12 +3604,21 @@ await sleep(350);
     ok(tabs[5] === symTab, '符号面板按钮排在第 6 位');
     ok($('tab-theme') != null, '主题面板存在');
     ok($('tab-symbols') != null, '符号面板存在');
-    /* 主题页容器 id 齐备（app.js/theme-editor.js 都按 id 取） */
+    /* 主题页容器 id 齐备（app.js/theme-editor.js 都按 id 取）。
+     * ⚠️ 不再有 `th-bordermode`：键边框/键描边是 App 的**全局设置**
+     * （SharedPreferences `foxy_theme`），不属于主题文件内容，
+     * 已移到预览键盘的滑杆行（见下面的 `pt-*` 断言）。 */
     ['th-import', 'th-import-file', 'th-export', 'th-example', 'th-load-example', 'th-author',
-      'th-status', 'th-slot', 'th-bordermode', 'th-colors', 'th-keytypes', 'th-validation',
+      'th-status', 'th-slot', 'th-colors', 'th-keytypes', 'th-validation',
       'th-json', 'th-json-apply', 'th-json-format', 'th-json-status'].forEach(id => {
       ok($(id) != null, '主题页容器存在: ' + id);
     });
+    ok($('th-bordermode') == null, '★ 主题页已移除键边框下拉（它是 App 全局设置，不是主题字段）');
+    /* 预览滑杆行的全局开关齐备（对齐 App「设置 → 主题效果」） */
+    ['pt-border', 'pt-stroke', 'pt-swipe-hints', 'pt-hint-up', 'pt-hint-down', 'pt-hint-side']
+      .forEach(id => {
+        ok($(id) != null, '预览滑杆行有全局开关: ' + id);
+      });
     /* 符号页容器（另一模块实现内容，但容器必须由本页备好） */
     ['sym-import', 'sym-import-file', 'sym-export', 'sym-example', 'sym-load-example', 'sym-kind',
       'sym-status', 'sym-multiline', 'sym-filter', 'sym-filter-clear', 'sym-search',
@@ -3780,9 +3849,11 @@ await sleep(350);
     eq(qKey2.style.background, '#4CAF50', '松开后回到每键 colors');
   }
 
-  console.log('== 主题页：按键边框开关影响容器底色 ==');
+  console.log('== 预览滑杆行：按键边框开关影响容器底色 ==');
   {
-    /* key_border_enabled=false → 回落 keyboardColor（基线 §1.4） */
+    /* key_border_enabled=false → 回落 keyboardColor（基线 §1.4）。
+     * ⚠️ 开关现在在**预览滑杆行**（`#pt-border`），不再在主题页 ——
+     * 它是 App 全局设置（SharedPreferences `foxy_theme`），不是主题文件字段。 */
     FE.state.themeProfile.light.keyboardColor = '#FF0A0B0C';
     FE.state.themeProfile.light.altKeyboardColor = '#FF0D0E0F';
     FE.state.themeSlot = 'light';
@@ -3790,13 +3861,90 @@ await sleep(350);
     FE.renderAll();
     /* 同样注意字节序：#FF0D0E0F → CSS #0D0E0FFF */
     eq($('preview-kb').style.background, '#0D0E0FFF', 'border 启用时用 altKeyboardColor');
-    $('th-bordermode').value = 'off';
-    $('th-bordermode')._fire('change');
+    $('pt-border').checked = false;
+    $('pt-border')._fire('change');
     eq(FE.state.keyBorderEnabled, false, '边框开关状态已记录');
     eq($('preview-kb').style.background, '#0A0B0CFF', 'border 禁用时回落 keyboardColor');
-    $('th-bordermode').value = 'on';
-    $('th-bordermode')._fire('change');
+    $('pt-border').checked = true;
+    $('pt-border')._fire('change');
     eq($('preview-kb').style.background, '#0D0E0FFF', '再启用后回到 altKeyboardColor');
+  }
+
+  console.log('== 预览滑杆行：滑动提示的两级开关（总开关 → 逐方向） ==');
+  {
+    /* App 消费点 `v40.java:515-548`：先判总开关 `show_swipe_hints`（xw0.g），
+     * 开着才逐方向看 `show_swipe_hints_{side,up,down}`（xw0.f）。
+     * 方向映射见 `xw0.java:166-176`：LEFT/RIGHT → side，UP → up，DOWN → down。 */
+    const saved = {
+      swipeHints: FE.state.swipeHints, swipeHintUp: FE.state.swipeHintUp,
+      swipeHintDown: FE.state.swipeHintDown, swipeHintSide: FE.state.swipeHintSide
+    };
+    const hintCount = (d) => q('.kb-hint' + (d ? '.kb-hint-' + d : '')).length;
+    try {
+      /* ① 全开（App 默认）：四个方向的提示都在 */
+      FE.state.swipeHints = true;
+      FE.state.swipeHintUp = FE.state.swipeHintDown = FE.state.swipeHintSide = true;
+      FE.renderAll();
+      ok(hintCount('up') > 0, '（前置）默认开时上滑提示存在');
+      ok(hintCount('down') > 0, '（前置）默认开时下滑提示存在');
+      ok(hintCount('left') > 0 || hintCount('right') > 0, '（前置）默认开时侧滑提示存在');
+      const allOn = hintCount();
+      ok(allOn > 0, '默认开时提示总数 > 0（' + allOn + '）');
+
+      /* ② 关「上滑」：只有上滑消失，其余不受影响 */
+      FE.state.swipeHintUp = false;
+      FE.renderAll();
+      eq(hintCount('up'), 0, '★ 关「上滑」→ 上滑提示全部不画');
+      ok(hintCount('down') > 0, '★ 关「上滑」不影响下滑');
+      ok(hintCount() < allOn, '★ 关一个方向后提示总数变少（是真的没生成元素，不是只改样式）');
+
+      /* ③ 关「侧滑」：左滑与右滑**同时**消失（App 里两者共用 `side` 一个开关） */
+      FE.state.swipeHintUp = true;
+      FE.state.swipeHintSide = false;
+      FE.renderAll();
+      eq(hintCount('left'), 0, '★ 关「侧滑」→ 左滑提示不画');
+      eq(hintCount('right'), 0, '★ 关「侧滑」→ 右滑提示不画（与左滑共用一个开关，xw0.java:166）');
+      ok(hintCount('up') > 0 && hintCount('down') > 0, '★ 关「侧滑」不影响上下滑');
+
+      /* ④ 关**总开关**：即使三个方向开关都开着，也一个提示都不画。
+       * ⚠️ 必须经**复选框 change**（真实用户路径）—— 置灰态由 FE.applyGlobalToggles
+       * 维护，而 renderAll() 只重画预览、不碰这些控件的可用性。 */
+      FE.state.swipeHintUp = FE.state.swipeHintDown = FE.state.swipeHintSide = true;
+      $('pt-swipe-hints').checked = false;
+      $('pt-swipe-hints')._fire('change');
+      eq(FE.state.swipeHints, false, '复选框 change 写入 state.swipeHints');
+      eq(hintCount(), 0, '★ 总开关关闭 → 所有方向提示都不画（纵使方向开关都开着）');
+
+      /* ⑤ 总开关关闭时，三个方向复选框应置灰但**保留用户的勾选值**（可逆） */
+      eq($('pt-hint-up').disabled, true, '总开关关闭 → 上滑复选框置灰');
+      eq($('pt-hint-down').disabled, true, '总开关关闭 → 下滑复选框置灰');
+      eq($('pt-hint-side').disabled, true, '总开关关闭 → 侧滑复选框置灰');
+      eq(FE.state.swipeHintUp, true,
+        '★ 置灰不改值：总开关重新打开后用户原来的选择还在');
+
+      /* ⑥ 总开关重新打开 → 提示回来，复选框恢复可用 */
+      $('pt-swipe-hints').checked = true;
+      $('pt-swipe-hints')._fire('change');
+      eq($('pt-hint-up').disabled, false, '总开关打开 → 方向复选框恢复可用');
+      eq($('pt-hint-down').disabled, false, '总开关打开 → 下滑复选框恢复可用');
+      eq($('pt-hint-side').disabled, false, '总开关打开 → 侧滑复选框恢复可用');
+      ok(hintCount() > 0, '★ 总开关打开 → 提示回来（且方向选择仍是之前那套）');
+
+      /* ⑦ 逐方向开关同样走复选框 change（真实用户路径） */
+      $('pt-hint-down').checked = false;
+      $('pt-hint-down')._fire('change');
+      eq(FE.state.swipeHintDown, false, '复选框 change 写入 state.swipeHintDown');
+      eq(hintCount('down'), 0, '★ 经复选框关「下滑」→ 下滑提示不画');
+      ok(hintCount('up') > 0, '★ 经复选框关「下滑」不影响上滑');
+      $('pt-hint-down').checked = true;
+      $('pt-hint-down')._fire('change');
+      ok(hintCount('down') > 0, '★ 经复选框重新打开「下滑」→ 提示回来');
+    } finally {
+      ['swipeHints', 'swipeHintUp', 'swipeHintDown', 'swipeHintSide'].forEach(function (k) {
+        FE.state[k] = saved[k];
+      });
+      FE.renderAll();
+    }
   }
 
   console.log('== 主题页：还原细节（按下态/阴影/边框开关/图标）+ 键盘配色 CSS 变量 ==');
@@ -3816,9 +3964,15 @@ await sleep(350);
     ok(!!hoverM && parseFloat(hoverM[1]) <= 1.1,
       'hover 提亮系数很小（仅网页交互反馈，手机端无此效果）');
 
-    /* ---- 源码级：阴影是「向下 1dp 的实心圆角层」，不是模糊阴影（§2.5） ---- */
-    ok(/function shadowCss\(color\)\s*\{\s*return '0 1px 0 '/.test(appSrc),
-      '阴影改为向下 1px 实心（模糊半径 0），§2.5');
+    /* ---- 源码级：阴影是「向下 1dp 的实心圆角层」，不是模糊阴影（§2.5） ----
+     * ⚠️ 偏移量必须**按 dp 换算**（`FE.kbDp(1, unit)`）而非写死 1px ——
+     * 预览 unit 随容器宽变，写死会让偏移在不同宽度下与手机比例不一致。 */
+    ok(/function shadowCss\(color, unit\)/.test(appSrc),
+      'shadowCss 接受 unit（偏移量按 dp 换算，不再写死 px）');
+    ok(/FE\.kbDp\(1, u\)/.test(appSrc),
+      '阴影偏移 = FE.kbDp(1, unit)（对应 keyShadowOffset=1dp，§2.1/§2.5）');
+    ok(/function shadowCss[\s\S]{0,400}?0 '\s*\+|'0 ' \+/.test(appSrc),
+      '阴影写成「0 <偏移> 0 <色>」= 无模糊半径（§2.5 明确不是模糊阴影）');
 
     /* ---- 源码级：图标色跟随键文字色（§1.4，不能再被写死色盖掉） ---- */
     ok(/\.kb-icon-wrap\s*\{\s*color:\s*currentColor/.test(cssSrc2),
@@ -3895,21 +4049,103 @@ await sleep(350);
       const shadowKey = q('.kb-key').find(k => k.classList.contains('kt-letter') && k.style.boxShadow);
       ok(!!shadowKey, '（前置）存在带主题阴影的 LETTER 键');
       const bs = String(shadowKey.style.boxShadow);
-      ok(/^0 1px 0 #/.test(bs), '阴影为「向下 1px 实心层」（无模糊半径）：' + bs);
-      ok(bs.indexOf('2px') < 0, '阴影不含模糊半径（§2.5 明确不是模糊阴影）');
+      /* 偏移量按 dp 换算（1dp ≈ 1.06px @ 竖屏 unit），关键是**模糊半径为 0**、
+       * 水平偏移为 0 —— 即「向下偏移的实心层」而非模糊阴影（§2.5）。 */
+      ok(/^0 [\d.]+px 0 #/.test(bs), '阴影为「向下偏移的实心层」（无模糊半径）：' + bs);
+      ok(/^0 [\d.]+px 0 /.test(bs) && bs.split(' ')[2] === '0',
+        '★ 模糊半径 = 0（§2.5 明确不是模糊阴影；实际 ' + bs + '）');
+      ok(parseFloat(bs.split(' ')[1]) > 0, '向下偏移量为正（阴影在键面下方）');
 
-      /* ---- 边框开关**真正作用于键边框**（§2.4：B 决定是否画边框） ---- */
+      /* ---- 边框两个开关的**三态**（§2.4，`v40.smali` 的 b() 逐分支确证）----
+       *   B=keyBorderEnabled（默认 true） / C=keyStrokeEnabled（默认 false）
+       *     B &&  C → setStroke(1dp, keyBorderColor) → 画边框
+       *     B && !C → LayerDrawable[阴影层+纯色键面]  → **不画 keyBorderColor 边框**（App 默认）
+       *     !B      → 纯色圆角块                      → 无边框、无阴影层
+       * ⚠️ 旧断言钉的是「B 为真就画边框」——那是错的：App 默认（B=true, C=false）
+       * **没有** keyBorderColor 边框，靠键面与 altKeyboardColor 底色对比区分。
+       * 所以这里必须按 B&&C 才画来断。 */
       const borderCount = () => q('.kb-key').filter(k => k.classList.contains('kb-key-hasborder')).length;
-      ok(borderCount() > 0, 'border 启用且主题给了 keyBorderColor 时键画边框');
-      $('th-bordermode').value = 'off';
-      $('th-bordermode')._fire('change');
+      const keyShadowCount = () => q('.kb-key').filter(k => k.style.boxShadow).length;
+      /* ① 默认态 B=true / C=false：**不画**边框，但有阴影层 */
+      FE.state.keyStrokeEnabled = false;
+      FE.renderAll();
+      eq(borderCount(), 0, '★ B=true/C=false（App 默认）→ **不画** keyBorderColor 边框');
+      ok(keyShadowCount() > 0, '★ B=true/C=false → 键有阴影层（LayerDrawable 的阴影层存在）');
+      /* ② B=true / C=true：画描边，且阴影层消失（带描边的 InsetDrawable 无阴影层） */
+      FE.state.keyStrokeEnabled = true;
+      FE.renderAll();
+      ok(borderCount() > 0, '★ B=true/C=true → 画描边（keyBorderColor 可见）');
+      eq(keyShadowCount(), 0, '★ B=true/C=true → 无阴影层（v40.java:206 z3=B&&!C）');
+      FE.state.keyStrokeEnabled = false;
+      FE.renderAll();
+      /* ③ B=false：无边框、无阴影层，且 --kb-bg 回落 keyboardColor */
+      $('pt-border').checked = false;
+      $('pt-border')._fire('change');
       eq(FE.state.keyBorderEnabled, false, '边框开关已关闭');
-      eq(borderCount(), 0, 'border 禁用时**不再**画键边框（此前开关形同虚设）');
+      eq(borderCount(), 0, '★ B=false → 不画边框');
+      eq(keyShadowCount(), 0, '★ B=false → 无阴影层（v40.java:198-206）');
+      /* ★ 阴影层必须连 **CSS 变量** 一起压掉：style.css 写的是
+       * `box-shadow: var(--kb-key-shadow, <写死的默认投影>)`，而空串会被 setCssVar
+       * 转成 removeProperty → var() 回落到那个默认投影，于是 B=false 时键上仍有
+       * 一圈向下偏移的实色块（看起来就像边框）。必须显式写 none。 */
+      eq(String(kbEl.style['--kb-key-shadow'] || ''), 'none',
+        '★ B=false → --kb-key-shadow 显式 none（否则回落 CSS 默认投影，看着像还有边框）');
       eq(String(kbEl.style['--kb-bg'] || ''), '#0A0B0CFF', '关闭边框时 --kb-bg 回落 keyboardColor');
-      $('th-bordermode').value = 'on';
-      $('th-bordermode')._fire('change');
-      ok(borderCount() > 0, '重新启用后键边框回来');
+      /* ⭐ 边框未勾选时，「按键描边」必须**不可选**：描边只在 B && C 时才画
+       * （`v40.smali` 的 `b()`：`z8 = B && C` 才 `setStroke`），边框关掉后
+       * 描边开关没有任何可见效果 —— 可勾会让人以为它还在起作用。 */
+      eq($('pt-stroke').disabled, true, '★ B=false → 「按键描边」置灰不可选');
+      eq(String($('pt-stroke').parentNode.style.opacity), '0.45',
+        '★ B=false → 描边项半透明（看得出的"不可用"）');
+      ok($('pt-stroke').checked === false || FE.state.keyStrokeEnabled === false,
+        '★ 置灰不改值：state 里的描边选择被保留（重新勾边框即恢复）');
+      /* ⭐⭐ B=false 时**非 ACTION** 键的底色 = `keyboardColor`，于是按键与键盘底
+       * 融为一体（用户说的"按键颜色没有了"）；**ACTION 键（回车等）保持不变**。
+       * 依据 `v40.java:218`（同一处逻辑也在 `m00.java:218`）：
+       *   h = 键类型==ACTION ? m00.h(…, 14) : (B || z4) ? m00.h(…, 2) : this.c.b;
+       * 该分支的 `z4` 恒为 false，所以就是 B=false → `c.b` = keyboardColor。
+       * 用户实机核对过这条（回车键仍蓝、字母键与底色同色）。 */
+      eq(String(kbEl.style['--kb-key-bg'] || ''), '#0A0B0CFF',
+        '★ B=false → LETTER 键底色 = keyboardColor（与键盘底同色，看着"没有按键颜色"）');
+      eq(String(kbEl.style['--kb-key-bg-fn'] || ''), '#0A0B0CFF',
+        '★ B=false → FUNCTION 键底色同样 = keyboardColor（非 ACTION 一律并进底色）');
+      eq(String(kbEl.style['--kb-key-bg-action'] || ''), '#4285F4FF',
+        '★ B=false → ACTION 键（回车等）**保持** keyTypes 底色，不并进底色');
+      /* 行内样式路径同样如此（预览键由 applyKeyColors 写行内 background，
+       * 与 CSS 变量是**两条**渲染路径 —— 上次就是只改了一条才漏掉）。 */
+      {
+        const letterK = q('.kb-key').find(k => k.classList.contains('kt-letter'));
+        const actionK = q('.kb-key').find(k => k.classList.contains('kt-action'));
+        ok(!!letterK && !!actionK, '（前置）布局里同时有 LETTER 与 ACTION 键');
+        eq(letterK.style.background, '#0A0B0CFF',
+          '★ B=false → LETTER 键**行内**底色 = keyboardColor');
+        eq(actionK.style.background, '#4285F4FF',
+          '★ B=false → ACTION 键**行内**底色不变（回车键保持原样）');
+        /* 布局每键自己的 colors.background（②）仍应盖过这个回落底色 */
+        letterK.style.background = ''; /* 清理，避免影响后续断言 */
+      }
+      /* ④ 恢复 B=true / C=true：边框回来 */
+      $('pt-border').checked = true;
+      $('pt-border')._fire('change');
+      FE.state.keyStrokeEnabled = true;
+      FE.renderAll();
+      ok(borderCount() > 0, '重新启用且 C=true 后键边框回来');
+      /* C=true 时同样没有阴影层（v40.java:206 的 z3 = B && !C） */
+      eq(String(kbEl.style['--kb-key-shadow'] || ''), 'none',
+        '★ B=true/C=true → --kb-key-shadow 也是 none（描边态无阴影层）');
       eq(String(kbEl.style['--kb-bg'] || ''), '#0D0E0FFF', '重新启用后 --kb-bg 回到 altKeyboardColor');
+      /* ⑤ B=true / C=false：阴影层恢复（此时才是 App 默认外观）。
+       * 主题给了 keyShadowColor → 写出该阴影值（实心、无模糊半径）。 */
+      FE.state.keyStrokeEnabled = false;
+      FE.renderAll();
+      eq(borderCount(), 0, '★ B=true/C=false → 仍不画边框');
+      {
+        const shv = String(kbEl.style['--kb-key-shadow'] || '');
+        ok(/^0 [\d.]+px 0 #/.test(shv),
+          '★ B=true/C=false → 阴影变量 = 主题 keyShadowColor 的实心层（阴影层存在）：' + shv);
+        ok(shv.split(' ')[2] === '0', '★ 阴影层模糊半径为 0（§2.5 实心层，非模糊）');
+      }
+      FE.state.keyStrokeEnabled = false;
     } finally {
       FE.state.profile = saved.profile;
       FE.state.layoutName = saved.layoutName;
@@ -4353,26 +4589,72 @@ console.log('== 符号面板预览 ==');
       FE.renderAll();
     }
 
-    /* ③ 右列：格子数与 multiLine 决定的列数一致 */
+    /* ③ 右列：格子数与 multiLine 决定的列数一致。
+     *
+     * ⚠️ 断的是「**按行分组**」这个结构，不是固定的 grid 模板列数 ——
+     * App 每凑满一行就新开一个独立横向 LinearLayout，格子 `LayoutParams(0,h,1.0f)`
+     * 在**该行内**等分（ly.java:192-200 新建行、:215-218 加格子）。
+     * 关键是**末行不足 6 条时会各自拉宽占满整行**（2 条各占半宽），
+     * 而不是挤在左侧留空 —— 用固定 `repeat(6, 1fr)` 就会做错这一点。 */
     const cells = q('.sym-pv-cell');
     const sampleGroups = FE.SYMBOL_SAMPLES.symbols.groups;
-    eq(cells.length, sampleGroups[0].symbols.length,
-      '格子数 = 当前分组的条目数（' + sampleGroups[0].symbols.length + '）');
+    const nSym = sampleGroups[0].symbols.length;
+    eq(cells.length, nSym,
+      '格子数 = 当前分组的条目数（' + nSym + '）');
     const grid = q('.sym-pv-cells')[0];
     ok(!!grid, '格子网格存在');
     /* 样例 symbols 的 multiLine=false → 6 格/行 */
     eq(FE.state.symbolProfiles.symbols.multiLine === true, false, '（前置）样例 symbols 为 multiLine=false');
-    ok(String(grid.style.gridTemplateColumns).indexOf('repeat(6') >= 0,
-      'multiLine=false → 每行 6 格（实际 ' + grid.style.gridTemplateColumns + '）');
+    const rows = q('.sym-pv-row');
+    eq(rows.length, Math.ceil(nSym / 6), 'multiLine=false → 行数 = ceil(条目数 / 6)');
+    let maxPerRow = 0;
+    rows.forEach(r => {
+      const c = r.querySelectorAll
+        ? r.querySelectorAll('.sym-pv-cell').length
+        : q('.sym-pv-cell').filter(x => x.parentNode === r).length;
+      if (c > maxPerRow) maxPerRow = c;
+    });
+    ok(maxPerRow <= 6, 'multiLine=false → 每行至多 6 格（实际最多 ' + maxPerRow + '）');
+    /* ★ 末行拉伸：末行不满 6 格时，格子在行内等分（flex:1 1 0），不被左对齐留空。
+     * 样例分组的条目数恰好是 6 的倍数（末行是满的），压不到这条路径，
+     * 所以这里**造一份 8 条的合成分组**：8 = 6 + 2，末行正好 2 条。 */
+    {
+      const kindNow = FE.state.symbolKind || 'symbols';
+      const savedProf = FE.state.symbolProfiles[kindNow];
+      FE.state.symbolProfiles[kindNow] = FE.normalizeSymbolProfile(kindNow, {
+        multiLine: false,
+        groups: [{
+          names: { zh: '末行测试' },
+          symbols: ['1', '2', '3', '4', '5', '6', '7', '8']
+        }]
+      });
+      FE.state.symbolPreviewGroup = 0;
+      FE.renderAll();
+      const rows8 = q('.sym-pv-row');
+      eq(rows8.length, 2, '8 条 / 每行 6 格 → 2 行');
+      const lastRow8 = rows8[rows8.length - 1];
+      const lastCells8 = q('.sym-pv-cell').filter(x => x.parentNode === lastRow8);
+      eq(lastCells8.length, 2, '末行 2 格（未被左对齐留空）');
+      ok(lastCells8.every(c => String(c.style.flex).indexOf('1 1') === 0),
+        '★ 末行每格 flex:1 1 0 —— 2 条各占半宽，拉宽占满整行（ly.java:215-218 行内等分）');
+      ok(lastCells8.every(c => c.style.minWidth === '0'),
+        '★ 末行格子 minWidth:0（flex 下长内容不会把格子顶宽）');
+      FE.state.symbolProfiles[kindNow] = savedProf;
+    }
+    FE.state.symbolProfiles.symbols = FE.normalizeSymbolProfile('symbols', {
+      multiLine: false, groups: sampleGroups
+    });
+    FE.renderAll();
 
     /* ④ 切 multiLine=true → 每行 1 格 */
     FE.state.symbolProfiles.symbols = FE.normalizeSymbolProfile('symbols', {
       multiLine: true, groups: sampleGroups
     });
     FE.renderAll();
-    const grid2 = q('.sym-pv-cells')[0];
-    ok(String(grid2.style.gridTemplateColumns).indexOf('repeat(1') >= 0,
-      'multiLine=true → 每行 1 格（实际 ' + grid2.style.gridTemplateColumns + '）');
+    const rows2 = q('.sym-pv-row');
+    eq(rows2.length, nSym, 'multiLine=true → 每行 1 格（行数 = 条目数 ' + nSym + '）');
+    const row2Cells = q('.sym-pv-cell').filter(x => x.parentNode === rows2[0]);
+    eq(row2Cells.length, 1, 'multiLine=true → 每行确实只有 1 个格子');
 
     /* ⑤ 尺寸与布局预览**严格一致**（用户明确要求），且说明文字**移出键盘预览区**。
      *    面板高度 = 布局总单位数 × unit × 高度系数，正是布局预览各区段高度之和；

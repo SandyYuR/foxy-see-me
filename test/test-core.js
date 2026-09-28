@@ -1387,6 +1387,28 @@ console.log('== 主题：新建初值取内置默认色 ==');
   eq(t.light.keyHintTextColor, '#FF808080', 'light 基础提示色有值');
   ok(t.light.keyTypes && t.light.keyTypes.FUNCTION, '内置默认含 FUNCTION 分组');
   ok(!t.light.keyTypes.LETTER, '内置默认不含 LETTER（走回落链到全局字段）');
+  /* ⭐ 内置默认 keyTypes 的**取值**必须与 App 一致 —— 它们是「新建主题」初值，
+   * 也是「未导入主题」时预览的 keyTypes 级兜底，写错就直接表现为预览与手机不符。
+   * 期望值由 `xw0.java:159`(dark) / `xw0.java:190`(light) 的 u40 构造参数解码而来
+   * （u40 合成构造器的位掩码给的是字段下标：bit0→text / bit1→background /
+   *  bit2→pressed / bit5→hint，置位 = null = 继承该槽位全局色）。 */
+  eq(t.dark.keyTypes.FUNCTION, { background: '#FF373737', pressed: '#33FFFFFF', hint: '#FFB8B8B8' },
+    '★ 内置默认 dark.FUNCTION 与 App 一致（先前 background 误写成 #FF3A3A3A）');
+  eq(t.dark.keyTypes.ACTION,
+    { text: '#FFFFFFFF', background: '#FF5E97F6', pressed: '#FF4A85E4', hint: '#B3FFFFFF' },
+    '★ 内置默认 dark.ACTION 与 App 一致（先前 pressed/hint 取值错误）');
+  eq(t.light.keyTypes.FUNCTION, { background: '#FFE1E1E1', pressed: '#1F000000', hint: '#FF808080' },
+    '★ 内置默认 light.FUNCTION 与 App 一致（先前 background 误写成 #FFE4E4E4）');
+  eq(t.light.keyTypes.ACTION,
+    { text: '#FFFFFFFF', background: '#FF4285F4', pressed: '#FF3B78E7', hint: '#B3FFFFFF' },
+    '★ 内置默认 light.ACTION 与 App 一致（先前 pressed/hint 取值错误）');
+  /* ⚠️ 内置默认**只显式给这些字段**，其余必须**缺省**（= 继承槽位全局色）。
+   * 多写 text/border/shadow 即便当前值恰好与继承值相同也是错的：
+   * 一旦 App 调整内置默认色，多写的值就会与手机分叉。 */
+  ok(t.light.keyTypes.ACTION.border === undefined && t.light.keyTypes.ACTION.shadow === undefined,
+    '★ 内置默认不自行填 border/shadow（缺省 = 继承该槽位全局色）');
+  ok(t.dark.keyTypes.FUNCTION.text === undefined,
+    '★ 内置默认 dark.FUNCTION 不自行填 text（App 端为 null，继承 keyTextColor）');
   /* 不能是共享引用：改一份不该污染另一份 */
   const t2 = FE.themeNewProfile();
   t2.light.keyboardColor = '#00000000';
@@ -1437,7 +1459,12 @@ console.log('== 主题：归一化（缺 type 不补、非法值不丢、字段�
 
 console.log('== 主题：10 字段完整往返 ==');
 {
-  const full = { type: 'foxy.keyboard-theme', name: 'full', light: { keyTypes: {} } };
+  /* ⚠️ 两个槽位都要给：App 的 `uk.c` 用 `getJSONObject("light"/"dark")` 读取，
+   * 缺键会抛异常并被 `uk.e` 吞掉 → 整份主题失效（见 validateThemeProfile）。 */
+  const full = {
+    type: 'foxy.keyboard-theme', name: 'full',
+    light: { keyTypes: {} }, dark: { keyTypes: {} }
+  };
   FE.THEME_KEY_TYPE_NAMES.forEach(kt => {
     const g = {};
     FE.THEME_KEYTYPE_FIELDS.forEach((f, i) => { g[f] = '#' + (10000000 + i * 1111).toString(16).padStart(8, '0').toUpperCase(); });
@@ -1462,13 +1489,16 @@ console.log('== 主题：校验只断能确证的事 ==');
   const v2 = FE.validateThemeProfile({ type: 'foxy.layout', name: 'x' });
   ok(v2.errors.some(m => m.indexOf('foxy.keyboard-theme') >= 0), 'type 错误被报出');
 
-  const v3 = FE.validateThemeProfile({ type: 'foxy.keyboard-theme', name: '', light: { keyboardColor: 'zzz' } });
-  ok(v3.errors.length === 1, '非空 name 无关；只有颜色非法这条是错误');
-  ok(v3.warnings.some(m => m.indexOf('name') >= 0), 'name 为空只给提示');
+  const v3 = FE.validateThemeProfile({ type: 'foxy.keyboard-theme', name: '', light: { keyboardColor: 'zzz' }, dark: {} });
+  /* name 空 + 颜色非法 = 2 条错误（name 空是**硬错误**：App 端全空白 name 直接判主题无效，
+   * uk.java:159-162 的 `lu0.I` + 扫描条件 uk.java:25-39） */
+  ok(v3.errors.some(m => m.indexOf('keyboardColor') >= 0), '颜色非法报错');
+  ok(v3.errors.some(m => m.indexOf('name') >= 0), '★ name 为空**报错误**（不是提示）');
+  eq(v3.errors.length, 2, 'name 空 + 颜色非法 = 2 条错误');
 
   /* keyTypes 缺 LETTER / 含未识别键名 → 提示而非错误 */
   const v4 = FE.validateThemeProfile({
-    type: 'foxy.keyboard-theme', name: 'y',
+    type: 'foxy.keyboard-theme', name: 'y', dark: {},
     light: { keyTypes: { LETTER: { text: '#FF000000' }, NOPE: { text: '#FF000000' } } }
   });
   eq(v4.errors, [], 'keyTypes 缺分组 / 含怪名都不算错误');
@@ -1476,8 +1506,19 @@ console.log('== 主题：校验只断能确证的事 ==');
   ok(v4.warnings.some(m => m.indexOf('FUNCTION') >= 0), '缺 FUNCTION 分组被提示');
 
   /* 非对象槽位是硬错误（App 解析会出错） */
-  const v5 = FE.validateThemeProfile({ type: 'foxy.keyboard-theme', light: [] });
+  const v5 = FE.validateThemeProfile({ type: 'foxy.keyboard-theme', name: 'z', light: [], dark: {} });
   ok(v5.errors.some(m => m.indexOf('light') >= 0), '槽位不是对象 → 错误');
+
+  /* ⭐ 槽位**缺失**是硬错误（不是"回退内置默认"）。
+   * App `uk.c:100/104` 用 `getJSONObject("light"/"dark")`，缺键抛 JSONException，
+   * 被 `uk.e:164-166` 的 catch 吞掉 → 返回 null → `uk.a:64-70` 该主题**整份被跳过**，
+   * 根本不出现在主题列表里。所以用户少写一个槽位 = 主题在手机上完全不生效。 */
+  const v6 = FE.validateThemeProfile({ type: 'foxy.keyboard-theme', name: 'w', light: {} });
+  ok(v6.errors.some(m => m.indexOf('dark') >= 0 && m.indexOf('失效') >= 0),
+    '★ dark 槽位缺失 → 报错误（整份主题在 App 端失效，不会回退内置默认）');
+  const v7 = FE.validateThemeProfile({ type: 'foxy.keyboard-theme', name: 'w', dark: {} });
+  ok(v7.errors.some(m => m.indexOf('light') >= 0 && m.indexOf('失效') >= 0),
+    '★ light 槽位缺失 → 同样报错误');
 }
 
 console.log('== 主题：序列化顺序 ==');
@@ -1542,7 +1583,17 @@ console.log('== 主题：预览取值与优先级 ==');
     /* keyTypes 的 hint 未给 → 方向提示仍回落全局 hint */
     eq(fn.hintUp, '#FF555555', 'keyTypes 不给 hint 时方向提示仍回落全局');
 
-    eq(FE.themeKeyColors('ACTION').background, '#FF111111', '未定义的 ACTION 分组回落全局');
+    /* ⭐ 分组**整体缺失**时保留**内置分组**，而不是回落全局 26 色。
+     * 依据 App `uk.java:121-137`：每个键类型分组整组重建 u40，再 putAll 到
+     * "内置默认 keyTypes"的副本上 —— 没写的分组仍是内置分组。
+     * 所以只定义了 FUNCTION 的主题里，ACTION 键在手机上是**内置蓝**
+     * （light 槽 #FF4285F4），不是全局 keyBackgroundColor。
+     * ⚠️ 旧断言期望 #FF111111（回落全局）——那是错的，已按 App 语义更正。 */
+    eq(FE.themeKeyColors('ACTION').background, '#FF4285F4',
+      '★ 未定义的 ACTION 分组回落到**内置分组**（不是全局 26 色）');
+    /* 对照：分组**存在但字段缺**才回落全局（uk.java:121 的 u40 字段为 null → §1.4 回落链）。
+     * 上面 fn.pressed 已断过这条（FUNCTION 给了 text/background 但没给 pressed → 全局）。 */
+    eq(fn.hintUp, '#FF555555', '分组存在但 hint 缺 → 该字段回落全局 hint');
 
     /* 键边框开关：为真用 altKeyboardColor，为假回落 keyboardColor（基线 §1.4） */
     eq(FE.themeKeyboardColor(true), '#FF666666', 'key_border_enabled=true 用 altKeyboardColor');

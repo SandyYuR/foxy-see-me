@@ -128,13 +128,19 @@ function themeSlot(slot) {
 }
 FE.colorThemeSlot = themeSlot;
 
-/* 主题 keyTypes 分组（可跨槽位回落：槽位未给则看顶层 keyTypes，与主题页一致） */
+/* 主题 keyTypes 分组。
+ *
+ * ⚠️ **只读槽位内的 keyTypes** —— App 端 `uk.d` 是在**槽位对象**上
+ * `optJSONObject("keyTypes")`（`uk.java:112`，其入参 jSONObject2/jSONObject3 来自
+ * `uk.c:100/104` 的 `getJSONObject("light")` / `getJSONObject("dark")`），
+ * **顶层 keyTypes 根本不会被读取**。
+ * 早先这里还回落顶层 `p.keyTypes`，会造成"编辑器预览用了它、手机却忽略它"的
+ * 假象（用户按预览配色调完，上机完全不是那个色）。所以去掉这条回落；
+ * 顶层 keyTypes 仍会被**原样保留**在文件里（是用户数据，不删），由校验器提示它无效。 */
 function themeKeyTypeGroup(keyType, slot) {
   var s = themeSlot(slot);
   var name = String(keyType || 'LETTER');
   if (s && s.keyTypes && typeof s.keyTypes === 'object' && s.keyTypes[name]) return s.keyTypes[name];
-  var p = (FE.state || {}).themeProfile;
-  if (p && p.keyTypes && typeof p.keyTypes === 'object' && p.keyTypes[name]) return p.keyTypes[name];
   return null;
 }
 FE.colorKeyTypeGroup = themeKeyTypeGroup;

@@ -1257,6 +1257,50 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
   `renderPreview()` 把它写进 `#preview-kb` 的行内 `background`。
   ⚠️ 这是 App 的**全局设置**（`state.keyBorderEnabled`，默认 true），
   **不写进主题 JSON**，只做预览建模。
+- ⭐ **六个全局开关统一放「预览滑杆行」，不放主题页**（用户明确要求）。
+  `key_border_enabled` / `key_stroke_enabled` / `show_swipe_hints` 及三个方向
+  全是 App「设置 → 主题效果」里的 **SharedPreferences `foxy_theme`** 项：
+  边框 `xw0.java:54`、描边 `xw0.java:56`（默认 **false**）、
+  滑动提示总开关 `xw0.java:180-182`、逐方向 `xw0.java:162-178` —— 都在
+  SharedPreferences，**主题 JSON 里根本没有这些字段**。
+  所以「主题文件」卡片里那个 `#th-bordermode` 下拉已**移除**（它摆在主题页会让人
+  以为要写进主题 JSON）；六个开关现由 `FE.applyGlobalToggles`（app.js 的 initToolbar）
+  统一回填/接事件/维护置灰，并随草稿持久化（`autosave` / `boot` 都按 `!== false` 还原）。
+  > ⚠️ **判定入口要唯一**：`keyBorderState()` 是边框两开关的**唯一**三态判定点。
+  > 预览的阴影有**两条**来源（`applyKeyColors` 写行内 `boxShadow`、
+  > `applyKeyboardCssVars` 写 `--kb-key-shadow` 变量），两处各判一次必然漂移 ——
+  > 实测就漏掉了后者，现象是「按键边框关闭后键上仍有一圈向下偏移的实色块」
+  > （看起来像边框）。根因：`style.css` 写的是
+  > `box-shadow: var(--kb-key-shadow, <写死的默认投影>)`，而**空串会被 `setCssVar`
+  > 转成 `removeProperty`** → `var()` 回落到那个默认投影。所以该态必须**显式写 `none`**。
+- **滑动提示是两级开关**（`v40.java:515-548` 的 `i()`）：
+  ① 总开关 `show_swipe_hints` 为假 → 所有方向都不画；
+  ② 开着才逐方向看 `show_swipe_hints_{side,up,down}`。
+  ⚠️ 方向映射（`xw0.java:166-176` + `fv0.java:16-23`）：**left 与 right 共用 `side`**
+  （关「侧滑」要同时干掉左滑与右滑）；up→`up`、down→`down`。
+  关掉的提示**不生成元素**（不是改样式隐藏）—— 与 App 的 `setVisibility(8)` 观感一致。
+  判定走 `FE.swipeHintVisible(dir)`（唯一入口，未知方向名按"不显示"处理）。
+- ⭐⭐ **边框关闭时，非 ACTION 键的底色 = `keyboardColor`**（与键盘底同色）。
+  依据 `v40.java:218`（同一处逻辑也在 `m00.java:218`）：
+  ```java
+  h = (键类型 == ACTION) ? m00.h(…, 14)          // ACTION 键走正常链
+      : (B || z4)        ? m00.h(…, 2)
+      : this.c.b;                                 // ← c.b = keyboardColor
+  ```
+  该分支的 `z4` 恒为 false，所以就是 **B=false → `keyboardColor`**。
+  按下态同理（`v40.java:225` 的 `g` 也取 `this.c.b`）。
+  - 效果：边框一关，**普通键与键盘底融为一体**（用户原话"按键颜色没有了"），
+    只有 ACTION 键（回车、空格等）保持 `keyTypes` 底色不变 —— 用户实机核对过这条。
+  - ⚠️ 键**未写** `keyType` 时按**非 ACTION** 处理：App 端 `i30Var.e == t40.c`
+    对 null 判等为假，走的正是"并进底色"那一支（见 `isActionKeyType()`）。
+  - ⚠️ 只作用于**没有自己背景色**的键：实现上把它垫在主题兜底层（③④），
+    布局每键 `colors.background`（②）与运行时状态色（①）仍照常盖上去。
+  - ⚠️ **两条渲染路径都要改**（`applyKeyColors` 的行内 `background`
+    与 `applyKeyboardCssVars` 的 `--kb-key-bg*` 变量）—— 上次只改了阴影那条链，
+    结果"容器变了、按键没变"。
+- ⭐ 「按键描边」在「按键边框」未勾选时**置灰不可选**（`FE.applyGlobalToggles` 维护）：
+  描边只在 `B && C` 时才画，边框关着时它没有任何可见效果。
+  同样**只改可用性、不改值**，重新勾上边框即恢复用户的描边选择。
 - ⚠️ `themeKeyboardColor` / `themeKeyColors` 返回的都是**原始 ARGB**（纯逻辑段拿不到
   UI 段的转换函数）。**写入样式前必须经 `foxyColorToCss`** —— 8 位色是
   `#AARRGGBB`（alpha 在前）→ CSS `#RRGGBBAA`（alpha 在后），不转就是"取色串色"。
@@ -1281,10 +1325,24 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
 - **「新建主题」的初值 = App 内置默认色**（`FE.themeNewProfile` / §1.6），
   ⚠️ **四个方向提示色留空**（内置默认里是 `null`，表示继承 `keyHintTextColor`），
   不要填死值。
-- **校验只断能确证的事**（D7）：`type` 不对、槽位不是对象、颜色值不合正则 → `err`；
-  `name` 空、槽位缺失、`keyTypes` 缺分组/缺字段/含未识别键名 → `warn`。
+- **校验只断能确证的事**（D7）：判 `err` 的唯一标准是「App 端会不会因此整份主题不生效」
+  （`uk.a` 里解析失败的主题被静默跳过）。所以 `err` 有：`type` 不对（`uk.c:93` 返回 null）、
+  **`name` 全空白**（`uk.e:159-162` 的 `lu0.I` 判无效）、**槽位缺失**
+  （`uk.c:100/104` 用 `getJSONObject`，缺键抛异常 → 整份失效，**不是**回退内置默认）、
+  槽位/`keyTypes` 不是对象、颜色值非法；
+  `warn` 有：槽位没给任何颜色字段（这层才回落内置默认）、`keyTypes` 缺分组/缺字段/含未识别键名、
+  顶层 `keyTypes`（App 完全读不到，`uk.d` 只在槽位内取）。
   归一化**不补 `type`**、**不丢非法颜色**（丢掉用户就再也看不到自己哪写错了），
   也不吃未知字段。
+- **预览取值必须与内置默认逐字段合并**（`themeSlotColors`）：App `uk.d:142-149` 以内置默认
+  主题为基，逐字段"有就用、没有就保留内置"；`keyTypes` 更进一步是**分组级**——
+  分组整体缺失 → 保留**内置同名分组**（`uk.java:133-137` 的 `putAll`），
+  分组存在但字段缺 → 该字段才回落全局 26 色（`uk.java:121`）。
+  这两种情形混为一谈会让 ACTION 键的预览色明显错。
+- **颜色解析允许省略 `#`**（`uk.java:267` 无条件剥前导 `#`），`"FFFFFF"` 与 `"#FFFFFF"` 等价。
+- **主题文件名转义用小写十六进制**（`uk.smali` 的 `h()`：`Integer.toString(c,16)` + `lu0.L(4,…)`
+  补零，全无 `toUpperCase`）→ `name="a/b"` 得 `a%002fb.json`。⚠️ 基线 §1.1.1 写作"大写"与
+  反编译不符，以源码为准。
 - ⚠️ 主题文件**不入库 `examples/`**：`tools/build-examples.js` 的类型判定只认
   `foxy.popup-profile` / `foxy.keyboard-layout`（或 `layouts`/`schemas` 结构），
   主题两者都不是 → 直接抛「无法判断示例类型」。所以「新建」用内置默认色，
@@ -1304,9 +1362,17 @@ JSON，谈不上 GUI。用户明确要求仿参照项目 f5a-see-me 的做法：
   > **但符号数据根本没回退**（只写回单数镜像，`symbolProfiles[kind]` 不动）。
   > `test-ui.js` 的「符号面板页：复数槽撤销与草稿」区块专门钉住这个缺口。
 - **`multiLine` 语义**（基线 §2.5）：`true` → 每行 **1** 格、行高 `WRAP_CONTENT`
-  （自适应、不裁切）；`false` → 每行 **6** 格、固定 `40dp` 高、**会裁切长条目**。
+  （自适应）；`false` → 每行 **6** 格、固定 `40dp` 高。
+  ⚠️ 后果是**等比缩小**而非"裁切"：格子设了 `setScaleMode(y9.a)` = Proportional
+  （`ly.java:206`、`y9.java:19`），`z9` 取 `min(1, 宽比, 高比)` 再 `canvas.scale`
+  把文字整体缩放画进去（`z9.java:102-105`、`:259`）—— 条目仍完整可见，只是小到难认。
   所以**颜文字这类多字符条目必须 `multiLine: true`**；校验器对
-  `multiLine=false` + 多字符条目给出**裁切警告**。缺省 `false`。
+  `multiLine=false` + 多字符条目给出**可读性警告**（用词是"等比缩小"，不是"裁切"——
+  基线与本文档旧版都写作"裁切"，与 `z9` 实现不符）。缺省 `false`。
+  **每行独立等分**：App 每凑满一行就新开一个横向 LinearLayout、格子 `LayoutParams(0,h,1f)`
+  在该行内等分（`ly.java:192-200`、`:215-218`）→ **末行不满 6 格时会各自拉宽占满整行**。
+  预览必须按行分组渲染（`.sym-pv-row` + 格子 `flex:1 1 0`），
+  不能用 `grid-template-columns: repeat(6,1fr)`（那样末行会挤在左侧留空）。
   字符宽度用 `FE.symbolGraphemeCount`（**按字形簇**，优先 `Intl.Segmenter`）——
   别用 `String.length`，否则 `❤️`（2 码元）之类会把内置数据全判成多字符而误报刷屏。
 - **旧格式兼容**：顶层直接是数组时按 `{multiLine:false, groups:[…]}` 处理，
@@ -1539,10 +1605,19 @@ App 是 `v40.setPadding(gapH, gapV, gapH, gapV)` + 背景 `InsetDrawable` 同量
 **`.kb-row` 不带自己的 `margin-bottom`**：上下相邻键的间隙由两侧键的 margin 合成；
 早先 CSS 里写死的 `margin-bottom: 5px` 属"固定间隙"时代遗留，会在内缩之外**再加一份**。
 
-**滑杆接线**：拖 `input` 只 `autosave() + renderPreview()`，**不进撤销栈**
-（这是"看效果"的旋钮，不是数据编辑）；**不要**顺手调 `renderLayoutTab()` ——
+**控件是数字输入框**（`type="number"`，带上下箭头，单位 `dp` 用 `.pt-unit`）——
+不是滑杆：这三项范围都窄（0–24 / 0–16），滑杆却固定占一长条横向空间，
+而这一行还要放六个全局开关，换成数字框才挤得下，也便于精确输入。
+
+**接线**：`input` 与 `change` 都走同一个 `commit()`，只 `autosave() + renderPreview()`，
+**不进撤销栈**（这是"看效果"的旋钮，不是数据编辑）；**不要**顺手调 `renderLayoutTab()` ——
 布局编辑区的 chip / 网格画布走 `applyEditorKeyColors → applyKeyColors`，
-**只管颜色、不消费几何**，本就不跟随这三项，而每帧重建区段编辑器会明显卡顿。
+**只管颜色、不消费几何**，本就不跟随这三项，而每次重建区段编辑器会明显卡顿。
+
+> ⚠️ `commit()` 里**空串必须单独判**：`Number('')` 是 **0**（不是 `NaN`），
+> 只写 `isFinite(raw)` 会把"清空输入框"当成"设成 0"，于是圆角被夹到 0
+> 而不是按预期回落默认值（实测过）。越界值 `Math.round` 后夹回区间并**回写输入框**，
+> 用户才能看到自己的输入被夹了。
 
 **不作用于符号面板**：`ly` 用自己固定的 40dp 格高与 6dp 圆角（§4.18 / 规范 §8）。
 
