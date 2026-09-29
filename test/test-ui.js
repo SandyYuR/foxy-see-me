@@ -730,6 +730,99 @@ $('layout-select').value = 'default';
 $('layout-select')._fire('change');
 eq(q('.kb-row').length, 4, '回到 default 行布局仍正常');
 
+console.log('== 回归：网格 rowHeights 非法时预览不出现"隐式轨道"错乱 ==');
+/* 用户反馈的「numpad 预览效果异常」根因：某些文件写 columns:5 rows:5 却只给
+ * `rowHeights: [4.8]`（长度 1 ≠ 5）。旧渲染直接照抄成 `grid-template-rows: 4.8fr`
+ * —— 只有第 1 行是弹性轨道，其余 4 行落进**隐式 auto 轨道**：首行吃满容器、
+ * 其余挤成细条。而 App 端对这种文件是**整个布局解析失败**（fo.java:1501/1796），
+ * 所以预览还必须回落到 App 的默认口径（每行均分）。
+ * 两条断言分别钉住「轨道数 == 行数」与「高度回落默认 5 单位」。 */
+FE.applyProfileText(JSON.stringify({
+  type: 'foxy.keyboard-layout',
+  author: 'test',
+  layouts: {
+    default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }] },
+    badrh: {
+      sections: [{
+        type: 'grid', columns: 5, rows: 5, rowHeights: [4.8],
+        keys: [{ column: 1, row: 0, ref: 'rime.KP_1' }]
+      }]
+    }
+  }
+}, null, 2), {});
+$('layout-select').value = 'badrh';
+$('layout-select')._fire('change');
+const badRhGridEl = q('.kb-grid')[0];
+ok(!!badRhGridEl, '非法 rowHeights 的布局仍渲染出 .kb-grid（预览不崩）');
+eq(badRhGridEl.style.gridTemplateRows, 'repeat(5, minmax(0, 1fr))',
+  'rowHeights 长度 ≠ rows 时回落等分轨道，不产生隐式 auto 轨道');
+const badRhUnit = FE.state.portraitW / 10;
+eq(badRhGridEl.style.height, (5 * badRhUnit * (FE.PREVIEW_HEIGHT_K || 1)) + 'px',
+  '高度按 App 默认口径 5 单位算（不误用用户写的 4.8）');
+/* 反向：合法的 5 项必须原样进入轨道，别把正确文件也一起改口径 */
+FE.applyProfileText(JSON.stringify({
+  type: 'foxy.keyboard-layout',
+  author: 'test',
+  layouts: {
+    default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }] },
+    goodrh: {
+      sections: [{
+        type: 'grid', columns: 2, rows: 2, rowHeights: [1.2, 3.6],
+        keys: [{ column: 0, row: 0, ref: 'rime.KP_1' }]
+      }]
+    }
+  }
+}, null, 2), {});
+$('layout-select').value = 'goodrh';
+$('layout-select')._fire('change');
+eq(q('.kb-grid')[0].style.gridTemplateRows, 'minmax(0, 1.2fr) minmax(0, 3.6fr)',
+  '合法 rowHeights 按比例成为轨道（不被改写比例）');
+
+/* ⭐ 核心不变量：轨道最小尺寸必须是 0 —— 这是「折行文字撑高整块网格」的根因。
+ * `1fr` 是 `minmax(auto, 1fr)` 的简写，`auto` 最小值 = 格内容 min-content 高度，
+ * 于是中文标签折两行就把该行顶成 2 倍高、`1fr` 压不下去，网格整体溢出容器。
+ * 浏览器实测（414px 宽）：修复前 5 行高 85.2/85.2/85.2/85.2/42.6、10 键溢出；
+ * 改 minmax(0, …) 后 5 行均 51.6、溢出 0。见 FE.gridColTemplate 注释。 */
+ok(q('.kb-grid')[0].style.gridTemplateColumns.indexOf('minmax(0,') >= 0,
+  '网格列轨道用 minmax(0, 1fr)（列宽也不被格内文字撑开）');
+ok(q('.kb-grid')[0].style.gridTemplateRows.indexOf('minmax(0,') >= 0,
+  '网格行轨道用 minmax(0, …fr)（行高不被折行文字撑开）');
+/* 折行标签的行高必须与单行标签**完全一致** —— 这是 App 的口径：
+ * 行高纯几何（5.0f/rows 或 rowHeights 按比例），文字放不下由 TextView 裁切。
+ * 修复前 numpad 里 4 个折行标签把所属行顶成 2 倍高（85.2 vs 42.6px）。 */
+FE.applyProfileText(JSON.stringify({
+  type: 'foxy.keyboard-layout',
+  author: 'test',
+  layouts: {
+    default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }] },
+    wraptest: {
+      sections: [{
+        type: 'grid', columns: 2, rows: 2,
+        keys: [
+          { column: 0, row: 0, ref: 'rime.KP_1', label: '很长的折行标签' },
+          { column: 1, row: 0, ref: 'rime.KP_2' },
+          { column: 0, row: 1, ref: 'rime.KP_3' }
+        ]
+      }]
+    }
+  }
+}, null, 2), {});
+$('layout-select').value = 'wraptest';
+$('layout-select')._fire('change');
+const wrapGrid = q('.kb-grid')[0];
+const rowsWrap = {};
+wrapGrid.querySelectorAll('.kb-key').forEach(function (k) {
+  const rr = String(k.style.gridRow);
+  const h = k.getBoundingClientRect().height;
+  rowsWrap[rr] = rowsWrap[rr] == null ? h : Math.max(rowsWrap[rr], h);
+});
+const wrapHeights = Object.keys(rowsWrap).sort().map(function (k) { return rowsWrap[k]; });
+ok(wrapHeights.length === 2 &&
+   Math.abs(wrapHeights[0] - wrapHeights[1]) < 0.5,
+  '折行标签与单行标签所在行的行高一致（' + JSON.stringify(wrapHeights) +
+  '）—— 行高不被文字撑开');
+FE.applyProfileText(FE.DEFAULT_PROFILE_TEXT, {});
+
 /* ================================================================
  * 按键外观三项（圆角 / 水平间隙 / 垂直间隙）
  *

@@ -4,8 +4,8 @@
 在不熟悉上下文的情况下也能安全改代码，避免踩已知的坑。
 
 先读这一行的结论：**改任何东西后必须跑 `node test/test-core.js` 与 `node test/test-ui.js`，
-两个都 0 失败才算改完。** 当前基线：core 537 / UI 1062 / 颜色解析 63（`test-color-source.js`）
-/ 真实文件体检 20 个示例 0 错误。
+两个都 0 失败才算改完。** 当前基线：core 626 / UI 1363 / 颜色解析 96（`test-color-source.js`）
+/ 真实文件体检 46 个示例 0 错误。
 
 ### ⚠️ 本文件有两份，必须保持一致
 
@@ -144,7 +144,7 @@ profile 在 Foxy 端被拒绝**（Foxy 端是"任一布局不合法就整个 pro
 
 #### D9 · 每次对齐文档更新，都补测试
 
-测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **531 core + 1062 UI**。
+测试基线演进：157（首版）→ 275（JSON 修复）→ 215 core + 355 UI → … → 现在 **626 core + 1363 UI**。
 这个增长不是凑数，而是**每次 skill 文档更新同步一项行为就补一组断言**的累积。
 保持这个习惯：改了行为就补测试，别只改代码。
 
@@ -527,6 +527,101 @@ Foxy 布局色是 `#AARRGGBB`（alpha 在前），CSS 8 位 hex 是 `#RRGGBBAA`�
 锁定断言在 `test-ui.js` 的 **「回归：大网格预览的间距与字号自适应」** 与
 `test-core.js` 的 `FE.gridMetrics` 一组；其中「每个键的字号不超过自身键框」是核心不变量。
 **别退回固定 gap / 固定字号。**
+
+#### ⭐ 网格 `rowHeights` 的长度必须等于 `rows`（否则整个布局在 App 端消失）
+
+**这条与下面那条是两个独立缺陷，别混为一谈**（用户报的"numpad 预览异常"是后面那条）。
+先判清是哪一条：**校验器报 `rowheights-length-mismatch` → 本条；校验器干净但预览仍错乱 → 下一条。**
+
+App 端判定依据以 **smali 为准**（`fo.smali` 方法 `N`，16966-19793 行）—— jadx 与 CFR
+**两者都错**，只有 baksmali 是对的：
+
+```text
+17720  if-lez v2, :cond_3e6          # columns <= 0
+17724  if-lez v5, :cond_3e6          # rows <= 0
+17736  if-ne v3, v5, :cond_3e6       # rowHeights.size() != rows  ← 本条的触发点
+17804  if-gtz v6, :cond_17b          # 逐项 > 0，否则
+17808  goto/16 :goto_3e6             #   同一失败出口
+```
+
+失败出口的链路（**关键**）：`:goto_3e6`(19074) → `:goto_3d4`(19035) →
+`move-object v1, v17`（v17 在 17026 被 `const/16 v17, 0x0` 钉死为 null）→
+`:goto_3f7`(19111) `ArrayList.add(null)`；随后父级 19217-19242 扫描区段列表，
+**任一元素为 null 即 `goto/16 :goto_534` → 19792 `return-object v17`（返回 null）**。
+
+> 两个反编译器的具体错误（别再照它们的 Java 读语义）：
+> - jadx `fo.java:1501-1512` 把逐项校验编成 `break`（只跳出内层 while）= **无操作**，错。
+> - CFR `fo.java:1601-1608` 方向对（跳出网格构建），但把跳出去之后编成 `continue` 且不 add，也错；实际是 **add(null)**。
+> - 两者都把父级的 `goto_534` 丢成"跳出循环后继续"，于是掩盖了**返回 null** 这个致命后果。
+
+于是 `columns:5, rows:5, rowHeights:[4.8]` 的后果是：
+
+- **App 端**：长度 1 ≠ rows 5 → 网格区段变 null → **整个命名布局解析失败**，
+  App 提示「键盘布局结构无效，已使用默认布局」（`l50.smali:1773-1785` 的 `z60` 串），
+  该布局**不出现在选择器里**。**不是「这一行画得不对」，而是「这个键盘整个不见了」。**
+- **编辑器**：旧 `buildGridSection` 把它拼成 `grid-template-rows: 4.8fr`，只有第 1 行
+  是弹性轨道、其余行落入**隐式 auto 轨道**（这是编辑器侧的**另一个**显示问题）。
+- 且当时的校验器只判 `Array.isArray`，**零错误零警告**放行 —— 用户拿不到任何线索。
+
+三处修复（缺任何一处都会复发）：
+
+1. **`FE.effectiveRowHeights(raw, rows)`**（纯逻辑，`app.js` 四之一）—— 唯一判定口：
+   长度 ≠ rows、或任一项非有限正数 → 返回 `null`。**不做截断/补全**，非法就交给
+   调用方回落默认口径（每行 `5/rows`，合计 5）。`Number('')`/`Number(null)` 都是 0，
+   所以这里逐个 `typeof` 判类型，不用宽松转换放行它们。
+   > 边界：smali 用 `cmpg-float`，它对 **NaN 返回 1**，故 NaN 项反而"通过"App 校验。
+   > 我们仍判它非法（预览不该复现这种病态输入），这是**有意的更严**，不是 bug。
+2. **只让可采用值流进渲染与高度**：`FE.gridDims` 同时给出 `rowHeights`（原始，供编辑框
+   回显用户写的原文）与 `effectiveRowHeights`（可采用）；`compileSections` 放进编译产物
+   的是后者，`layoutHeightUnits` / `buildGridSection` 也只认后者。
+   > 编辑框必须读**原始值**：读可采用值会让非法内容显示成 `0.96,0.96,...`，
+   > 用户以为文件没坏、也改不回去。
+3. **校验器报错**（不再是零提示）：`rowheights-length-mismatch` /
+   `rowheights-not-positive`，文案要说清「Foxy 会丢弃整个网格区段，进而导致该布局
+   解析失败」——只写「rowHeights 长度不对」用户不知道后果有多严重。
+
+锁定断言：`test-core.js` 的 `FE.effectiveRowHeights` 一组（含 `''` / `null` / `'x'` /
+负数 / 长度多与少）与 `test-ui.js` 的 **「回归：网格 rowHeights 非法时预览不出现
+『隐式轨道』错乱」**。
+**看到这两组红了，先怀疑自己把口径改窄了（误伤合法文件），别去改断言。**
+
+#### ⭐ 网格轨道必须写 `minmax(0, …fr)`，键文字必须单行 —— 「numpad 预览错乱」的真因
+
+**这两条要一起改，它们是同一根因的两个面**：键文字会折行 → 折行把行高顶高。
+用户反馈「numpad 预览显示异常」实测就是这个，**与 rowHeights 长度无关**
+（当时校验器干净，改完 rowHeights 预览依旧错乱，是浏览器截图才把它揪出来的）。
+
+**① 键文字必须单行**（`style.css` 的 `.kb-label`）
+
+依据 App：键文字是 `z9`（`extends TextView`），`v40.smali:233-237` 只设
+`setScaleMode(Ly9;->a)`，而 `Ly9` 常量顺序是 None / Horizontal / Proportional / Height
+—— `a` 即 **None**（不缩放）；`z9.onMeasure` 用 `Paint$FontMetrics` 的 top/bottom 算高，
+**恒为一行**；整条键文字路径上 `setSingleLine`/`setMaxLines`/`setEllipsize` 出现 **0 次**。
+即 App 既不让键文字换行、也不缩字。
+
+早先只写 `overflow: hidden` —— inline 元素下它**压不住换行**：
+numpad 里「计算模式 / 日期输入 / 日期计算 / 数字转换」在键宽内折成两行，
+文字块 88.2px 高出键框 54.1px（实测下超 17.0px）、上下互相压叠。
+现在 `display:block + overflow:hidden + text-overflow:ellipsis + white-space:nowrap`。
+
+**② 轨道最小值必须钉成 0**（`FE.gridColTemplate` / `FE.gridRowTemplate`）
+
+`1fr` 是 `minmax(auto, 1fr)` 的简写，`auto` 作最小值 = 该格内容的 **min-content 高度**。
+于是折行文字**反过来撑高行高**、`1fr` 压不下去，整块网格高于容器、后几行被挤出去。
+`minmax(0, …fr)` 把最小值钉成 0，轨道**只由模板决定**，与格内文字无关 ——
+这才合 App 口径：行高纯几何（`fo.smali` 的 `5.0f / rows` 或 rowHeights 按比例），
+文字放不下由 TextView 自己裁，绝不反过来改行高。
+
+> 实测（414px 宽预览，numpad 5 行）：
+> 修复前 5 行键面高 **85.2/85.2/85.2/85.2/42.6px、10 个键溢出容器**（前 4 行正好是
+> 第 5 行的 2 倍，与"哪几行标签折行"完全对应）；修好两条后 5 行均 **51.6px、溢出 0、文字溢出 0**。
+
+⚠️ **不要**改成 `white-space: normal`、也不要给键加 `min-height` 来"容纳"折行文字 ——
+那正是让行高随文字漂移的写法，会退回这个 bug。
+
+锁定断言：`test-ui.js` **「回归：网格 rowHeights 非法时预览不出现『隐式轨道』错乱」** 区块里
+——列/行模板都必须含 `minmax(0,`，且「折行标签所在行与单行标签所在行行高一致」。
+**这两条红了先怀疑自己把 `minmax(0` 去掉了，别去改断言。**
 
 ### 4.5 对话框（key-dialog.js）
 
@@ -1728,14 +1823,14 @@ cd foxy-editor
 node tools/build-examples.js
 
 # 3) 必跑（两个都要 0 失败）
-node test/test-core.js       # 期望：537 通过, 0 失败
-node test/test-ui.js         # 期望：1062 通过, 0 失败
+node test/test-core.js       # 期望：626 通过, 0 失败
+node test/test-ui.js         # 期望：1363 通过, 0 失败
 
 # 3b) 改过颜色解析（color-source.js）时加跑这一条
-node test/test-color-source.js   # 期望：63 通过, 0 失败
+node test/test-color-source.js   # 期望：96 通过, 0 失败
 
 # 4) 用真实文件体检（新增/修改示例后尤其要跑）
-node test/check-real-files.js   # 期望：共 20 个文件，0 个存在错误
+node test/check-real-files.js   # 期望：共 46 个文件，0 个存在错误
 
 # 5) 改过本文件（AGENT.md）就同步两处副本（见开头「本文件有两份」）
 node tools/check-agent-sync.js --write

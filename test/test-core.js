@@ -720,6 +720,72 @@ ok(gmBig.cellH > 0 && gmBig.cellW > 0, '单元格尺寸为正（间隙不会吃�
 eq(FE.gridMetrics(0, 0, 43, 5).columns, 1, '非法列数回落 1');
 eq(FE.gridMetrics(48, 15, 0, 5).cellW > 0, true, 'unit 为 0 时不产生负尺寸');
 
+/* ---- 网格 rowHeights 的合法性（FE.effectiveRowHeights） ----
+ * 依据 App 端解析器：`arrayList7.size() == intValue3`（长度必须 == rows）且逐项
+ * `floatValue() > 0`（`fo.java:1501` / CFR `fo.java:1601-1608`）。不满足就不构建
+ * 该网格 → 区段变 null → **整个布局解析失败**（`fo.java:1796`）。
+ *
+ * 真实缺陷（用户反馈「numpad 预览异常」的根因）：某布局写 columns:5 rows:5 却只给
+ * `rowHeights: [4.8]`。校验器当时只判「是不是数组」，于是零错误零警告通过；
+ * 编辑器把它写成 `grid-template-rows: 4.8fr` 一条轨道，其余 4 行落进**隐式 auto
+ * 轨道** —— 首行吃满容器、其余挤成细条。 */
+eq(FE.effectiveRowHeights([4.8], 5), null, 'rowHeights 长度 ≠ rows 时判为不可采用');
+eq(FE.effectiveRowHeights([1, 1, 1, 1, 1, 1], 5), null, 'rowHeights 多于 rows 同样不可采用');
+eq(FE.effectiveRowHeights([0.96, 0.96, 0.96, 0.96, 0.96], 5),
+  [0.96, 0.96, 0.96, 0.96, 0.96], '长度 == rows 且全为正数 → 原样采用');
+eq(FE.effectiveRowHeights(null, 5), null, 'rowHeights 缺席 → null（调用方回落默认口径）');
+eq(FE.effectiveRowHeights([1, 1, 0, 1, 1], 5), null, '含 0 的项不可采用');
+eq(FE.effectiveRowHeights([1, 1, -2, 1, 1], 5), null, '含负数的项不可采用');
+eq(FE.effectiveRowHeights([1, 1, 'x', 1, 1], 5), null, '非数值项不可采用（App 的 Float 解析会跳过它）');
+eq(FE.effectiveRowHeights([1, 1, '', 1, 1], 5), null, '空串不可采用（Number("") 是 0，不能放行）');
+eq(FE.effectiveRowHeights([1, 1, null, 1, 1], 5), null, 'null 不可采用（Number(null) 是 0）');
+eq(FE.effectiveRowHeights(['1.2', 1, 1, 1, 1], 5), [1.2, 1, 1, 1, 1],
+  '数字字符串可采用（App 走 Float.parseFloat，接受字符串）');
+
+/* gridDims 同时给出原始值与可采用值：输入框要显示用户写的原文，渲染只认可采用值 */
+const gdRaw = FE.gridDims({ type: 'grid', columns: 5, rows: 5, rowHeights: [4.8] });
+eq(gdRaw.rowHeights, [4.8], 'gridDims 保留原始 rowHeights（供编辑框回显）');
+eq(gdRaw.effectiveRowHeights, null, 'gridDims 的可采用值为 null');
+const gdOk = FE.gridDims({ type: 'grid', columns: 5, rows: 5, rowHeights: [1, 1, 1, 1, 1] });
+eq(gdOk.effectiveRowHeights, [1, 1, 1, 1, 1], '合法 rowHeights 在 gridDims 里被采用');
+
+/* 非法 rowHeights：高度按 App 默认口径（每行 5/rows，合计 5），而不是把
+ * 用户写的和值当高度 —— 否则编辑器显示的高度与手机上完全不是一回事。 */
+const badRhProfile = FE.normalizeProfile({
+  type: 'foxy.keyboard-layout',
+  layouts: { default: { sections: [{ type: 'grid', columns: 5, rows: 5, rowHeights: [4.8], keys: [] }] } }
+});
+eq(Math.round(FE.layoutHeightUnits(badRhProfile.layouts.default) * 100) / 100, 5,
+  '非法 rowHeights 时高度回落默认 5 单位（不误用 4.8）');
+const badRhCompiled = FE.compileSections(
+  badRhProfile.layouts.default.sections, FE.NEUTRAL_STATUS, FE.scopeFrom(badRhProfile));
+eq(badRhCompiled.sections[0].rowHeights, null, '编译产物不带非法 rowHeights');
+eq(Math.round(badRhCompiled.totalUnits * 100) / 100, 5, '编译产物高度回落 5 单位');
+const goodRhCompiled = FE.compileSections(
+  [{ type: 'grid', columns: 5, rows: 5, rowHeights: [0.96, 0.96, 0.96, 0.96, 0.96], keys: [] }],
+  FE.NEUTRAL_STATUS, FE.scopeFrom(badRhProfile));
+eq(goodRhCompiled.sections[0].rowHeights, [0.96, 0.96, 0.96, 0.96, 0.96], '合法 rowHeights 进入编译产物');
+eq(Math.round(goodRhCompiled.totalUnits * 100) / 100, 4.8, '合法 rowHeights 决定高度单位');
+
+/* 校验器必须报出来 —— 这是本次缺陷最关键的一环：文件不合法却零提示，
+ * 用户在编辑器里拿不到任何线索，只能看到一团错乱的预览。 */
+const rhBad = FE.validateProfile(badRhProfile);
+ok(rhBad.errors.some(e => e.indexOf('rowHeights') >= 0 && e.indexOf('5') >= 0),
+  'rowHeights 长度 ≠ rows 时校验器报错（不再静默通过）');
+const rhBadIssue = rhBad.issues.find(i => i.code === 'rowheights-length-mismatch');
+ok(!!rhBadIssue, '该错误带可定位的结构化 code（供 UI 跳转）');
+eq([rhBadIssue.layout, rhBadIssue.sectionIndex], ['default', 0], '错误带布局与区段坐标');
+const rhNeg = FE.validateProfile(FE.normalizeProfile({
+  type: 'foxy.keyboard-layout',
+  layouts: { default: { sections: [{ type: 'grid', columns: 2, rows: 2, rowHeights: [1, -1], keys: [] }] } }
+}));
+ok(rhNeg.issues.some(i => i.code === 'rowheights-not-positive'), '含非正数项时给出 rowheights-not-positive');
+const rhGood = FE.validateProfile(FE.normalizeProfile({
+  type: 'foxy.keyboard-layout',
+  layouts: { default: { sections: [{ type: 'grid', columns: 5, rows: 5, rowHeights: [1, 1, 1, 1, 1], keys: [] }] } }
+}));
+eq(rhGood.errors, [], '合法 rowHeights 不报错（不误伤正确文件）');
+
 /* ---- 网格横向滚动条几何（FE.gridScrollMetrics） ----
  * 背景：`.gedit-key` 的 touch-action:none 是拖动排序的前提，于是「在键上横滑」
  * 永远是拖动、不是滚动；而 cc_grid_4 这类 48×15 全由跨距键铺满的网格

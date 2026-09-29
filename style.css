@@ -604,7 +604,30 @@ html.site-light .st-split { color: #2e8b57; }
 .kb-key-hasborder { border-style: solid; border-width: 1px; }
 .kb-spacer { background: transparent !important; box-shadow: none !important; cursor: default; pointer-events: none; }
 
-.kb-label { font-weight: 500; pointer-events: none; text-align: center; overflow: hidden; max-width: 96%; }
+/* ⭐ 键文字**必须单行**（nowrap + 裁切），不能让它折行。
+ *
+ * 依据 App：键文字是 `z9`（`extends TextView`，`z9.smali` 类声明），
+ * `v40.smali:233-237` 只设 `setScaleMode(Ly9;->a)`，而 `Ly9` 的常量顺序是
+ * None / Horizontal / Proportional / Height —— `a` 就是 **None**（不缩放）；
+ * `z9.onMeasure`（`z9.smali:4989+`）用 `Paint$FontMetrics` 的 top/bottom 算高，
+ * 即**恒为一行**。整条键文字路径上 `setSingleLine`/`setMaxLines`/`setEllipsize`
+ * 出现次数为 **0**（实测 grep），所以 App 既不让键文字换行、也不缩字。
+ *
+ * 早先这里只写 `overflow: hidden`：inline 元素下它压不住换行，于是
+ * "计算模式/日期输入/日期计算/数字转换"这类 4 字标签在 numpad 里折成两行，
+ * 不但互相压叠（浏览器实测：4 个键的文字块高出键框 16.8px），
+ * 还反过来把网格行顶高（见 app.js 的 FE.gridColTemplate 注释 —— 那是同一
+ * 根因的两个表现）。改成单行 + 省略号后，文字块 74.4×42.6 落在键框 77.5×51.6 内，
+ * 溢出归零，与 App 的「一行、放不下就裁」一致。
+ *
+ * ⚠️ 不要改成 `white-space: normal` 或给键加 `min-height`：那会让行高随文字变化，
+ * 而 App 的行高是纯几何（`fo.smali`：`5.0f / rows` 或 rowHeights 按比例）。
+ * `display: block` 是 `text-overflow: ellipsis` 生效的前提。 */
+.kb-label {
+  font-weight: 500; pointer-events: none; text-align: center;
+  display: block; max-width: 96%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .kb-icon-wrap { pointer-events: none; display: inline-flex; }
 .kb-icon { width: 100%; height: 100%; }
 /* 图标色跟随**键的主文字色**（App 端 v40.e 用 setColorFilter 给图标上同一种色，

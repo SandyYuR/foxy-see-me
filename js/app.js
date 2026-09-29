@@ -633,12 +633,80 @@ FE.gridMetrics = function (columns, rows, unit, totalUnits) {
   };
 };
 
+/* 网格 rowHeights 的**可采用值**：长度必须恰好等于 rows、且每项都是 > 0 的数。
+ *
+ * 依据 App 端解析器（`fo.java:1501` / CFR 版 `fo.java:1601-1608`）：
+ *     intValue2 > 0 && intValue3 > 0 && arrayList7.size() == intValue3
+ * 再加上逐项 `floatValue() <= 0.0f → break`。任一不满足就**不构建该网格**，
+ * 区段变成 null；而 sections 里只要有 null，**整个布局解析失败**返回 null
+ * （`fo.java:1758-1766` + `1796`）——即 profile 在 Foxy 端根本不出现在选择器里。
+ *
+ * 所以这里只做「能不能用」的判定，不做修补：非法一律返回 null，由调用方
+ * 回落到 App 的默认口径（每行 5/rows）。**不要**在这里截断/补全数组 ——
+ * 那会把用户写的非法值静默改成另一种语义（见 AGENT.md D5/D7）。
+ *
+ * 参数收 (raw, rows) 而非整个 section，是为了能被纯逻辑测试直接驱动。 */
+FE.effectiveRowHeights = function (raw, rows) {
+  var n = (Number.isInteger(rows) && rows > 0) ? rows : 1;
+  if (!Array.isArray(raw) || raw.length !== n) return null;
+  var out = [];
+  for (var i = 0; i < n; i++) {
+    /* 不用 Number(raw[i]) 的宽松转换：null/''/[] 都会变成 0 而被误判为「数值」，
+     * 但 App 端的 h() 只接受能 Float.parseFloat 的字符串/数值，其余返回 null 并**跳过**，
+     * 列表随即短于 rows → 同样整个布局失败。这里直接按「必须是有限正数」判。 */
+    var v = raw[i];
+    if (typeof v !== 'number' && typeof v !== 'string') return null;
+    var num = Number(v);
+    if (!isFinite(num) || num <= 0) return null;
+    out.push(num);
+  }
+  return out;
+};
+
 FE.gridDims = function (section) {
+  var rws = (Number.isInteger(section.rows) && section.rows > 0) ? section.rows : 1;
+  var raw = Array.isArray(section.rowHeights) ? section.rowHeights : null;
   return {
     columns: (Number.isInteger(section.columns) && section.columns > 0) ? section.columns : 1,
-    rows: (Number.isInteger(section.rows) && section.rows > 0) ? section.rows : 1,
-    rowHeights: Array.isArray(section.rowHeights) ? section.rowHeights : null
+    rows: rws,
+    /* 原始值：编辑器输入框必须显示用户**实际写的**内容，否则改不了（见 gridSectionCard）。 */
+    rowHeights: raw,
+    /* 可采用值：渲染与高度计算只认它；为 null 表示回落默认口径。 */
+    effectiveRowHeights: FE.effectiveRowHeights(raw, rws)
   };
+};
+
+/* ⭐ 网格轨道模板必须写 `minmax(0, …fr)`，**不能直接写 `Nfr`**。
+ *
+ * 这是用户反馈「numpad 预览显示异常」的真正原因（与 rowHeights 长度无关，见下）：
+ * CSS 里 `1fr` 是 `minmax(auto, 1fr)` 的简写，而 `auto` 作最小值时表示
+ * **该格内容的 min-content 尺寸**。于是"文字折行"会反过来撑高行高：
+ * numpad 里「计算模式 / 日期输入 / 日期计算 / 数字转换」这些 4 字标签在
+ * 键宽内折成两行，那 4 行的 min-content 高度变成 2 倍键高，`1fr` **压不下去**，
+ * 整块网格比容器高出一大截 —— 后几行被挤出容器、压在下方图例上。
+ *
+ * 实测（414px 宽预览，修复前）：5 行键面高 85.2/85.2/85.2/85.2/42.6px，
+ * **10 个键溢出容器**（前 4 行正好是第 5 行的 2 倍，与"哪几行标签折行"完全对应）；
+ * 改成 `minmax(0, …)` 后 5 行均为 51.6px、溢出 0 个。
+ *
+ * `minmax(0, …)` 把最小值钉成 0，轨道就**只由模板决定**，与格内文字无关 ——
+ * 这才是 App 的口径：`fo.smali` 里行高是 `5.0f / rows`（或 rowHeights 按比例），
+ * 纯几何、不看文字；文字放不下时由 TextView 自己裁切，绝不反过来改行高。
+ *
+ * 抽成纯函数是为了能在 core 测试里直接断言（DOM 桩量不到真实几何）。 */
+FE.gridColTemplate = function (columns) {
+  var c = (Number.isInteger(columns) && columns > 0) ? columns : 1;
+  return 'repeat(' + c + ', minmax(0, 1fr))';
+};
+
+FE.gridRowTemplate = function (heights, rows) {
+  var n = (Number.isInteger(rows) && rows > 0) ? rows : 1;
+  /* 长度不等于行数时（含 null）一律回落等分：调用方传进来的应是
+   * FE.effectiveRowHeights 的结果，这里再兜一道，防将来新路径绕过。 */
+  if (Array.isArray(heights) && heights.length === n) {
+    return heights.map(function (x) { return 'minmax(0, ' + (Number(x) || 1) + 'fr)'; }).join(' ');
+  }
+  return 'repeat(' + n + ', minmax(0, 1fr))';
 };
 
 /* 网格横向滚动条的几何：给定画布可视宽 / 内容宽 / 轨道宽，算滑块宽与可滑距离。
@@ -667,9 +735,11 @@ FE.layoutHeightUnits = function (L) {
     if (s.type === 'rows') {
       FE.rowsOfSection(s).forEach(function (r) { total += r.heightUnits; });
     } else if (s.type === 'grid') {
-      if (Array.isArray(s.rowHeights) && s.rowHeights.length) {
-        s.rowHeights.forEach(function (x) { total += (Number(x) || 0); });
-      } else total += 5;
+      /* 只认可采用值：非法 rowHeights 在 App 端会让**整个布局**解析失败，
+       * 按用户实际会看到的高度（默认 5 单位）算才与手机一致。 */
+      var eff = FE.effectiveRowHeights(s.rowHeights, s.rows);
+      if (eff) eff.forEach(function (x) { total += x; });
+      else total += 5;
     }
   });
   return total;
@@ -977,7 +1047,29 @@ FE.validateProfile = function (profile) {
           var cols = s.columns, rws = s.rows;
           if (!Number.isInteger(cols) || cols < 1) err(pfx + ' 区段 ' + si + ' 的 columns 无效', { code: 'bad-grid-columns' });
           if (!Number.isInteger(rws) || rws < 1) err(pfx + ' 区段 ' + si + ' 的 rows 无效', { code: 'bad-grid-rows' });
-          if (s.rowHeights != null && !Array.isArray(s.rowHeights)) err(pfx + ' 区段 ' + si + ' 的 rowHeights 必须是数组', { code: 'bad-rowheights' });
+          /* rowHeights 的三条硬约束**都是 App 端的布局级致命条件**：长度必须等于
+           * rows、每项必须是 > 0 的数，否则该网格不构建 → 区段为 null →
+           * 整个布局解析失败（fo.java:1501/1601-1608 + 1796）。
+           * 早期这里只判「是不是数组」，于是 `columns:5, rows:5, rowHeights:[4.8]`
+           * 这类文件**零错误零警告**地通过校验，而它在手机上根本不显示 ——
+           * 用户看到的只有编辑器里那团错乱的预览，拿不到任何线索。 */
+          if (s.rowHeights != null && !Array.isArray(s.rowHeights)) {
+            err(pfx + ' 区段 ' + si + ' 的 rowHeights 必须是数组', { code: 'bad-rowheights' });
+          } else if (Array.isArray(s.rowHeights)) {
+            /* rows 无效时已在上面报过错，这里用 rowHeights 自身长度当 n，
+             * 只判「每项是否为正数」，避免对同一处重复报两条。 */
+            var rhArr = s.rowHeights;
+            var rhN = (Number.isInteger(rws) && rws > 0) ? rws : rhArr.length;
+            if (rhN > 0 && rhArr.length !== rhN) {
+              err(pfx + ' 区段 ' + si + ' 的 rowHeights 有 ' + rhArr.length +
+                ' 项，必须恰好等于 rows（' + rhN + ' 项）；Foxy 会因此丢弃整个网格区段，' +
+                '进而导致布局 “' + ln + '” 解析失败', { code: 'rowheights-length-mismatch' });
+            } else if (rhArr.length && FE.effectiveRowHeights(rhArr, rhArr.length) === null) {
+              err(pfx + ' 区段 ' + si + ' 的 rowHeights 每一项都必须是大于 0 的数；' +
+                'Foxy 会因此丢弃整个网格区段，进而导致布局 “' + ln + '” 解析失败',
+                { code: 'rowheights-not-positive' });
+            }
+          }
           var C = Number.isInteger(cols) ? cols : 1, R = Number.isInteger(rws) ? rws : 1;
           var occ = {};
           (Array.isArray(s.keys) ? s.keys : []).forEach(function (k, ki) {
@@ -1800,8 +1892,11 @@ FE.compileSections = function (sections, status, scope) {
       out.totalUnits += total;
     } else if (s.type === 'grid') {
       var dims = FE.gridDims(s);
-      var gUnits = (dims.rowHeights && dims.rowHeights.length)
-        ? dims.rowHeights.reduce(function (a, b) { return a + (Number(b) || 0); }, 0) : 5;
+      /* 高度单位只按**可采用**的 rowHeights 累加；非法时回落 App 的默认口径
+       * （每行 5/rows，合计 5）。这样「编辑器显示的高度」与「手机上的高度」
+       * 始终一致，也让 layoutHeightUnits 的跨布局一致性警告不会因非法值失真。 */
+      var gUnits = dims.effectiveRowHeights
+        ? dims.effectiveRowHeights.reduce(function (a, b) { return a + b; }, 0) : 5;
       /* 用 map 而非 push：保留与源 keys 数组一致的索引（含 null 占位），
        * 编辑器与定位功能都依赖 items[i] 与 section.keys[i] 一一对应。 */
       var gItems = (Array.isArray(s.keys) ? s.keys : []).map(function (kk, gi) {
@@ -1816,7 +1911,10 @@ FE.compileSections = function (sections, status, scope) {
       });
       out.sections.push({
         type: 'grid', sectionIndex: si, columns: dims.columns, rows: dims.rows,
-        rowHeights: dims.rowHeights, totalUnits: gUnits, keys: gItems
+        /* 编译产物只带**可采用**的行高：渲染是唯一消费者，而非法值必须按 App
+         * 的默认口径渲染（否则预览会显示一个手机上根本不存在的键盘）。
+         * 原始值留在源 section 里，编辑器输入框读它。 */
+        rowHeights: dims.effectiveRowHeights, totalUnits: gUnits, keys: gItems
       });
       out.totalUnits += gUnits;
     } else {
@@ -3227,12 +3325,16 @@ function buildGridSection(compiledSection, unit) {
    * "预览高度 = 布局单位数 × unit × 系数"这条与布局预览严格对齐的要求。 */
   el.style.boxSizing = 'border-box';
   el.style.padding = (rowGap / 2) + 'px ' + (colGap / 2) + 'px';
-  el.style.gridTemplateColumns = 'repeat(' + compiledSection.columns + ', 1fr)';
-  if (compiledSection.rowHeights && compiledSection.rowHeights.length) {
-    el.style.gridTemplateRows = compiledSection.rowHeights.map(function (x) { return (Number(x) || 1) + 'fr'; }).join(' ');
-  } else {
-    el.style.gridTemplateRows = 'repeat(' + compiledSection.rows + ', 1fr)';
-  }
+  /* ⚠️ 两条轨道模板都经 FE.gridColTemplate / gridRowTemplate 产出 `minmax(0, …fr)`。
+   * 直接用 `Nfr` 会被"折行文字"反向撑大（见两个函数的注释）：这正是用户反馈的
+   * 「numpad 预览显示异常」—— 5 行里凡标签折行的那 4 行被撑成 2 倍高，
+   * 整块网格溢出容器、压在下方图例上。
+   *
+   * 行模板还兼作"轨道数 == 行数"的兜底：编译产物里的 rowHeights 已由
+   * FE.effectiveRowHeights 保证「长度 == rows 且每项 > 0」或为 null，
+   * 模板函数对不合规输入一律回落等分，避免任何路径漏掉校验。 */
+  el.style.gridTemplateColumns = FE.gridColTemplate(compiledSection.columns);
+  el.style.gridTemplateRows = FE.gridRowTemplate(compiledSection.rowHeights, compiledSection.rows);
   el.style.height = Math.max(24, compiledSection.totalUnits * unit * (FE.PREVIEW_HEIGHT_K || 1)) + 'px';
   /* 字号上限**按每个键自己的跨距**算：3×3 大键的可用面积是 1×1 小键的 9 倍，
    * 若统一按 1×1 封顶，大键的字会小得离谱。取该键实际占位的较短边留出边距。
