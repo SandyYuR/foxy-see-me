@@ -148,6 +148,9 @@ var state = {
    * 所以展开状态必须存在 state 里，否则点条目跳转（会触发 renderAll）
    * 就会把它收起。 */
   metaDetailsOpen: null,
+  /* text_editor 预览只在 UI 中派生，不写入布局草稿；结构无效时记录是否显示了 App 内置编辑行。 */
+  textEditorPreviewFallback: false,
+  textEditorPreviewFrameUnits: null,
   /* 引用索引缓存（「使用数」用）。按 profile/popupProfile 的**对象引用**比对，
    * 但 mutate 多为就地改属性、引用不变，所以数据变更处必须显式
    * 调 invalidateRefIndex()，只靠引用比对会让计数停在旧值。 */
@@ -3092,6 +3095,7 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
   var el = h('div', {
     class: 'kb-key' + (item.keyType ? ' kt-' + String(item.keyType).toLowerCase() : '') +
       (item.isBroken ? ' kb-key-broken' : '') +
+      (item.previewOnly ? ' kb-key-preview-only' : '') +
       (isSel(item.s, item.r, item.k) ? ' kb-key-sel' : ''),
     title: itemTooltip(item, status.shift)
   });
@@ -3197,21 +3201,158 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
   el.addEventListener('pointerdown', function () { el.classList.add('pressed'); applyKeyColors(el, eff, true, status); });
   el.addEventListener('pointerup', function () { el.classList.remove('pressed'); applyKeyColors(el, eff, false, status); });
   el.addEventListener('pointerleave', function () { el.classList.remove('pressed'); applyKeyColors(el, eff, false, status); });
-  el.addEventListener('click', function (e) {
-    e.stopPropagation();
-    state.sel = { s: item.s, r: item.r, k: item.k };
-    renderPreview();
-    renderLayoutTab();
-    if (FE.openKeyDialog) {
-      FE.openKeyDialog({ mode: 'placement', placement: item.placement, location: { s: item.s, r: item.r, k: item.k } });
-    }
-  });
+  if (!item.previewOnly) {
+    el.addEventListener('click', function (e) {
+      e.stopPropagation();
+      state.sel = { s: item.s, r: item.r, k: item.k };
+      renderPreview();
+      renderLayoutTab();
+      if (FE.openKeyDialog) {
+        FE.openKeyDialog({ mode: 'placement', placement: item.placement, location: { s: item.s, r: item.r, k: item.k } });
+      }
+    });
+  }
   return el;
 }
 
 function isSel(s, r, k) {
   var sel = state.sel;
   return !!sel && sel.s === s && sel.r === r && sel.k === k;
+}
+
+/* text_editor 是 App 中的独立编辑容器：上方固定触控板，底部只放布局提供的一行按键。 */
+function textEditorNormalMetrics(profile) {
+  /* App 的 text_editor 容器沿用当前普通键盘的总高度，底部行则沿用普通键盘最后一行。
+   * 编辑器没有 App 当前 schema 的运行时上下文，因此优先取 default；没有时取第一个普通布局。 */
+  var fallback = { frameUnits: 5, bottomUnits: 1.25 };
+  if (!profile || !isPlainObject(profile.layouts)) return fallback;
+  var names = Object.keys(profile.layouts);
+  var name = null;
+  if (profile.layouts.default && profile.layouts.default !== profile.layouts.text_editor) name = 'default';
+  if (!name) {
+    for (var ni = 0; ni < names.length; ni++) {
+      if (names[ni] !== 'text_editor') { name = names[ni]; break; }
+    }
+  }
+  if (!name) return fallback;
+  var normal = FE.compileLayout(profile, name, { status: state.status });
+  if (!normal.ok || normal.resolvedName === 'text_editor' || !normal.sections.length) return fallback;
+  var frameUnits = normal.totalUnits > 0 ? normal.totalUnits : fallback.frameUnits;
+  var bottomUnits = null;
+  for (var si = normal.sections.length - 1; si >= 0 && bottomUnits == null; si--) {
+    var sec = normal.sections[si];
+    if (sec.type === 'rows' && sec.rows && sec.rows.length) {
+      bottomUnits = sec.rows[sec.rows.length - 1].heightUnits;
+    } else if (sec.type === 'grid' && sec.rows > 0) {
+      var rh = sec.rowHeights;
+      bottomUnits = Array.isArray(rh) && rh.length === sec.rows
+        ? Number(rh[rh.length - 1]) : sec.totalUnits / sec.rows;
+    }
+  }
+  if (!(bottomUnits > 0)) bottomUnits = fallback.bottomUnits;
+  return { frameUnits: frameUnits, bottomUnits: bottomUnits };
+}
+
+function textEditorFallbackCompiled() {
+  /* 与 ly0.setBottomKeys 的内置回退行保持同一组按键；这些键只用于预览，不能打开布局编辑对话框。 */
+  var placements = [
+    { ref: 'foxy.LayoutDefault', label: 'ABC', keyType: 'FUNCTION' },
+    { ref: 'foxy.SelectAll', label: 'All', keyType: 'FUNCTION' },
+    { ref: 'foxy.Cut', label: 'Cut', keyType: 'FUNCTION' },
+    { ref: 'foxy.Copy', label: 'Copy', keyType: 'FUNCTION' },
+    { ref: 'foxy.Paste', label: 'Paste', keyType: 'FUNCTION' },
+    { ref: 'rime.BackSpace', label: 'Backspace', keyType: 'FUNCTION', icon: 'backspace',
+      longPress: { repeat: true, action: { type: 'key', key: 'BACKSPACE' } } }
+  ];
+  var built = FE.compileSections([{ type: 'rows', rows: [placements] }], state.status, scopeFrom(state.profile));
+  built.sections.forEach(function (sec) {
+    if (sec.type !== 'rows') return;
+    sec.rows.forEach(function (row) { row.keys.forEach(function (item) { item.previewOnly = true; }); });
+  });
+  return { sections: built.sections, totalUnits: built.totalUnits, fallback: true };
+}
+
+function textEditorPreviewData(compiled) {
+  var sec = compiled && compiled.sections && compiled.sections.length === 1 ? compiled.sections[0] : null;
+  var valid = !!(sec && sec.type === 'rows' && sec.rows && sec.rows.length === 1 &&
+    sec.rows[0] && Array.isArray(sec.rows[0].keys) && sec.rows[0].keys.length > 0);
+  return valid ? { compiled: compiled, fallback: false } : { compiled: textEditorFallbackCompiled(), fallback: true };
+}
+
+function buildTextEditorPreview(host, compiled, unit) {
+  var data = textEditorPreviewData(compiled);
+  var metrics = textEditorNormalMetrics(state.profile);
+  state.textEditorPreviewFrameUnits = metrics.frameUnits;
+  var HK = FE.PREVIEW_HEIGHT_K || 1;
+  var framePx = Math.max(96, metrics.frameUnits * unit * HK);
+  var topPx = FE.kbDp(4, unit);
+  var minPadPx = Math.max(46, FE.kbDp(20, unit));
+  var wantedBottomPx = metrics.bottomUnits * unit * HK;
+  /* 极端的一行普通布局也不能把触控板压成 0；正常四行布局完全走 App 的底行比例。 */
+  var bottomPx = Math.max(18, Math.min(wantedBottomPx, Math.max(18, framePx - topPx - minPadPx)));
+  var frame = h('div', { class: 'kb-text-editor-frame' });
+  frame.style.height = framePx + 'px';
+
+  var padArea = h('div', { class: 'kb-text-editor-touchpad-area', role: 'img',
+    'aria-label': '文本编辑光标触控区' });
+  padArea.style.marginTop = topPx + 'px';
+  var hintMain = h('span', { class: 'kb-text-editor-hint-main', style: {
+    fontSize: clamp(FE.kbDp(15, unit), 10, 24) + 'px',
+    position: 'absolute', left: '50%', top: 'calc(50% - ' + FE.kbDp(6, unit) + 'px)',
+    transform: 'translate(-50%, -50%)'
+  } }, '滑动移动光标');
+  var hintSub = h('span', { class: 'kb-text-editor-hint-sub', style: {
+    fontSize: clamp(FE.kbDp(12, unit), 9, 18) + 'px',
+    position: 'absolute', left: '50%', top: 'calc(50% + ' + FE.kbDp(18, unit) + 'px)',
+    transform: 'translate(-50%, -50%)'
+  } }, '长按后滑动可选择文字');
+  var pad = h('div', { class: 'kb-text-editor-touchpad', style: { position: 'relative' } }, hintMain, hintSub);
+  pad.style.margin = FE.kbDp(8, unit) + 'px';
+  pad.style.borderRadius = FE.kbDp(6, unit) + 'px';
+  pad.style.padding = '0';
+  function textEditorAlphaCss(css, alpha) {
+    var m = String(css || '').match(/^#([0-9a-fA-F]{6})(?:[0-9a-fA-F]{2})?$/);
+    if (!m) return css;
+    var hex = m[1];
+    return 'rgba(' + parseInt(hex.slice(0, 2), 16) + ',' +
+      parseInt(hex.slice(2, 4), 16) + ',' + parseInt(hex.slice(4, 6), 16) + ',' + (alpha / 255) + ')';
+  }
+  /* ky0 的触控板背景是 candidateBackgroundColor，提示文字是 toolTextColor；
+   * includeBuiltin:true 让未导入或字段稀疏的主题仍按 App 内置主题回落。
+   * Paint.setAlpha(90/65) 会覆盖颜色自身 alpha，因此这里将固定 alpha 合入 rgba，
+   * 不再让 CSS opacity 与主题 alpha 重复相乘。 */
+  if (FE.resolveThemeField) {
+    var padBg = FE.resolveThemeField('candidateBackgroundColor', { includeBuiltin: true });
+    var toolText = FE.resolveThemeField('toolTextColor', { includeBuiltin: true });
+    if (padBg && padBg.value) pad.style.background = foxyColorToCss(padBg.value) || '';
+    if (toolText && toolText.value) {
+      var toolCss = foxyColorToCss(toolText.value) || '';
+      pad.style.color = toolCss;
+      hintMain.style.color = textEditorAlphaCss(toolCss, 90);
+      hintSub.style.color = textEditorAlphaCss(toolCss, 65);
+      hintMain.style.opacity = '1';
+      hintSub.style.opacity = '1';
+    }
+  }
+  padArea.appendChild(pad);
+  frame.appendChild(padArea);
+
+  var sourceSection = data.compiled.sections[0];
+  var sourceRow = sourceSection && sourceSection.rows && sourceSection.rows[0];
+  var bottom = h('div', { class: 'kb-text-editor-bottom' });
+  bottom.style.height = bottomPx + 'px';
+  bottom.style.flexBasis = bottomPx + 'px';
+  if (sourceRow) {
+    var bottomRow = Object.assign({}, sourceRow, {
+      heightUnits: bottomPx / (unit * HK),
+      width: null
+    });
+    bottom.appendChild(buildRowsSection({ type: 'rows', rows: [bottomRow] }, unit));
+  }
+  frame.appendChild(bottom);
+  host.appendChild(frame);
+  state.textEditorPreviewFallback = data.fallback;
+  return data.compiled;
 }
 
 /* 以下三个 build* 都吃 FE.compileLayout 的编译产物（纯数据），不再自行解析引用。 */
@@ -3382,8 +3523,18 @@ function renderPreview() {
   /* 先清空编译产物：提前返回的分支若留着上一次的结果，
    * renderMeta 的键数统计与后续消费 state.compiled 的逻辑会读到过期数据。 */
   state.compiled = null;
+  state.textEditorPreviewFallback = false;
+  state.textEditorPreviewFrameUnits = null;
+  var textEditorMode = state.layoutName === 'text_editor';
+  if (textEditorMode) {
+    /* App 的 text_editor 不走 split 片段，但 ly0 填满父容器；保留网页「横屏」宽度预览。 */
+    state.splitMode = false;
+    var textSplit = $('pt-split');
+    if (textSplit) textSplit.checked = false;
+  }
   host.className = 'kb ' + (state.theme === 'light' ? 'kb-light' : 'kb-dark') +
-    ((state.splitMode || state.landscapeMode) ? ' kb-split' : '');
+    (((!textEditorMode && state.splitMode) || state.landscapeMode) ? ' kb-split' : '') +
+    (textEditorMode ? ' kb-text-editor' : '');
   /* 键盘容器底色（基线 §1.4）：主题给了就用主题的，否则清掉行内背景、
    * 回到 .kb-dark / .kb-light 的 CSS 底色。
    * key_border_enabled 为真 → altKeyboardColor，为假 → 回落 keyboardColor。
@@ -3439,7 +3590,7 @@ function renderPreview() {
     renderMeta();
     return;
   }
-  if (state.splitMode && !isPlainObject(L.split)) {
+  if (!textEditorMode && state.splitMode && !isPlainObject(L.split)) {
     host.appendChild(h('div', { class: 'kb-empty' },
       '布局 “' + state.layoutName + '” 没有分体（split）片段。',
       h('div', { class: 'status' }, '在“布局编辑”底部的区段工具栏切换到「分体布局」并生成片段。')));
@@ -3453,7 +3604,7 @@ function renderPreview() {
   // 注意：.kb 的 max-width 不能加 transition，否则切回竖屏那一帧量到的还是
   // 收缩中的宽值，portraitW 被污染后字和行高一起变大。另这里只在真实可见
   // （rawW>0）时记忆竖屏宽度，避免隐藏面板时的 0/回退值污染。
-  var wide = state.splitMode || state.landscapeMode;
+  var wide = state.landscapeMode || (!textEditorMode && state.splitMode);
   if (!wide) {
     if (rawW > 0) state.portraitW = rawW;
     else if (state.portraitW == null) state.portraitW = 380;
@@ -3465,11 +3616,15 @@ function renderPreview() {
   var unit = state.portraitW / 10;
   /* 一次性编译：引用解析与手势摘要在编译期完成，渲染只读结果 */
   var compiled = FE.compileLayout(state.profile, state.layoutName, {
-    split: state.splitMode, status: state.status
+    split: !textEditorMode && state.splitMode, status: state.status
   });
   state.compiled = compiled;
-  renderCompiledInto(host, compiled, unit);
-  if (!compiled.sections.length) {
+  if (textEditorMode) {
+    state.compiled = buildTextEditorPreview(host, compiled, unit);
+  } else {
+    renderCompiledInto(host, compiled, unit);
+  }
+  if (!state.compiled.sections.length) {
     host.appendChild(h('div', { class: 'kb-empty' },
       state.splitMode ? '分体片段没有区段。' : '布局没有区段。'));
   }
@@ -3497,11 +3652,18 @@ function renderMeta() {
       var usN = FE.layoutHeightUnits(L), usS = FE.layoutHeightUnits(L.split);
       parts.push(' · 高度 ' + (Math.round(usS * 100) / 100) + ' 单位（常规 ' + (Math.round(usN * 100) / 100) + '）');
     } else {
-      parts.push(' · 高度 ' + (Math.round(FE.layoutHeightUnits(L) * 100) / 100) + ' 单位');
+      var metaHeightUnits = (state.layoutName === 'text_editor' && state.textEditorPreviewFrameUnits > 0)
+        ? state.textEditorPreviewFrameUnits : FE.layoutHeightUnits(L);
+      parts.push(' · 高度 ' + (Math.round(metaHeightUnits * 100) / 100) + ' 单位');
       /* 横屏预览：明确写出来，否则用户会以为"怎么键忽然变宽了/是不是切了分体"。
        * 强调**仍是常规布局**，与「分体」复选（会切到 split 片段）区分开。 */
       if (state.landscapeMode) {
         parts.push(h('span', { class: 'st-split' }, ' · 横屏宽屏预览（仍渲染常规布局，未切 split 片段）'));
+      }
+      if (state.layoutName === 'text_editor') {
+        parts.push(h('span', { class: 'st-split' }, state.textEditorPreviewFallback
+          ? ' · 文本编辑：结构无效，显示内置编辑行'
+          : ' · 文本编辑：上方触控区 + 底部编辑行'));
       }
     }
     /* 键数直接由编译产物统计，避免再遍历一遍原始 sections */

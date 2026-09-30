@@ -475,5 +475,7 @@
   <script src="./js/color-source.js"></script>
   <script src="./js/symbol-editor.js"></script>
   <script src="./js/symbol-preview.js"></script>
+  <!-- app.js 先启动，主题/颜色模块后加载；模块齐备后补一次轻量预览，保证草稿首屏主题色完整。 -->
+  <script>if (window.FE && FE.renderPreviewOnly) FE.renderPreviewOnly();</script>
 </body>
 </html>

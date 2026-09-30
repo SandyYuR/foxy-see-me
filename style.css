@@ -547,6 +547,42 @@ html.site-light .st-split { color: #2e8b57; }
 .kb-dark { background: var(--kb-bg, #191a1e); box-shadow: var(--kb-inset, inset 0 0 0 1px #26282d); }
 .kb-light { background: var(--kb-bg, #cfd2d7); box-shadow: var(--kb-inset, inset 0 0 0 1px #b9bdc4); }
 .kb-section { display: flex; flex-direction: column; }
+
+/* ---------------- text_editor 专用预览 ----------------
+ * Foxy 的 text_editor 不是一行普通键盘：ly0 充满原键盘容器，顶部是 ky0 光标触控板，
+ * 底部才是布局文件提供的一行按键。触控板自身四周还有 8dp 内缩，提示文字由 App 固定绘制。 */
+.kb-text-editor-frame {
+  width: 100%; min-height: 0; display: flex; flex-direction: column;
+}
+.kb-text-editor-touchpad-area {
+  flex: 1 1 auto; min-height: 0; display: flex;
+}
+.kb-text-editor-touchpad {
+  flex: 1 1 auto; min-width: 0; min-height: 0; margin: 8px;
+  border-radius: 6px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 0;
+  padding: 8px; text-align: center; overflow: hidden;
+}
+.kb-dark .kb-text-editor-touchpad {
+  background: var(--kb-key-bg-fn, #313439);
+  color: var(--kb-key-fg-fn, #f2f3f5);
+}
+.kb-light .kb-text-editor-touchpad {
+  background: var(--kb-key-bg-fn, #d6d9de);
+  color: var(--kb-key-fg-fn, #22242a);
+}
+.kb-text-editor-hint-main,
+.kb-text-editor-hint-sub {
+  display: block; max-width: 100%; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; line-height: 1.2;
+}
+.kb-text-editor-hint-main { opacity: 0.35; }
+.kb-text-editor-hint-sub { opacity: 0.25; }
+.kb-text-editor-bottom {
+  flex: 0 0 auto; min-height: 0; width: 100%; display: flex;
+}
+.kb-text-editor-bottom > .kb-section { width: 100%; min-height: 0; }
+.kb-key-preview-only { cursor: default; }
 /* 槽位对齐：行内无 gap，槽按 weight 分整行宽，键在槽内左右各留间隙
  * （见 buildRowsSection）。不同键数的行同权重点边界重合。
  *

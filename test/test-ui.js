@@ -2169,6 +2169,62 @@ await sleep(350);
   ok(q('.split-banner').length === 1, '区段编辑器渲染分体横幅');
   eq(q('#layout-tabs .pill').length, 4, '布局 pill 数 = 4（split2 比旧 split.json 多 text_editor）');
 
+  /* text_editor 是 App 的独立编辑容器：上方固定触控板，底部只渲染配置的一行按键。 */
+  $('layout-select').value = 'text_editor';
+  $('layout-select')._fire('change');
+  ok($('preview-kb').classList.contains('kb-text-editor'), 'text_editor 预览挂专用容器类');
+  eq(q('.kb-text-editor-frame').length, 1, 'text_editor 预览有独立全尺寸容器');
+  eq(q('.kb-text-editor-touchpad').length, 1, 'text_editor 预览有光标触控板');
+  ok(q('.kb-text-editor-hint-main')[0].textContent.indexOf('滑动移动光标') >= 0, '触控板显示移动光标提示');
+  ok(q('.kb-text-editor-hint-sub')[0].textContent.indexOf('长按后滑动') >= 0, '触控板显示选择文字提示');
+  eq(q('.kb-text-editor-bottom .kb-key').length, 6, 'text_editor 底部行渲染配置的 6 个按键');
+  eq(q('.kb-row').length, 1, 'text_editor 预览只渲染一行底部按键');
+  ok(parseFloat(q('.kb-text-editor-bottom .kb-row')[0].style.height) <
+    parseFloat(q('.kb-text-editor-frame')[0].style.height), '底部编辑行没有错误地占满整个 text_editor');
+  ok($('preview-meta').textContent.indexOf('上方触控区') >= 0, 'meta 说明 text_editor 的上下结构');
+  const textEditorUnit = FE.state.portraitW / 10;
+  const textEditorHeightK = FE.PREVIEW_HEIGHT_K;
+  const textEditorFrameExpected = Math.max(96, FE.state.textEditorPreviewFrameUnits * textEditorUnit * textEditorHeightK);
+  eq(parseFloat(q('.kb-text-editor-frame')[0].style.height).toFixed(2), textEditorFrameExpected.toFixed(2), 'text_editor frame 高度沿用普通布局总高度');
+  eq(q('.kb-text-editor-touchpad-area')[0].style.marginTop, FE.kbDp(4, textEditorUnit) + 'px', '触控板顶部保留 4dp');
+  eq(q('.kb-text-editor-touchpad')[0].style.margin, FE.kbDp(8, textEditorUnit) + 'px', '触控板四周保留 8dp');
+  eq(q('.kb-text-editor-touchpad')[0].style.borderRadius, FE.kbDp(6, textEditorUnit) + 'px', '触控板圆角按 6dp 换算');
+  const textEditorNormal = FE.compileLayout(FE.state.profile, 'default', { status: FE.state.status });
+  const textEditorLastRow = textEditorNormal.sections[textEditorNormal.sections.length - 1].rows.slice(-1)[0];
+  eq(parseFloat(q('.kb-text-editor-bottom')[0].style.height).toFixed(2),
+    (textEditorLastRow.heightUnits * textEditorUnit * textEditorHeightK).toFixed(2), '底部编辑行沿用普通键盘最后一行高度');
+  documentStub._openDialogs.length = 0;
+  q('.kb-text-editor-bottom .kb-key')[0].click();
+  eq(documentStub._openDialogs.length, 1, '有效 text_editor 底部按键仍可打开布局编辑对话框');
+  if (documentStub._openDialogs.length) documentStub._openDialogs[documentStub._openDialogs.length - 1].close();
+  documentStub._openDialogs.length = 0;
+  FE.state.landscapeMode = true;
+  $('pt-landscape').checked = true;
+  FE.renderAll();
+  ok(FE.state.landscapeMode && $('preview-kb').classList.contains('kb-split'), 'text_editor 保留横屏宽度预览');
+  FE.state.landscapeMode = false;
+  $('pt-landscape').checked = false;
+  FE.renderAll();
+  const textEditorRows = FE.state.profile.layouts.text_editor.sections[0].rows;
+  textEditorRows.push([]);
+  FE.renderAll();
+  eq(q('.kb-text-editor-bottom .kb-key').length, 6, 'text_editor 结构非法时显示 App 内置回退行');
+  ok($('preview-meta').textContent.indexOf('内置编辑行') >= 0, 'meta 标出 text_editor 内置回退');
+  documentStub._openDialogs.length = 0;
+  q('.kb-text-editor-bottom .kb-key')[0].click();
+  eq(documentStub._openDialogs.length, 0, '内置回退行按键不可打开布局编辑对话框');
+  textEditorRows.pop();
+  FE.renderAll();
+  const textEditorKeyRow = textEditorRows[0];
+  textEditorRows[0] = [];
+  FE.renderAll();
+  eq(q('.kb-text-editor-bottom .kb-key').length, 6, 'text_editor 空底部行也显示 App 内置回退行');
+  textEditorRows[0] = textEditorKeyRow;
+  FE.renderAll();
+  $('layout-select').value = 'default';
+  $('layout-select')._fire('change');
+  eq(q('.kb-row').length, 4, '切回 default 后恢复普通四行预览');
+
   /* 分体横屏只加宽：行高、字号都不动；切回竖屏行高恢复（回退 W/2 反推） */
   $('preview-kb').clientWidth = 380;
   FE.state.splitMode = false;
