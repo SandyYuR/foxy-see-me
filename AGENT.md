@@ -1617,6 +1617,22 @@ App 端两列各是一个 ScrollView（`ly.java:66-71` / `149-153`），条目�
 ⚠️ 两列都必须写 `min-height:0` —— flex 子项默认 `min-height:auto` 会按内容撑高，
 滚动直接失效（CSS flex 滚动的经典坑，踩过）。历史上符号区用的固定 `maxHeight:180dp` 也已移除。
 
+**左列滚动位置必须在重建后恢复**（用户报告：滚到下面的分组，点一下切换就被弹回顶部）：
+预览每次重渲染都是 `clearEl(host)` 再重建（`renderPreview` 开篇就清空 `#preview-kb`），
+所以 `.sym-pv-groups` 每次都是**全新节点**、`scrollTop` 天然归零 —— 而用户要选的分组
+就在下面，于是得反复重新滚下去。App 端没有这个问题：左列是常驻 View，切换分组只换
+右侧格子（`ly.java:228+`）。
+做法：`symbol-preview.js` 的 `groupScrollByKind` 按**类别分槽**记忆（symbols/emoji/kaomoji
+各一份）—— 与 app.js 用 `__gridSec` 认领网格横滚同一思路：**节点被换掉只能靠标记认领**，
+认错类别就会把 emoji 的位置套给颜文字。
+记忆点有**两处，缺一不可**：① 左列自身 `scroll` 事件（覆盖"改数据 → 重渲染"这类
+**非点击**路径：增删分组、撤销、载入示例）；② 点击分组时**重建前再读一次**
+（真实浏览器里 scroll 事件是**异步派发**的，紧跟点击那一下可能还没派发）。
+⚠️ 恢复必须在**分组项填充完、面板挂进文档之后**设 `scrollTop`：浏览器会把它夹到
+`scrollHeight - clientHeight`，节点还没内容/还没挂载时那个值是 0，早设等于白设。
+**DOM 桩不模拟夹取**，所以挪到前面测试照样绿（见 §5.3），别据此改位置。
+只记**左列**：右列格子区切换分组时整个换内容，理应回到顶部。
+
 **预置示例**：「载入示例」优先用 `FE.SYMBOL_EXAMPLE_FILES`（`examples/` 里的真实
 符号文件，见 §4.8），没有才回退内置极小样例。下拉 option 的 `value` 保持**类别 id**
 （`symbols`/`emoji`/`kaomoji`）而不是文件名 —— 文件名是给人看的标签，类别才是程序的键，
@@ -1624,7 +1640,8 @@ App 端两列各是一个 ScrollView（`ly.java:66-71` / `149-153`），条目�
 
 **测试**：`test-ui.js` 的「符号面板预览」区块（结构 / 列数随 multiLine / **尺寸与布局
 预览一致** / **说明不在键盘区内** / **两列可滚且 min-height:0** / **分组极多时高度不变** /
-切回布局页键盘恢复 / 空 catalog 给提示）。
+**左列滚动位置在切换分组后保持**（含按类别分槽、非点击路径两条）/ 切回布局页键盘恢复 /
+空 catalog 给提示）。
 > 写这类断言时注意：`activateTab` 只在**跨符号页边界**才重渲染预览，
 > 所以测试里要**显式** `FE.state.activeTab = 'tab-symbols'` 再 `renderAll()`，
 > 否则会断言到上一块遗留的 DOM（踩过：拿到 emoji 的 6 格而非 symbols 的 12 格）。
@@ -1784,6 +1801,13 @@ var unit = state.portraitW / 10;          // 全链路单 unit：行高 / 字号
   - `removeChild` 摘掉的子树里若含 `activeElement`，会**清焦点并把页面滚回顶部**；
   - `document.documentElement` / `document.scrollingElement` 提供 `scrollTop`，
     供 `pageScroller()` 读写。
+- ⚠️ **桩不模拟 `scrollTop` 的夹取，也不做真实布局**：任何元素的 `scrollTop` 都能
+  随便设成任意值（真实浏览器会夹到 `scrollHeight - clientHeight`，节点没内容/没挂载
+  时夹到 0）。后果：**"设 scrollTop 的时机"这类错误在测试里查不出来** —— 放在填充
+  与挂载**之前**照样绿（符号面板左列就踩过这个：早设等于白设，桩却通过）。
+  凡涉及"恢复滚动位置"的改动，除了 `test-ui.js`，还要在真实浏览器里确认一次
+  （`tools/mobile-preview.js` 走 playwright，未装依赖时可用 CDP 直连本机 Edge，
+  零依赖）。`clientWidth` 默认 0 也同源：几何断言要用 `__stubWidth` 显式模拟。
 
 ### 5.4 其他小坑
 

@@ -4811,6 +4811,60 @@ console.log('== 符号面板预览 ==');
       const pvMany = q('.sym-pv')[0];
       ok(Math.abs(parseFloat(pvMany.style.height) - wantPanelH) < 1,
         '分组极多（' + bestCount + ' 组）时高度仍 = 布局预览高度（' + pvMany.style.height + '，未被撑高）');
+
+      /* ⑦b ★回归：左列分组列表的滚动位置在**点击切换分组**后保持不变。
+       *     用户报告：滚到下面的分组，点一下切换，左列立刻弹回顶部 —— 而他要选的
+       *     分组就在下面，于是得反复重新滚下去。
+       *     根因：预览每次重渲染都 clearEl(host) 再重建，`.sym-pv-groups` 是**全新
+       *     节点**、scrollTop 天然归零（App 端左列是常驻 View，切换只换右侧格子，
+       *     本就没有这个问题）。修法见 symbol-preview.js 的 rememberGroupScroll。
+       *     这里刻意用**分组最多**的预置压这条路径（分组少时左列根本滚不动）。 */
+      {
+        const gBox = q('.sym-pv-groups')[0];
+        const gItemsAll = q('.sym-pv-group');
+        eq(gItemsAll.length, bestCount, '左列渲染全部 ' + bestCount + ' 个分组项');
+        gBox.scrollTop = 123;
+        gItemsAll[gItemsAll.length - 1]._fire('click');
+        const gBox2 = q('.sym-pv-groups')[0];
+        eq(FE.state.symbolPreviewGroup, bestCount - 1,
+          '确实切到了被点的那一组（位置保持不是"压根没重渲染"）');
+        ok(gBox2 !== gBox, '左列确实被重建成了新节点 —— 位置靠恢复而不是节点复用');
+        eq(gBox2.scrollTop, 123, '★ 点击切换分组后左列滚动位置保持（不再弹回顶部）');
+      }
+
+      /* ⑦c **非点击**路径的重渲染也要保持：新增/删除分组、撤销、载入示例都会重建
+       *     预览，这些路径上没有"点击时顺手记一次"的机会，靠左列自身的 scroll 事件
+       *     持续记忆（真实浏览器里 scroll 事件是异步派发的，所以点击路径另有一次读取）。 */
+      {
+        const gBox3 = q('.sym-pv-groups')[0];
+        gBox3.scrollTop = 77;
+        gBox3._fire('scroll');
+        FE.state.symbolPreviewGroup = 0;
+        FE.renderAll();
+        eq(q('.sym-pv-groups')[0].scrollTop, 77,
+          '改数据后重渲染也保持左列滚动位置（scroll 事件记忆）');
+      }
+
+      /* ⑦d 记忆**按类别分槽**：切到另一类（没记过位置）应从顶部开始，不能被上一类
+       *     的值污染 —— 与 app.js 认 `__gridSec` 同一个思路（节点被换掉，只能靠标记认领）。 */
+      {
+        const emojiBucket = FE.SYMBOL_EXAMPLE_FILES && FE.SYMBOL_EXAMPLE_FILES.emoji;
+        const emojiName = emojiBucket && Object.keys(emojiBucket)[0];
+        ok(!!emojiName, '（前置）预置里有 emoji 示例，可用于跨类别验证');
+        if (emojiName) {
+          const savedEmoji = FE.state.symbolProfiles.emoji;
+          FE.state.symbolProfiles.emoji =
+            FE.normalizeSymbolProfile('emoji', JSON.parse(emojiBucket[emojiName]));
+          FE.state.symbolKind = 'emoji';
+          FE.renderAll();
+          eq(q('.sym-pv-groups')[0].scrollTop, 0,
+            '切到另一类别时左列从顶部开始（该类别没记过位置）');
+          FE.state.symbolKind = bestKind;
+          FE.renderAll();
+          eq(q('.sym-pv-groups')[0].scrollTop, 77, '切回原类别后位置仍在（按类别分槽记忆）');
+          FE.state.symbolProfiles.emoji = savedEmoji;
+        }
+      }
     }
 
     /* ⑧ 切回布局页 → 键盘渲染恢复（不能把键盘弄丢） */

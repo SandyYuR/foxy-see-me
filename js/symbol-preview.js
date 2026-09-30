@@ -131,7 +131,41 @@ FE.symbolPreviewGroups = function (data) {
 };
 
 /* ================================================================
- * 四、渲染
+ * 四、左列分组列表的滚动位置保持
+ * ================================================================ */
+
+/* 记住「每一类符号的分组列表滚到了哪」。
+ *
+ * **为什么必须做**：预览每次重渲染都是 `clearEl(host)` 再重建（app.js 的
+ * renderPreview 开篇就清空 #preview-kb），所以 `.sym-pv-groups` **每次都是全新节点**，
+ * scrollTop 天然归零。用户把分组列表滚到下面（分组多的 catalog 很常见，「其他」
+ * 这类汇总组总在最后），点一下切换分组 —— 列表立刻弹回顶部，而他要选的分组就在
+ * 下面，于是得反复重新滚下去。
+ * App 端没有这个问题：分组列表是常驻 View，切换分组只换右侧格子（ly.java:228+），
+ * 左列滚动位置自然不变。这里是在编辑器里补上同样的观感。
+ *
+ * 认领靠 `kind`（symbols / emoji / kaomoji 各记一份）—— 节点被换掉了，只能靠标记
+ * 认出「这是哪一类的列表」，与 app.js 用 `__gridSec` 认领网格横向滚动同一个思路：
+ * 标记对不上就跳过，**绝不会把 emoji 的位置错认给颜文字**。
+ *
+ * ⚠️ **只记左列**：右列格子区在切换分组时整个换内容，理应回到顶部（新内容从头看），
+ * 给它保位置反而是错的。 */
+var groupScrollByKind = {};
+
+/* 记住某一类当前列表的滚动位置。两个调用时机：
+ *   ① 左列自身的 scroll 事件 —— 持续记忆，覆盖「改数据 → 重渲染」这类**非点击**路径
+ *      （新增/删除分组、撤销、导入示例都会重建预览）；
+ *   ② 点击分组时**重建前再读一次** —— 真实浏览器里 scroll 事件是异步派发的，
+ *      紧跟着点一下可能还没派发到，只靠 ① 会漏记最后那一段滚动。 */
+function rememberGroupScroll(kind, el) {
+  if (!el || kind == null) return;
+  var top = el.scrollTop;
+  if (typeof top !== 'number' || !(top >= 0)) return;
+  groupScrollByKind[kind] = top;
+}
+
+/* ================================================================
+ * 五、渲染
  * ================================================================ */
 
 /* 面板要占的盒子尺寸（**与布局预览严格相同**，这是用户明确要求的）。
@@ -237,6 +271,9 @@ FE.renderSymbolPreview = function (host, opts) {
   listBox.style.flex = '1 1 auto';
   listBox.style.overflowY = 'auto';
   listBox.style.marginTop = FE.symbolPreviewDp(4, unit) + 'px';
+  /* 持续记忆滚动位置（见 rememberGroupScroll）：这样**非点击**导致的重渲染
+   * （新增/删除分组、撤销、载入示例）也不会把用户滚下去的位置丢掉。 */
+  listBox.addEventListener('scroll', function () { rememberGroupScroll(data.kind, listBox); });
   var gH = FE.symbolPreviewDp(spec.groupItemHeightDp, unit);
   var gGap = FE.symbolPreviewDp(spec.groupItemMarginDp, unit);
   var groupEls = [];
@@ -265,6 +302,11 @@ FE.renderSymbolPreview = function (host, opts) {
     else if (!on && fgGroup) el.style.color = fgGroup;
     if (on && bgCellSel) el.style.background = bgCellSel;
     el.addEventListener('click', function () {
+      /* ⚠️ 重建**之前**先把左列滚到哪记下来：随后 renderPreviewOnly 会 clearEl
+       * 并重建面板，新的 .sym-pv-groups 是全新节点、scrollTop 归零。少了这一句，
+       * 用户滚到下面的分组后一点切换就被弹回顶部（而他要选的分组就在下面）。
+       * 这里再读一次是防「scroll 事件尚未派发」的竞态（见 rememberGroupScroll）。 */
+      rememberGroupScroll(data.kind, listBox);
       if (FE.state) FE.state.symbolPreviewGroup = g.index;
       if (FE.renderPreviewOnly) FE.renderPreviewOnly();
       else FE.renderAll && FE.renderAll();
@@ -422,6 +464,15 @@ FE.renderSymbolPreview = function (host, opts) {
 
   /* ---- 挂上去 ---- */
   host.appendChild(panel);
+
+  /* ---- 恢复左列滚动位置（见 rememberGroupScroll） ----
+   * ⚠️ **必须放在填充分组项、且挂进文档之后**，不能挪到创建时：真实浏览器里
+   * scrollTop 会被夹到 `scrollHeight - clientHeight`，节点还没内容 / 还没挂载时
+   * 那个值是 0，早设等于白设（DOM 桩不模拟夹取，所以放前面测试照样"通过"——
+   * 别据此把这段挪上去）。这里同步设值即可：浏览器会自行 flush 布局后应用滚动，
+   * 不需要像页面滚动那样补一帧（那条要补帧是因为焦点移除引发的滚动是异步的）。 */
+  var keepGroupTop = groupScrollByKind[data.kind] || 0;
+  if (keepGroupTop > 0) listBox.scrollTop = keepGroupTop;
 
   /* ---- 说明文字**不画进 host** ----
    * host 就是键盘预览区（#preview-kb），那里只该有"手机的样貌"：
