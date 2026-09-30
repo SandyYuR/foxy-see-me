@@ -318,7 +318,9 @@ FE.actionDisplay = function (a) {
   switch (a.type) {
     case 'key': {
       var meta = a.meta ? (Array.isArray(a.meta) ? a.meta : [a.meta]) : [];
-      var parts = meta.map(function (m) { var s = String(m).toUpperCase(); return s === 'CONTROL' ? 'CTRL' : s; });
+      var parts = meta.map(function (m) {
+        return FE.canonicalMetaName ? FE.canonicalMetaName(m) : String(m).toUpperCase();
+      });
       var p = parts.join('+');
       return (p ? p + '+' : '') + String(a.key || '?');
     }
@@ -784,11 +786,19 @@ function validateAction(action, where, err, profile) {
     if (action.meta != null) {
       var meta = Array.isArray(action.meta) ? action.meta : [action.meta];
       meta.forEach(function (m) {
-        if (['SHIFT', 'CTRL', 'ALT', 'META'].indexOf(String(m).toUpperCase()) < 0) err(where + ' 使用了不支持的 meta: ' + m);
+        if (['SHIFT', 'CTRL', 'ALT', 'META'].indexOf(
+          FE.canonicalMetaName ? FE.canonicalMetaName(m) : String(m).toUpperCase()) < 0) {
+          err(where + ' 使用了不支持的 meta: ' + m);
+        }
       });
     }
   } else if (t === 'modifier') {
-    if (FE.MODIFIERS.indexOf(action.modifier) < 0) err(where + ' 使用了不支持的 modifier: ' + action.modifier);
+    var modifierName = FE.canonicalModifierName
+      ? FE.canonicalModifierName(action.modifier)
+      : action.modifier;
+    if (!modifierName || FE.MODIFIERS.indexOf(modifierName) < 0) {
+      err(where + ' 使用了不支持的 modifier: ' + action.modifier);
+    }
     if (action.state != null && FE.MODIFIER_STATES.indexOf(action.state) < 0) {
       err(where + ' 使用了不支持的 modifier state: ' + action.state);
     }

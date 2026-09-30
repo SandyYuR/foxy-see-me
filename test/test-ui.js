@@ -1010,6 +1010,10 @@ const actEd = delItem.querySelectorAll('.action-def-editor')[0];
 ok(!!actEd, '展开后构建出图形化编辑器');
 ok(actEd.querySelectorAll('.action-editor').length === 1, '动作编辑器含类型下拉与字段区');
 ok(actEd.textContent.indexOf('编辑原始 JSON') >= 0, '动作编辑器保留「编辑原始 JSON…」逃生口');
+const controlAliasEditor = FE.buildActionEditor({ type: 'key', key: 'ENTER', meta: ['CONTROL'] });
+const controlAliasChecks = controlAliasEditor.el.querySelectorAll('.meta-checks input');
+ok(controlAliasChecks[1].checked === true, '动作编辑器把 CONTROL 别名回显为 Ctrl 勾选');
+eq(controlAliasEditor.getValue().meta, ['CTRL'], '动作编辑器保存 CONTROL 时输出规范 CTRL');
 const actTypeSel = actEd.querySelectorAll('select')[0];
 eq(actTypeSel.value, 'key', '类型下拉按当前动作类型预选');
 /* 关键：只动下拉框、不碰任何 JSON 文本，就应当写回 profile */

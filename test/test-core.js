@@ -497,6 +497,21 @@ v = FE.validateProfile(invalidActions);
 ok(v.errors.some(e => e.indexOf('NO_SUCH_KEY') >= 0), '非法 KeyCode 被检出');
 ok(v.errors.some(e => e.indexOf('not_real') >= 0), '非法 app command 被检出');
 ok(v.errors.some(e => e.indexOf('缺少 key') >= 0), 'key 动作缺少 key 被检出');
+const runtimeMetaAliases = FE.normalizeProfile({
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{
+    label: 'alias',
+    tap: { type: 'key', key: 'A', meta: ['CONTROL'] },
+    swipe: { up: { type: 'key', key: 'ENTER', meta: 'control' } }
+  }]] }] } }
+});
+eq(FE.validateProfile(runtimeMetaAliases).errors, [], 'Foxy 运行时接受 CONTROL/control 作为 Ctrl meta 别名');
+eq(FE.actionDisplay({ type: 'key', key: 'ENTER', meta: ['CONTROL'] }), 'CTRL+ENTER', 'CONTROL 在动作摘要中规范显示为 CTRL');
+const runtimeModifierCase = FE.normalizeProfile({
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{
+    label: 'modifier', tap: { type: 'modifier', modifier: 'shift' }
+  }]] }] } }
+});
+eq(FE.validateProfile(runtimeModifierCase).errors, [], 'modifier 名称按 Foxy 运行时大小写不敏感');
 const holeGrid = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'grid', columns: 2, rows: 2, keys: [{ column: 0, row: 0, ref: 'rime.a' }] }] } } });
 /* 文档只禁止重叠/越界，未要求铺满：空格子是合法留白，应为警告而非错误 */
 const holeRes = FE.validateProfile(holeGrid);

@@ -261,6 +261,17 @@ FE.APP_COMMANDS = [
 FE.KEY_TYPES = ['LETTER', 'FUNCTION', 'ACTION'];
 FE.ICONS = ['backspace', 'shift', 'enter', 'return'];
 FE.MODIFIERS = ['SHIFT', 'CTRL'];
+/* Foxy App 的 key.meta 解析同时接受 "ctrl" 与 "control"；编辑器
+ * 需要在校验和表单回显时使用同一套别名口径，但导出仍保留用户原文，
+ * 只有通过图形化编辑器重新保存时才写出规范的 CTRL。 */
+FE.canonicalMetaName = function (value) {
+  var name = String(value == null ? '' : value).trim().toUpperCase();
+  return name === 'CONTROL' ? 'CTRL' : name;
+};
+/* modifier 字段在 Foxy 中是 SHIFT / CTRL 枚举，运行时按大小写不敏感解析。 */
+FE.canonicalModifierName = function (value) {
+  return String(value == null ? '' : value).trim().toUpperCase();
+};
 /* 修饰键状态：TOGGLE_LOCKED 是命令而非持久状态（未锁定→锁定，已锁定→关闭） */
 FE.MODIFIER_STATES = ['OFF', 'ONESHOT', 'LOCKED', 'TOGGLE_LOCKED'];
 FE.GESTURE_FIELDS = ['tap', 'doubleTap', 'swipe', 'longPress', 'hold'];

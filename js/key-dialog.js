@@ -825,7 +825,10 @@ FE.buildActionEditor = function (spec, opts) {
       var metaBox = h('div', { class: 'meta-checks' });
       ['SHIFT', 'CTRL', 'ALT', 'META'].forEach(function (m) {
         var chk = h('input', { type: 'checkbox' });
-        var has = spec && spec.meta && (Array.isArray(spec.meta) ? spec.meta : [spec.meta]).map(function (x) { return String(x).toUpperCase(); }).indexOf(m) >= 0;
+        var has = spec && spec.meta && (Array.isArray(spec.meta) ? spec.meta : [spec.meta]).some(function (x) {
+          var name = FE.canonicalMetaName ? FE.canonicalMetaName(x) : String(x).toUpperCase();
+          return name === m;
+        });
         chk.checked = !!has;
         metaChks.push({ m: m, chk: chk });
         metaBox.appendChild(h('label', { class: 'mini-label check' }, chk, m));
@@ -834,7 +837,10 @@ FE.buildActionEditor = function (spec, opts) {
       fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '修饰'), metaBox));
     } else if (t === 'modifier') {
       modSel = h('select', { class: 'mini-select' });
-      FE.MODIFIERS.forEach(function (m) { modSel.appendChild(h('option', { value: m, selected: spec && spec.modifier === m }, m)); });
+      var modifierValue = FE.canonicalModifierName
+        ? FE.canonicalModifierName(spec && spec.modifier)
+        : (spec && spec.modifier != null ? String(spec.modifier).toUpperCase() : '');
+      FE.MODIFIERS.forEach(function (m) { modSel.appendChild(h('option', { value: m, selected: modifierValue === m }, m)); });
       modStateSel = h('select', { class: 'mini-select' });
       /* TOGGLE_LOCKED 是命令（未锁定→锁定，已锁定→关闭），文档列为合法状态 */
       FE.MODIFIER_STATES.forEach(function (s) {
