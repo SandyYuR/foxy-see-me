@@ -234,6 +234,37 @@ function pp() {
   return state.popupProfile;
 }
 
+/* popup schema 允许 `"q": [ ... ]` 作为 normal 候选的简写。
+ * UI 写路径不能把 normal/shifted 属性挂到数组上：JSON.stringify 会直接丢掉
+ * 这些非索引属性。normal 继续原地使用裸数组，写 shifted 时再升级为对象。 */
+function popupStateArray(entry, st) {
+  if (Array.isArray(entry)) return st === 'normal' ? entry : null;
+  if (FE.isPlainObject(entry) && Array.isArray(entry[st])) return entry[st];
+  return null;
+}
+function ensurePopupStateArray(schema, pk, st) {
+  var entry = schema[pk];
+  if (Array.isArray(entry)) {
+    if (st === 'normal') return entry;
+    entry = { normal: entry };
+    schema[pk] = entry;
+  }
+  if (!FE.isPlainObject(entry)) {
+    entry = {};
+    schema[pk] = entry;
+  }
+  if (!Array.isArray(entry[st])) entry[st] = [];
+  return entry[st];
+}
+function removePopupStateArray(schema, pk, st) {
+  var entry = schema[pk];
+  if (Array.isArray(entry)) {
+    if (st === 'normal') entry.length = 0;
+    return;
+  }
+  if (FE.isPlainObject(entry)) delete entry[st];
+}
+
 function setPopupStatus(msg, kind) {
   var el = $('popup-status');
   if (!el) return;
@@ -262,22 +293,18 @@ function collectLayoutPopupKeys() {
     if (found[pk] === undefined) found[pk] = [];
     found[pk].push({ label: label, loc: loc });
   }
-  function pkOf(c) {
-    if (!FE.isPlainObject(c)) return null;
-    var lp = FE.isPlainObject(c.longPress) ? c.longPress.popupKey : null;
-    return (lp == null || lp === '') ? null : lp;
+  function popupKeysOf(c) {
+    var out = [];
+    if (!FE.isPlainObject(c)) return out;
+    if (FE.isPlainObject(c.longPress) && c.longPress.popupKey != null && c.longPress.popupKey !== '') out.push(c.longPress.popupKey);
+    if (FE.isPlainObject(c.override)) out = out.concat(popupKeysOf(c.override));
+    if (Array.isArray(c.variants)) c.variants.forEach(function (v) { out = out.concat(popupKeysOf(v)); });
+    return out;
   }
   /* 按键定义：挂在定义自身（含变体里写的 longPress） */
   Object.keys(profile.keys || {}).forEach(function (kn) {
     var kd = profile.keys[kn];
-    var lp = pkOf(kd);
-    if (lp) add(lp, '按键定义 ' + kn, { defKind: 'key', defName: kn });
-    if (FE.isPlainObject(kd) && Array.isArray(kd.variants)) {
-      kd.variants.forEach(function (v, vi) {
-        var vlp = pkOf(v);
-        if (vlp) add(vlp, '按键定义 ' + kn + ' 变体' + (vi + 1), { defKind: 'key', defName: kn });
-      });
-    }
+    popupKeysOf(kd).forEach(function (lp) { add(lp, '按键定义 ' + kn, { defKind: 'key', defName: kn }); });
   });
   function walkSections(sections, layoutName, isSplit) {
     (Array.isArray(sections) ? sections : []).forEach(function (s, si) {
@@ -449,7 +476,7 @@ function popupKeyCard(P, schemaName, pk, refs, openSet) {
 function stateRow(P, schemaName, pk, st) {
   var entry = P.schemas[schemaName] && P.schemas[schemaName][pk];
   if (!entry) return h('div', { class: 'status error' }, '当前 schema 中不存在该键');
-  var arr = Array.isArray(entry[st]) ? entry[st] : null;
+  var arr = popupStateArray(entry, st);
   var row = h('div', { class: 'popup-state-row' });
   row.appendChild(h('span', { class: 'popup-state-name', title: st === 'normal' ? '常规状态候选' : 'Shift 状态候选（缺省回退到 normal）' },
     st === 'normal' ? '常规' : 'Shift'));
@@ -472,14 +499,14 @@ function stateRow(P, schemaName, pk, st) {
     row.appendChild(h('button', {
       class: 'mini-button', title: '删除整个 ' + st + ' 候选列表',
       onclick: function () {
-        pmutate(function () { delete pp().schemas[schemaName][pk][st]; });
+        pmutate(function () { removePopupStateArray(pp().schemas[schemaName], pk, st); });
       }
     }, '清空'));
   } else {
     row.appendChild(h('button', {
       class: 'mini-button', title: '添加 ' + st + ' 候选列表',
       onclick: function () {
-        pmutate(function () { pp().schemas[schemaName][pk][st] = []; });
+        pmutate(function () { ensurePopupStateArray(pp().schemas[schemaName], pk, st); });
       }
     }, '启用'));
   }
@@ -538,8 +565,8 @@ function performCandDrop(from, target) {
     var schema = pp().schemas[from.schema];
     if (!FE.isPlainObject(schema)) return;
     var entry = schema[from.pk];
-    if (!FE.isPlainObject(entry)) return;
-    var src = entry[from.st], dst = entry[to.st];
+    if (!FE.isPlainObject(entry) && !Array.isArray(entry)) return;
+    var src = popupStateArray(entry, from.st), dst = popupStateArray(entry, to.st);
     if (!Array.isArray(src) || !Array.isArray(dst)) return;
     var item = src.splice(from.ci, 1)[0];
     if (item === undefined) return;
@@ -578,7 +605,7 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
     wide: true,
     onBeforeClose: guard.onBeforeClose
   });
-  var draft = { kind: kind0, text: '', label: '', actionObj: null, actionName: '', macro: '', ref: '', actionsArr: null };
+  var draft = { kind: kind0, text: '', label: '', actionObj: null, actionName: '', macro: '', ref: '', actionsArr: null, extra: {} };
   if (!isNew) {
     if (kind0 === 'text') draft.text = String(cand);
     else {
@@ -588,6 +615,9 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
       if (kind0 === 'actions') draft.actionsArr = FE.deepClone(cand.actions);
       if (kind0 === 'macro') draft.macro = String(cand.macro);
       if (kind0 === 'ref') draft.ref = String(cand.ref);
+       Object.keys(cand).forEach(function (k) {
+         if (['label', 'action', 'actions', 'macro', 'ref'].indexOf(k) < 0) draft.extra[k] = FE.deepClone(cand[k]);
+       });
     }
   }
 
@@ -612,7 +642,7 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
       li.addEventListener('input', function () { draft.label = li.value; });
       area.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '显示文本'), li));
       if (k === 'action') {
-        actionEditor = FE.buildActionEditor(draft.actionObj);
+        actionEditor = FE.buildActionEditor(draft.actionObj, { allowRef: true });
         area.appendChild(h('div', { class: 'form-row' }, actionEditor.el));
       } else if (k === 'actions') {
         /* 动作序列：用 JSON 片段编辑器（体检 + 一键修复），保证 actions 数组可编辑/往返 */
@@ -657,7 +687,10 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
     modal.toolbar.appendChild(h('button', {
       type: 'button', class: 'danger',
       onclick: function () {
-        pmutate(function () { pp().schemas[schemaName][pk][st].splice(ci, 1); });
+        pmutate(function () {
+          var arr = ensurePopupStateArray(pp().schemas[schemaName], pk, st);
+          if (arr[ci] !== undefined) arr.splice(ci, 1);
+        });
         modal.close();
       }
     }, '删除候选'));
@@ -689,12 +722,22 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
       } else {
         if (!draft.ref) { FE.uiAlert('请输入共享键名称'); return; }
         value = draft.label !== '' ? { label: draft.label, ref: draft.ref } : { ref: draft.ref };
+       if (value && FE.isPlainObject(value)) {
+         Object.keys(draft.extra || {}).forEach(function (name) {
+           if (!Object.prototype.hasOwnProperty.call(value, name)) value[name] = FE.deepClone(draft.extra[name]);
+         });
+       }
       }
       pmutate(function () {
-        var entry = pp().schemas[schemaName][pk];
-        if (!Array.isArray(entry[st])) entry[st] = [];
-        if (isNew) entry[st].push(value);
-        else entry[st][ci] = value;
+        var schema = pp().schemas[schemaName];
+         if (value && FE.isPlainObject(value)) {
+           Object.keys(draft.extra || {}).forEach(function (name) {
+             if (!Object.prototype.hasOwnProperty.call(value, name)) value[name] = FE.deepClone(draft.extra[name]);
+           });
+         }
+        var arr = ensurePopupStateArray(schema, pk, st);
+        if (isNew) arr.push(value);
+        else if (arr[ci] !== undefined) arr[ci] = value;
       });
       modal.close();
     }

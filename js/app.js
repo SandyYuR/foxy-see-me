@@ -157,6 +157,27 @@ var state = {
   _refIdxCache: null
 };
 FE.state = state;
+
+function setSplitModeState(value) {
+  state.splitMode = !!value;
+  if (state.splitMode) state.landscapeMode = false;
+  var sp = typeof $ === 'function' ? $('pt-split') : null;
+  var ls = typeof $ === 'function' ? $('pt-landscape') : null;
+  if (sp) sp.checked = state.splitMode;
+  if (ls) ls.checked = state.landscapeMode;
+  return state.splitMode;
+}
+function setLandscapeModeState(value) {
+  state.landscapeMode = !!value;
+  if (state.landscapeMode) state.splitMode = false;
+  var sp = typeof $ === 'function' ? $('pt-split') : null;
+  var ls = typeof $ === 'function' ? $('pt-landscape') : null;
+  if (sp) sp.checked = state.splitMode;
+  if (ls) ls.checked = state.landscapeMode;
+  return state.landscapeMode;
+}
+FE.setSplitMode = setSplitModeState;
+FE.setLandscapeMode = setLandscapeModeState;
 FE.NEUTRAL_STATUS = NEUTRAL_STATUS;
 
 /* ================================================================
@@ -495,9 +516,9 @@ FE.rowsOfSection = function (section) {
   return rows.map(function (r) {
     if (Array.isArray(r)) return { heightUnits: defH, width: null, totalWeight: null, keys: r, objectForm: false, raw: r };
     if (isPlainObject(r)) return {
-      heightUnits: (typeof r.height === 'number' && r.height > 0) ? r.height : defH,
-      width: (typeof r.width === 'number' && r.width > 0) ? r.width : null,
-      totalWeight: (typeof r.totalWeight === 'number' && r.totalWeight > 0) ? r.totalWeight : null,
+      heightUnits: (typeof r.height === 'number' && isFinite(r.height) && r.height > 0) ? r.height : defH,
+      width: (typeof r.width === 'number' && isFinite(r.width) && r.width > 0) ? r.width : null,
+      totalWeight: (typeof r.totalWeight === 'number' && isFinite(r.totalWeight) && r.totalWeight > 0) ? r.totalWeight : null,
       keys: Array.isArray(r.keys) ? r.keys : [],
       objectForm: true, raw: r
     };
@@ -1043,11 +1064,24 @@ FE.validateProfile = function (profile) {
             inCtx({ path: pfx + ' 区段 ' + si + ' 行 ' + ri, layout: ln, isSplit: !!isSplit, section: si, row: ri, group: 'rows' }, function () {
             var hasAuto = false, fixedSum = 0;
             row.keys.forEach(function (k) {
-              var w = isPlainObject(k) && k.weight != null ? k.weight : 1;
-              if (w === 'auto') hasAuto = true; else fixedSum += (Number(w) || 0);
+              var ev = isPlainObject(k) ? FE.evalPlacement(k, NEUTRAL_STATUS, scope) : null;
+              var w = isPlainObject(k) && k.weight != null
+                ? k.weight
+                : (ev && ev.eff && ev.eff.weight != null ? ev.eff.weight : 1);
+              if (w === 'auto') {
+                hasAuto = true;
+              } else {
+                var wn = Number(w);
+                if (!isFinite(wn) || wn <= 0) {
+                  err(pfx + ' 区段 ' + si + ' 行 ' + ri + ' 的 weight 必须是大于 0 的有限数或 "auto"', { code: 'bad-weight' });
+                } else {
+                  fixedSum += wn;
+                }
+              }
             });
-            if (hasAuto && row.totalWeight == null) {
-              err(pfx + ' 区段 ' + si + ' 行 ' + ri + ' 使用了 weight:"auto" 但未提供 totalWeight', { code: 'auto-without-totalweight' });
+            var hasTotalWeight = typeof row.totalWeight === 'number' && isFinite(row.totalWeight) && row.totalWeight > 0;
+            if (hasAuto && !hasTotalWeight) {
+              err(pfx + ' 区段 ' + si + ' 行 ' + ri + ' 使用了 weight:"auto" 但未提供有效 totalWeight', { code: 'auto-without-totalweight' });
             } else if (hasAuto && row.totalWeight <= fixedSum + 1e-9) {
               err(pfx + ' 区段 ' + si + ' 行 ' + ri + ' 的 totalWeight(' + row.totalWeight + ') 不足以分配 auto 权重', { code: 'totalweight-too-small' });
             }
@@ -1134,6 +1168,13 @@ FE.validateProfile = function (profile) {
       if (k.ref != null && typeof k.ref !== 'string') err(full + ' 的 ref 必须是字符串', { code: 'bad-ref-type' });
       else if (typeof k.ref === 'string' && k.ref && !lookupDef(k.ref, scope)) err(full + ' 的 ref 无法解析: ' + k.ref, { code: 'unresolved-ref' });
       var ev = FE.evalPlacement(k, NEUTRAL_STATUS, scope);
+       var baseStateProblems = {
+         'unresolved-ref': !!ev.unresolved,
+         'ref-cycle': !!ev.cycle,
+         'no-tap': ev.eff.tap == null,
+         'hold-longpress': ev.eff.hold != null && ev.eff.longPress != null
+       };
+       var stateProblemsReported = {};
       if (ev.unresolved) err(full + ' 引用链无法解析: ' + ev.unresolved, { code: 'unresolved-ref' });
       if (ev.cycle) err(full + ' 引用链存在循环: ' + ev.cycle, { code: 'ref-cycle' });
       if (ev.eff.tap == null) err(full + '（' + refNameOf(k) + '）解析后缺少点击动作 tap', { code: 'no-tap' });
@@ -1157,10 +1198,18 @@ FE.validateProfile = function (profile) {
         var st = { composing: !!(mask & 1), ascii_mode: !!(mask & 2), disabled: !!(mask & 4) };
         var sev = FE.evalPlacement(k, st, scope);
         var suffix = '（状态 composing=' + st.composing + ', ascii_mode=' + st.ascii_mode + ', disabled=' + st.disabled + '）';
-        if (sev.unresolved) err(full + suffix + ' 引用链无法解析: ' + sev.unresolved, { code: 'unresolved-ref', state: st });
-        if (sev.cycle) err(full + suffix + ' 引用链存在循环: ' + sev.cycle, { code: 'ref-cycle', state: st });
-        if (sev.eff.tap == null) err(full + suffix + ' 解析后缺少点击动作 tap', { code: 'no-tap', state: st });
-        if (sev.eff.hold != null && sev.eff.longPress != null) err(full + suffix + ' 同时定义了 hold 与 longPress', { code: 'hold-longpress', state: st });
+                 function reportStateProblem(code, message) {
+           if (baseStateProblems[code] || stateProblemsReported[code]) return;
+           stateProblemsReported[code] = true;
+           err(full + suffix + message, { code: code, state: st });
+         }
+         if (sev.unresolved) reportStateProblem('unresolved-ref', ' 引用链无法解析: ' + sev.unresolved);
+         if (sev.cycle) reportStateProblem('ref-cycle', ' 引用链存在循环: ' + sev.cycle);
+         if (sev.eff.tap == null) reportStateProblem('no-tap', ' 解析后缺少点击动作 tap');
+         if (sev.eff.hold != null && sev.eff.longPress != null) reportStateProblem('hold-longpress', ' 同时定义了 hold 与 longPress');
+
+
+
       }
       });
     }
@@ -1196,6 +1245,8 @@ FE.validateProfile = function (profile) {
           if (!(isPlainObject(profile.actions) && profile.actions[target])) err(where + ' 引用动作名不存在: ' + target);
         } else if (isPlainObject(step) && isPlainObject(step.action)) {
           validateAction(step.action, where + '.action', err, profile);
+        } else if (isPlainObject(step) && step.macro != null) {
+          if (!(isPlainObject(profile.macros) && profile.macros[step.macro])) err(where + ' 引用宏不存在: ' + step.macro);
         } else if (isPlainObject(step) && step.type != null) {
           validateAction(step, where, err, profile);
         } else {
@@ -1876,7 +1927,7 @@ FE.compileSections = function (sections, status, scope) {
       FE.rowsOfSection(s).forEach(function (row, ri) {
         var maxKH = 1;
         row.keys.forEach(function (kk) {
-          var kh = isPlainObject(kk) && typeof kk.height === 'number' && kk.height > 0 ? kk.height : 1;
+          var kh = isPlainObject(kk) && typeof kk.height === 'number' && isFinite(kk.height) && kk.height > 0 ? kk.height : 1;
           if (kh > maxKH) maxKH = kh;
         });
         var items = row.keys.map(function (kk, ki) {
@@ -1891,12 +1942,17 @@ FE.compileSections = function (sections, status, scope) {
           if (pw != null) return pw;
           return (it.weight != null ? it.weight : 1);
         });
-        var hasTotal = typeof row.totalWeight === 'number' && row.totalWeight > 0;
-        var fixedSum = 0, autoCount = 0;
-        effWs.forEach(function (w) { if (w === 'auto') autoCount++; else fixedSum += (Number(w) || 0); });
-        var autoVal = hasTotal ? Math.max(0, row.totalWeight - fixedSum) / autoCount : 1;
+        var hasTotal = typeof row.totalWeight === 'number' && isFinite(row.totalWeight) && row.totalWeight > 0;
+         var fixedSum = 0, autoCount = 0;
+
+
+        effWs.forEach(function (w) {
+           if (w === 'auto') autoCount++;
+           else { var wn = Number(w); if (isFinite(wn) && wn > 0) fixedSum += wn; }
+         });
+        var autoVal = hasTotal && autoCount ? Math.max(0, row.totalWeight - fixedSum) / autoCount : 1;
         items.forEach(function (it, ki) {
-          it.grow = effWs[ki] === 'auto' ? autoVal : (Number(effWs[ki]) || 0);
+          it.grow = effWs[ki] === 'auto' ? autoVal : (isFinite(Number(effWs[ki])) && Number(effWs[ki]) > 0 ? Number(effWs[ki]) : 0);
         });
         rows.push({ heightUnits: row.heightUnits, width: row.width, totalWeight: row.totalWeight, keys: items, rowIndex: ri });
         total += row.heightUnits;
@@ -2074,22 +2130,21 @@ function clearEl(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
 /* ---------------- 历史与变更 ---------------- */
 function snapshot() {
-  /* 四份文档同栈：布局 / 弹出菜单 / 主题 / 符号。
-   * 主题与符号**未导入时是 null**，这里必须原样保留 null —— 用 `|| null`
-   * 而不是强造空对象，否则「未导入主题」会被快照成「已导入一份空主题」，
-   * 撤销后预览配色与导入状态全变。 */
+  /* 历史快照同时保存文档与影响预览的槽位/模式状态。 */
   return JSON.stringify({
     layout: state.profile,
     popup: state.popupProfile || null,
     theme: state.themeProfile || null,
-    /* 符号是**复数槽**：三类 catalog 各自独立，单数镜像只记录"当前正在看哪一类"。
-     * 只存单数会让「切过类别再撤销」丢数据（撤销按钮可点、符号却没变）。 */
     symbol: {
       profiles: state.symbolProfiles || null,
       fileNames: state.symbolFileNames || null,
       legacy: state.symbolLegacy || null,
       kind: state.symbolKind || null
-    }
+    },
+    themeSlot: state.themeSlot,
+    themeMode: state.theme,
+    splitMode: !!state.splitMode,
+    landscapeMode: !!state.landscapeMode
   });
 }
 function pushHistory() {
@@ -2105,7 +2160,19 @@ function mutate(fn) {
 function restoreSnapshot(s) {
   var o;
   try { o = JSON.parse(s); } catch (e) { return false; }
-  state.profile = FE.normalizeProfile(o.layout || {});
+  var snapSlot = o.themeSlot === 'dark' ? 'dark' : (o.themeSlot === 'light' ? 'light' : null);
+   var snapTheme = o.themeMode === 'dark' ? 'dark' : (o.themeMode === 'light' ? 'light' : snapSlot);
+   if (snapSlot) state.themeSlot = snapSlot;
+   if (snapTheme) state.theme = snapTheme;
+   state.splitMode = o.splitMode === true;
+   state.landscapeMode = o.landscapeMode === true && !state.splitMode;
+   var themeCtl = $('pt-theme');
+   if (themeCtl) themeCtl.value = state.theme;
+   var splitCtl = $('pt-split');
+   if (splitCtl) splitCtl.checked = state.splitMode;
+   var landscapeCtl = $('pt-landscape');
+   if (landscapeCtl) landscapeCtl.checked = state.landscapeMode;
+   state.profile = FE.normalizeProfile(o.layout || {});
   state.popupProfile = o.popup != null ? o.popup : null;
   if (state.popupProfile != null && FE.normalizePopupProfile) {
     state.popupProfile = FE.normalizePopupProfile(state.popupProfile);
@@ -2270,14 +2337,15 @@ function autosave() {
       popupProfile: state.popupProfile || null, popupFileName: state.popupFileName,
       /* 主题随草稿一起存。存 null 表示"未导入"，恢复时仍为 null。 */
       themeProfile: state.themeProfile || null, themeFileName: state.themeFileName,
-      themeSlot: state.themeSlot,
+       themeSlot: state.themeSlot,
+
       /* 符号存**复数槽**：三类 catalog 与各自文件名都要留着，
        * 只存当前类别的单数镜像会让另外两类在刷新后凭空消失。 */
       symbolProfiles: state.symbolProfiles || null,
       symbolFileNames: state.symbolFileNames || null,
       symbolLegacy: state.symbolLegacy || null,
       symbolKind: state.symbolKind,
-      splitMode: state.splitMode, includeType: state.includeType,
+      splitMode: state.splitMode, landscapeMode: state.landscapeMode, includeType: state.includeType,
       previewHeightPct: state.previewHeightPct != null ? state.previewHeightPct : 31,
       /* 按键外观三项（纯预览设置，不进 Foxy 文件）：跟草稿一起存，
        * 否则每次刷新都要重拖一遍。越界值在读取处回落默认。 */
@@ -3208,9 +3276,21 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
     el.appendChild(h('span', { class: 'kb-badge-popup', title: pkTitle, style: pkStyle }, '⌄'));
   }
 
-  el.addEventListener('pointerdown', function () { el.classList.add('pressed'); applyKeyColors(el, eff, true, status); });
-  el.addEventListener('pointerup', function () { el.classList.remove('pressed'); applyKeyColors(el, eff, false, status); });
-  el.addEventListener('pointerleave', function () { el.classList.remove('pressed'); applyKeyColors(el, eff, false, status); });
+  function clearPressed() {
+     el.classList.remove('pressed');
+     applyKeyColors(el, eff, false, status);
+   }
+   el.addEventListener('pointerdown', function (e) {
+     el.classList.add('pressed');
+     applyKeyColors(el, eff, true, status);
+     try { el.setPointerCapture(e.pointerId); } catch (err) {}
+   });
+   el.addEventListener('pointerup', clearPressed);
+   el.addEventListener('pointerleave', clearPressed);
+   el.addEventListener('pointercancel', clearPressed);
+   el.addEventListener('lostpointercapture', clearPressed);
+
+
   if (!item.previewOnly) {
     el.addEventListener('click', function (e) {
       e.stopPropagation();
@@ -3767,7 +3847,7 @@ function locateIssue(it, variant) {
   var L = curLayout();
   var wantSplit = !!it.isSplit;
   /* 只在布局确实有 split 片段时切到分体模式，否则会落到空 sections */
-  state.splitMode = !!(wantSplit && L && isPlainObject(L.split));
+  FE.setSplitMode(!!(wantSplit && L && isPlainObject(L.split)));
   if (it.sectionIndex != null) {
     var isGrid = it.group === 'grid' || it.rowIndex == null;
     state.sel = {
@@ -4081,7 +4161,7 @@ function renderSectionsEditor() {
 
   /* 模式横幅：常规 / 分体（切换后等一帧重渲染，见分体开关注释） */
   function setSplitMode(v) {
-    state.splitMode = v;
+    FE.setSplitMode(v);
     state.sel = null;
     var sp = $('pt-split'); if (sp) sp.checked = v;   // 同步预览工具栏的「分体」复选框，使其跟随布局编辑的常规/分体切换
     renderAll();
@@ -4167,6 +4247,7 @@ function renderSectionsEditor() {
 /* 从常规区段生成分体片段：每行中间插入 foxy.Spacer（weight 2），
  * 含 weight:"auto" 的行（如空格行）与过短的行保持原样 */
 function generateSplitFromNormal() {
+  FE.setSplitMode(true);
   mutate(function () {
     var L = curLayout();
     if (!L) return;
@@ -4439,10 +4520,14 @@ function attachPointerDrag(el, opts) {
       finish();
       if (wasDragging) { lastPointerDragEnd = Date.now(); opts.onDrop(t); }
     }
+    function onCancel(ev) {
+      if (ev.pointerId !== pid) return;
+      finish();
+    }
     function finish() {
       document.removeEventListener('pointermove', onMove, true);
       document.removeEventListener('pointerup', onUp, true);
-      document.removeEventListener('pointercancel', onUp, true);
+      document.removeEventListener('pointercancel', onCancel, true);
       el.classList.remove('dragging');
       if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
       clearAllDropMarks();
@@ -4450,7 +4535,7 @@ function attachPointerDrag(el, opts) {
     }
     document.addEventListener('pointermove', onMove, true);
     document.addEventListener('pointerup', onUp, true);
-    document.addEventListener('pointercancel', onUp, true);
+    document.addEventListener('pointercancel', onCancel, true);
   });
 }
 
@@ -4523,14 +4608,27 @@ function performGridDrop(si, gi, target) {
     var k = section.keys[gi];
     if (!isPlainObject(k)) return;
     if (target.kind === 'move') {
-      k.column = target.x; k.row = target.y;
+      if (k.column == null && k.col != null) { delete k.column; k.col = target.x; }
+      else { k.column = target.x; delete k.col; }
+      k.row = target.y;
       state.sel = { s: si, r: null, k: gi };
     } else if (target.kind === 'swap') {
       var other = section.keys[target.gi];
       if (!isPlainObject(other) || other === k) return;
-      var tc = other.column, tr = other.row;
-      other.column = k.column; other.row = k.row;
-      k.column = tc; k.row = tr;
+      var otherColAlias = other.column == null && other.col != null;
+       var keyColAlias = k.column == null && k.col != null;
+       var tc = Number.isInteger(other.column) ? other.column : other.col;
+       var tr = other.row;
+       var kc = Number.isInteger(k.column) ? k.column : k.col;
+       var kr = k.row;
+       if (otherColAlias) { delete other.column; other.col = kc; }
+       else { other.column = kc; delete other.col; }
+       other.row = kr;
+       if (keyColAlias) { delete k.column; k.col = tc; }
+       else { k.column = tc; delete k.col; }
+       k.row = tr;
+
+
       state.sel = { s: si, r: null, k: gi };
     }
   });
@@ -4767,9 +4865,9 @@ function gridEditor(section, si, csec) {
   var keysArr = Array.isArray(section.keys) ? section.keys : [];
   keysArr.forEach(function (k, gi) {
     if (!isPlainObject(k)) return;
-    var c = Number.isInteger(k.column) ? k.column : 0;
+    var c = Number.isInteger(k.column) ? k.column : (Number.isInteger(k.col) ? k.col : 0);
     var r = Number.isInteger(k.row) ? k.row : 0;
-    var cs = k.columnSpan != null ? k.columnSpan : 1;
+    var cs = k.columnSpan != null ? k.columnSpan : (k.colSpan != null ? k.colSpan : 1);
     var rs = k.rowSpan != null ? k.rowSpan : 1;
     for (var y = r; y < r + rs; y++) {
       for (var x = c; x < c + cs; x++) {
@@ -5934,6 +6032,24 @@ function initToolbar() {
         return;
       }
 
+      /* 单文件布局入口只接受布局文档。显式非布局 type 即使恰好带有 layouts
+       * 字段也不能落入 applyProfileText；unknown 同样只展示原文，避免把主题、
+       * 符号 catalog 或其它 JSON 归一化成空布局并清空撤销栈。 */
+      var explicitType = cls.data && cls.data.type != null ? String(cls.data.type) : '';
+      if (cls.data != null && (cls.kind !== 'layout' || (explicitType && explicitType !== 'foxy.keyboard-layout'))) {
+        var badRep = FE.inspectJsonText(text);
+        var typeMsg = explicitType
+          ? '文件类型为 ' + explicitType + '，不是 foxy.keyboard-layout'
+          : (cls.error || '无法判断文件类型');
+        var badTa = $('json-editor');
+        if (badTa) { badTa.value = text; state.jsonDirty = true; }
+        checkJsonText();
+        var badExtra = badRep.total ? '（检测到 ' + badRep.total + ' 处可修复问题）' : '';
+        setOpStatus('未导入 ' + file.name + '：' + typeMsg + badExtra + '；当前布局保持不变', 'error');
+        setJsonStatus('✗ ' + file.name + ' 未作为布局应用：' + typeMsg + badExtra, 'error');
+        return;
+      }
+
       var rep = FE.inspectJsonText(text);
       if (applyProfileText(text)) {
         state.fileName = file.name;
@@ -6354,7 +6470,7 @@ function initToolbar() {
    * 与「分体」的区别就在这里 —— 分体会把编译目标换成 L.split 片段，本项不会。
    * 区段编辑器也不跟着切（仍在编辑常规布局），所以刻意**不**调 renderLayoutTab()。 */
   $('pt-landscape') && $('pt-landscape').addEventListener('change', function () {
-    state.landscapeMode = this.checked;
+    FE.setLandscapeMode(this.checked);
     state.sel = null;
     /* 与分体同理：类名立即生效，但浏览器 layout 未必同步完成 ——
      * 等一帧再按最终宽度渲染，否则切回竖屏那一帧会量到收缩中的宽值、
@@ -6374,7 +6490,7 @@ function initToolbar() {
     });
   })();
   $('pt-split') && $('pt-split').addEventListener('change', function () {
-    state.splitMode = this.checked;
+    FE.setSplitMode(this.checked);
     state.sel = null;
     // 分体↔竖屏切换时类名立即生效（.kb 无宽度动画），但浏览器 layout 未必
     // 同步完成；等一帧再按最终宽度渲染，否则切回竖屏那一帧会量到收缩中的
@@ -6414,16 +6530,23 @@ function initToolbar() {
 function walkAllActions(cb) {
   var profile = state.profile;
   function walkAction(a) {
-    if (isPlainObject(a)) cb(a);
+    if (Array.isArray(a)) { a.forEach(walkAction); return; }
+    if (!isPlainObject(a)) return;
+    cb(a);
+    if (isPlainObject(a.action)) walkAction(a.action);
+    else if (Array.isArray(a.action)) a.action.forEach(walkAction);
+    if (Array.isArray(a.actions)) a.actions.forEach(walkAction);
   }
   function walkGesture(g) {
     if (!isPlainObject(g)) return;
     if (g.type != null) walkAction(g);
+    walkAction(g.start);
+    walkAction(g.end);
+    walkAction(g.endAction);
+    walkAction(g.endActions);
     if (isPlainObject(g.action)) walkAction(g.action);
     else if (Array.isArray(g.action)) g.action.forEach(walkAction);
     if (Array.isArray(g.actions)) g.actions.forEach(walkAction);
-    walkAction(g.start);
-    walkAction(g.end);
   }
   function walkKeyContainer(c) {
     if (!isPlainObject(c)) return;
@@ -6567,7 +6690,14 @@ function boot() {
         state.themeProfile = d2.themeProfile;
         state.themeFileName = d2.themeFileName || 'theme.json';
       }
-      if (d2 && (d2.themeSlot === 'light' || d2.themeSlot === 'dark')) state.themeSlot = d2.themeSlot;
+      if (d2 && (d2.themeSlot === 'light' || d2.themeSlot === 'dark')) {
+        state.themeSlot = d2.themeSlot;
+        /* 预览深浅档位与主题取色槽位由 setPreviewSlot 双写；恢复也必须
+         * 双写，否则刷新后外壳仍停在默认 light 而颜色已来自 dark。 */
+        state.theme = d2.themeSlot;
+        var themeCtl = $('pt-theme');
+        if (themeCtl) themeCtl.value = state.theme;
+      }
       /* 符号按**复数槽**恢复：三类 catalog 各自独立。旧草稿（单数 symbolProfile）
        * 兼容迁移到 profiles 里，别让老用户的草稿白丢。 */
       if (d2 && FE.isPlainObject(d2.symbolProfiles)) {
@@ -6582,7 +6712,8 @@ function boot() {
         if (d2.symbolFileName) state.symbolFileNames[legacyKind] = d2.symbolFileName;
       }
       if (d2 && d2.symbolKind) state.symbolKind = d2.symbolKind;
-      if (d2 && d2.splitMode) state.splitMode = !!d2.splitMode;
+      if (d2 && d2.splitMode) state.splitMode = true;
+       if (d2 && d2.landscapeMode) state.landscapeMode = !state.splitMode;
       if (d2 && d2.includeType === false) state.includeType = false;
       if (d2 && isFinite(Number(d2.previewHeightPct))) {
         state.previewHeightPct = Math.max(15, Math.min(60, Number(d2.previewHeightPct)));

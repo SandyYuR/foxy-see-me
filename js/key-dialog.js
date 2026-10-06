@@ -851,9 +851,9 @@ FE.buildActionEditor = function (spec, opts) {
         h('label', { class: 'mini-label' }, '状态'), modStateSel));
     } else if (t === 'text' || t === 'commit') {
       textTypeSel = h('select', { class: 'mini-select' });
-      textTypeSel.appendChild(h('option', { value: 'text', selected: initType !== 'commit' }, 'text（直接输入）'));
-      textTypeSel.appendChild(h('option', { value: 'commit', selected: initType === 'commit' }, 'commit（直接上屏）'));
-      textTypeSel.addEventListener('change', function () { typeSel.value = textTypeSel.value; });
+      textTypeSel.appendChild(h('option', { value: 'text', selected: t !== 'commit' }, 'text（直接输入）'));
+      textTypeSel.appendChild(h('option', { value: 'commit', selected: t === 'commit' }, 'commit（直接上屏）'));
+      textTypeSel.addEventListener('change', function () { typeSel.value = textTypeSel.value; emit(); });
       textInp = h('input', { type: 'text', class: 'mini-input wide', value: spec && spec.text != null ? String(spec.text) : '', placeholder: '文本内容' });
       fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '方式'), textTypeSel));
       fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '内容'), textInp));
@@ -986,9 +986,62 @@ FE.openGestureDialog = function (opts) {
     else if (g.type != null) directSpec = FE.omit(g, ['label', 'popup', 'repeat', 'popupKey', 'hint']);
   }
   var startSpec = null, endSpec = null;
+  var holdStartKey = null, holdEndKey = null;
+  function hasOwn(obj, key) { return Object.prototype.hasOwnProperty.call(obj, key); }
   if (isHold && FE.isPlainObject(g)) {
-    startSpec = g.start != null ? g.start : null;
-    endSpec = g.end != null ? g.end : null;
+    if (hasOwn(g, 'start')) { holdStartKey = 'start'; startSpec = g.start; }
+    else if (hasOwn(g, 'action')) { holdStartKey = 'action'; startSpec = g.action; }
+    else if (hasOwn(g, 'actions')) { holdStartKey = 'actions'; startSpec = g.actions; }
+    if (hasOwn(g, 'end')) { holdEndKey = 'end'; endSpec = g.end; }
+    else if (hasOwn(g, 'endAction')) { holdEndKey = 'endAction'; endSpec = g.endAction; }
+    else if (hasOwn(g, 'endActions')) { holdEndKey = 'endActions'; endSpec = g.endActions; }
+  }
+
+  function buildHoldEditor(spec) {
+    if (Array.isArray(spec)) {
+      var jsonEd = FE.buildJsonSnippetEditor({
+        value: JSON.stringify(spec, null, 2), rows: 5, applyOnBlur: false
+      });
+      return {
+        el: jsonEd.el,
+        getValue: function () {
+          var a = jsonEd.check();
+          /* 空/非法数组编辑不应在一次保存中静默抹掉原始备用形式。 */
+          if (a.empty || a.error || !Array.isArray(a.value)) return FE.deepClone(spec);
+          return a.value;
+        }
+      };
+    }
+    return FE.buildActionEditor(spec);
+  }
+
+  function readHoldSide(editor, original) {
+    var value = editor ? editor.getValue() : null;
+    /* buildActionEditor 不编辑数组；数组走 JSON 编辑器，空内容仍保留原数组。 */
+    if (Array.isArray(original) && value == null) return FE.deepClone(original);
+    return value;
+  }
+
+  function writeHoldSide(out, canonicalKey, originalKey, editor, original) {
+    var value = readHoldSide(editor, original);
+    if (value != null || originalKey) out[originalKey || canonicalKey] = value;
+  }
+
+  function addLongPressExtras(value) {
+    if (!isLongPress) return value;
+    var hasRepeat = repeatChk.checked || (FE.isPlainObject(g) && hasOwn(g, 'repeat'));
+    var hasPopupKey = popupKeyInp.value.trim() !== '' || (FE.isPlainObject(g) && hasOwn(g, 'popupKey'));
+    var out = value;
+    /* 动作名称通常以字符串返回；一旦需要保留长按补丁就转成对象形态。 */
+    if (typeof out === 'string') out = { action: out };
+    if (!FE.isPlainObject(out)) out = out == null ? {} : { action: out };
+    if (hasRepeat) out.repeat = repeatChk.checked;
+    if (hasPopupKey) {
+       var popupKey = popupKeyInp.value.trim();
+       if (popupKey) out.popupKey = popupKey;
+       else delete out.popupKey;
+     }
+    return out;
   }
 
   var modeSel = h('select', { class: 'mini-select' });
@@ -1068,7 +1121,7 @@ FE.openGestureDialog = function (opts) {
       msel.addEventListener('change', function () { macroName = msel.value; });
       if (macroName) msel.value = macroName;
       area.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '宏'), msel));
-    } else if (m === 'direct') {
+    } else if (m === 'direct' && !isHold) {
       var ed = FE.buildActionEditor(directSpec);
       area.appendChild(h('div', { class: 'form-row' }, ed.el));
       area._editor = ed;
@@ -1114,10 +1167,10 @@ FE.openGestureDialog = function (opts) {
           }, '编辑弹出菜单候选 →')));
       }
       if (isHold) {
-        startEditor = FE.buildActionEditor(startSpec);
-        endEditor = FE.buildActionEditor(endSpec);
-        area.appendChild(h('div', { class: 'form-row' }, h('label', { class: 'mini-label' }, '开始动作'), startEditor.el));
-        area.appendChild(h('div', { class: 'form-row' }, h('label', { class: 'mini-label' }, '结束动作'), endEditor.el));
+        startEditor = buildHoldEditor(startSpec);
+        endEditor = buildHoldEditor(endSpec);
+        area.appendChild(h('div', { class: 'form-row' }, h('label', { class: 'mini-label' }, '开始动作' + (holdStartKey && holdStartKey !== 'start' ? '（' + holdStartKey + '）' : '')), startEditor.el));
+        area.appendChild(h('div', { class: 'form-row' }, h('label', { class: 'mini-label' }, '结束动作' + (holdEndKey && holdEndKey !== 'end' ? '（' + holdEndKey + '）' : '')), endEditor.el));
       }
     }
   }
@@ -1151,10 +1204,8 @@ FE.openGestureDialog = function (opts) {
           /* hold 引用可额外覆盖 start/end（文档：A hold reference can additionally
            * override its start/... and end/... fields）。之前这里漏读，导致填了却丢失。 */
           if (isHold) {
-            var stRef = startEditor ? startEditor.getValue() : null;
-            var enRef = endEditor ? endEditor.getValue() : null;
-            if (stRef) value.start = stRef;
-            if (enRef) value.end = enRef;
+            writeHoldSide(value, 'start', holdStartKey, startEditor, startSpec);
+            writeHoldSide(value, 'end', holdEndKey, endEditor, endSpec);
           }
         } else if (m === 'action-name') {
           if (!actionName) { FE.uiAlert('请选择动作'); return; }
@@ -1166,18 +1217,22 @@ FE.openGestureDialog = function (opts) {
           var act = area._editor ? area._editor.getValue() : null;
           if (isHold) {
             value = Object.assign({}, extras);
-            var st = startEditor ? startEditor.getValue() : null;
-            var en = endEditor ? endEditor.getValue() : null;
-            if (st) value.start = st;
-            if (en) value.end = en;
-            if (!value.start && !value.end && !Object.keys(extras).length) { FE.uiAlert('请至少配置开始或结束动作'); return; }
+            writeHoldSide(value, 'start', holdStartKey, startEditor, startSpec);
+            writeHoldSide(value, 'end', holdEndKey, endEditor, endSpec);
+            var startKey = holdStartKey || 'start';
+            var endKey = holdEndKey || 'end';
+            if (value[startKey] == null && value[endKey] == null && !Object.keys(extras).length) {
+              FE.uiAlert('请至少配置开始或结束动作'); return;
+            }
           } else {
-            if (!act && !Object.keys(extras).length) { FE.uiAlert('请配置动作'); return; }
+            var hasLongPressExtras = isLongPress && (
+               popupKeyInp.value.trim() !== '' || repeatChk.checked ||
+               (FE.isPlainObject(g) && (hasOwn(g, 'repeat') || hasOwn(g, 'popupKey'))));
+             if (!act && !Object.keys(extras).length && !hasLongPressExtras) { FE.uiAlert('请配置动作'); return; }
             value = act ? Object.assign({}, act, extras) : Object.assign({}, extras);
-            if (isLongPress && repeatChk.checked) value.repeat = true;
-            if (isLongPress && popupKeyInp.value.trim() !== '') value.popupKey = popupKeyInp.value.trim();
           }
         }
+        if (isLongPress) value = addLongPressExtras(value);
       }
       modal.close();
       opts.onChange(value);
@@ -1309,13 +1364,38 @@ FE.openKeyDialog = function (opts) {
   var draft;
   if (isPlacement) {
     draft = FE.deepClone(opts.placement || {});
+     if (opts.grid) {
+       if (draft.column == null && draft.col != null) draft.column = draft.col;
+       if (draft.columnSpan == null && draft.colSpan != null) draft.columnSpan = draft.colSpan;
+       delete draft.col;
+       delete draft.colSpan;
+     }
     /* 扁平化 override 到直接字段：按文档优先级 直接字段 > override，
      * 所以先铺 override，再用直接字段覆盖它（冲突时直接字段赢）。 */
     if (FE.isPlainObject(draft.override)) {
       var ov = draft.override;
       delete draft.override;
-      var flat = FE.deepClone(ov);
-      Object.keys(draft).forEach(function (k) { flat[k] = FE.deepClone(draft[k]); });
+      var direct = FE.deepClone(draft);
+      var flat = {};
+      /* 与 FE.evalPlacement 保持同一顺序：override 普通字段先合并，
+       * 再合并直接字段；mergePatch 会保留 swipe/hintTextSize/colors 的
+       * 方向/角色层级，并执行 null 语义，而不是整键覆盖。 */
+      FE.mergePatch(flat, ov);
+      FE.mergePatch(flat, direct);
+      ['ref', 'when'].forEach(function (k) {
+        if (Object.prototype.hasOwnProperty.call(direct, k)) flat[k] = FE.deepClone(direct[k]);
+      });
+      /* evalPlacement 的 override 变体在直接字段之前、直接变体之后生效。
+       * 将直接 patch 叠到每个 override 变体，等价保留“直接字段优先”；
+       * 直接变体仍放在末尾，维持原有最后匹配者优先规则。 */
+      var ovVariants = Array.isArray(ov.variants) ? ov.variants : [];
+      var directVariants = Array.isArray(direct.variants) ? direct.variants : [];
+      var flattenedVariants = ovVariants.map(function (variant) {
+        var v = FE.deepClone(variant);
+        FE.mergePatch(v, direct);
+        return v;
+      }).concat(FE.deepClone(directVariants));
+      if (flattenedVariants.length) flat.variants = flattenedVariants;
       draft = flat;
     }
   } else {
@@ -2331,14 +2411,25 @@ function renameKeyDef(oldN, newN) {
   entries.forEach(function (e) { nk[e[0]] = e[1]; });
   state.profile.keys = nk;
 
-  function updGestures(c) {
-    ['tap', 'doubleTap', 'longPress', 'hold'].forEach(function (f) {
-      if (FE.isPlainObject(c[f]) && c[f].ref === oldN) c[f].ref = newN;
+  function updActionSpec(spec) {
+    if (!FE.isPlainObject(spec)) return;
+    if (spec.ref === oldN) spec.ref = newN;
+    if (FE.isPlainObject(spec.action)) updActionSpec(spec.action);
+    else if (Array.isArray(spec.action)) spec.action.forEach(updActionSpec);
+    if (Array.isArray(spec.actions)) spec.actions.forEach(updActionSpec);
+  }
+  function updGesture(g) {
+    if (!FE.isPlainObject(g)) return;
+    updActionSpec(g);
+    ['start', 'end', 'endAction'].forEach(function (f) { updActionSpec(g[f]); });
+    ['actions', 'endActions'].forEach(function (f) {
+      if (Array.isArray(g[f])) g[f].forEach(updActionSpec);
     });
+  }
+  function updGestures(c) {
+    ['tap', 'doubleTap', 'longPress', 'hold'].forEach(function (f) { updGesture(c[f]); });
     if (FE.isPlainObject(c.swipe)) {
-      FE.SWIPE_DIRS.forEach(function (d) {
-        if (FE.isPlainObject(c.swipe[d]) && c.swipe[d].ref === oldN) c.swipe[d].ref = newN;
-      });
+      FE.SWIPE_DIRS.forEach(function (d) { updGesture(c.swipe[d]); });
     }
   }
   function updNode(node) {

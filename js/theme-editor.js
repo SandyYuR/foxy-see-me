@@ -955,13 +955,20 @@ FE.loadThemeProfileText = function (text, fileName) {
     setThemeStatus('这不是主题文件（' + tm + '）', 'error');
     return false;
   }
-  state.themeProfile = FE.normalizeThemeProfile(p);
-  if (fileName) state.themeFileName = fileName;
+  var normalized = FE.normalizeThemeProfile(p);
   themeJsonDirty = false;
-  if (FE.afterChange) FE.afterChange();
+  if (FE.mutate) {
+    FE.mutate(function () {
+      state.themeProfile = normalized;
+      if (fileName) state.themeFileName = fileName;
+    });
+  } else {
+    state.themeProfile = normalized;
+    if (fileName) state.themeFileName = fileName;
+    if (FE.afterChange) FE.afterChange();
+  }
   return true;
 };
-
 function exportTheme() {
   if (!FE.isPlainObject(tp())) { setThemeStatus('尚未导入主题，无法导出', 'error'); return; }
   var text = FE.serializeThemeProfile(tp());

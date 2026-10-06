@@ -2769,11 +2769,181 @@ await sleep(350);
   FE.openGestureDialog({ slot: 'tap', gesture: { type: 'key', key: 'A', popup: false }, onChange: v => { directSaved = v; } });
   const directDlg = documentStub._openDialogs[0];
   directDlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
-  ok(directSaved && directSaved.type === 'key' && directSaved.key === 'A' && directSaved.popup === false, '直接动作手势无损保存');
-  documentStub._openDialogs.length = 0;
+   ok(directSaved && directSaved.type === 'key' && directSaved.key === 'A' && directSaved.popup === false,
+     '直接动作手势无损保存 popup:false');
+  /* P0：已解析但非布局的单文件不得覆盖当前工作区 */
+  console.log('== P0/P1 数据保持回归 ==');
+  const p0LayoutText = JSON.stringify({
+    type: 'foxy.keyboard-layout',
+    layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.q' }]] }] } }
+  });
+  FE.applyProfileText(p0LayoutText);
+  const p0Before = JSON.stringify(FE.state.profile);
+  global.__fileContent = JSON.stringify({ type: 'foxy.keyboard-theme', colors: { keyboardColor: '#123456' } });
+  $('op-import-file').files = [{ name: 'theme.json' }];
+  $('op-import-file')._fire('change');
+  await sleep(30);
+  eq(JSON.stringify(FE.state.profile), p0Before, '导入主题 JSON 后布局与工作区保持不变');
+  ok($('op-status').textContent.indexOf('当前布局保持不变') >= 0, '导入主题 JSON 明确拒绝为布局');
 
-  /* ==================== 指针拖动排序（触屏 + 鼠标统一） ==================== */
-  console.log('== 指针拖动：行按键重排（performChipDrop） ==');
+  /* P1-override：方向字段做 mergePatch，override 变体仍低于直接字段。 */
+  const p1Placement = {
+    ref: 'rime.q',
+    override: {
+      swipe: { up: { ref: 'rime.w' } },
+      variants: [{ when: { rime: { ascii_mode: true } }, label: 'override-label' }]
+    },
+    swipe: { left: { ref: 'rime.e' } },
+    label: 'direct-label'
+  };
+  FE.applyProfileText(JSON.stringify({
+    layouts: { default: { sections: [{ type: 'rows', rows: [[p1Placement]] }] } }
+  }));
+  const p1BeforeNeutral = FE.evalPlacement(p1Placement, FE.NEUTRAL_STATUS).eff;
+  const p1BeforeAscii = FE.evalPlacement(p1Placement, Object.assign({}, FE.NEUTRAL_STATUS, { ascii_mode: true })).eff;
+  FE.openKeyDialog({ mode: 'placement', placement: p1Placement, location: { s: 0, r: 0, k: 0 } });
+  const p1Dlg = lastDialog();
+  p1Dlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  const p1Saved = FE.state.profile.layouts.default.sections[0].rows[0][0];
+  const p1AfterNeutral = FE.evalPlacement(p1Saved, FE.NEUTRAL_STATUS).eff;
+  const p1AfterAscii = FE.evalPlacement(p1Saved, Object.assign({}, FE.NEUTRAL_STATUS, { ascii_mode: true })).eff;
+  eq(p1AfterNeutral.swipe.up.ref, p1BeforeNeutral.swipe.up.ref, 'override swipe.up 保存后仍保留');
+  eq(p1AfterNeutral.swipe.left.ref, p1BeforeNeutral.swipe.left.ref, '直接 swipe.left 与 override 方向合并');
+  eq(p1AfterAscii.label, p1BeforeAscii.label, '直接字段优先于 override 变体');
+
+  /* P1-longPress：扩展字段在 ref / 动作名 / 宏 / 直接动作模式均不丢。 */
+  FE.state.profile.actions = { act: { type: 'key', key: 'A' } };
+  FE.state.profile.macros = { mac: [{ type: 'key', key: 'B' }] };
+  function saveLongPressGesture(gesture) {
+    var result = null;
+    FE.openGestureDialog({ slot: 'longPress', gesture: gesture, onChange: function (v) { result = v; } });
+    lastDialog().querySelectorAll('.dialog-toolbar .primary')[0].click();
+    return result;
+  }
+  const lpRefSaved = saveLongPressGesture({ ref: 'rime.q', repeat: false, popupKey: 'q' });
+  eq({ repeat: lpRefSaved.repeat, popupKey: lpRefSaved.popupKey }, { repeat: false, popupKey: 'q' }, 'longPress ref 保留 repeat:false 与 popupKey');
+  const lpMacroSaved = saveLongPressGesture({ macro: 'mac', repeat: true, popupKey: 'q' });
+  eq({ repeat: lpMacroSaved.repeat, popupKey: lpMacroSaved.popupKey }, { repeat: true, popupKey: 'q' }, 'longPress 宏模式保留 repeat 与 popupKey');
+  const lpDirectSaved = saveLongPressGesture({ action: { type: 'key', key: 'A' }, repeat: true, popupKey: 'q' });
+  const lpPopupOnlySaved = saveLongPressGesture({ popupKey: 'q' });
+  eq(lpPopupOnlySaved, { popupKey: 'q' }, 'longPress 仅 popupKey 时也能保存');
+  var lpClearedSaved = null;
+  FE.openGestureDialog({ slot: 'longPress', gesture: { action: { type: 'key', key: 'A' }, popupKey: 'q' }, onChange: function (v) { lpClearedSaved = v; } });
+  var lpClearDlg = lastDialog();
+  lpClearDlg.querySelectorAll('input').find(function (i) { return i.getAttribute('placeholder') === '如 q（弹出菜单 profile 的键）'; }).value = '';
+  lpClearDlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  ok(lpClearedSaved.popupKey === undefined, '清空 longPress popupKey 后删除字段');
+  eq({ repeat: lpDirectSaved.repeat, popupKey: lpDirectSaved.popupKey }, { repeat: true, popupKey: 'q' }, 'longPress 直接动作保留 repeat 与 popupKey');
+  var lpActionSaved = null;
+  FE.openGestureDialog({ slot: 'longPress', gesture: 'act', onChange: function (v) { lpActionSaved = v; } });
+  var lpActionDlg = lastDialog();
+  var lpMode = lpActionDlg.querySelectorAll('select')[0];
+  lpMode.value = 'action-name';
+  lpMode._fire('change');
+  var lpRepeat = lpActionDlg.querySelectorAll('input').find(function (i) { return i.getAttribute('type') === 'checkbox'; });
+  var lpPopupKey = lpActionDlg.querySelectorAll('input').find(function (i) { return i.getAttribute('placeholder') === '如 q（弹出菜单 profile 的键）'; });
+  lpRepeat.checked = true;
+  lpPopupKey.value = 'q';
+  lpActionDlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  eq({ action: lpActionSaved.action, repeat: lpActionSaved.repeat, popupKey: lpActionSaved.popupKey },
+    { action: 'act', repeat: true, popupKey: 'q' }, 'longPress 动作名模式保留扩展字段');
+
+  /* P1-hold：按原始字段名往返，数组备用形式使用 JSON 编辑器而非丢弃。 */
+  var holdSaved = null;
+  FE.openGestureDialog({
+    slot: 'hold',
+    gesture: { action: { type: 'app', command: 'voice_start' }, endActions: [{ type: 'app', command: 'voice_stop' }] },
+    onChange: function (v) { holdSaved = v; }
+  });
+  lastDialog().querySelectorAll('.dialog-toolbar .primary')[0].click();
+  eq(holdSaved.action, { type: 'app', command: 'voice_start' }, 'hold.action 备用起始字段保存');
+  eq(holdSaved.endActions, [{ type: 'app', command: 'voice_stop' }], 'hold.endActions 备用结束数组保存');
+  ok(holdSaved.start === undefined && holdSaved.end === undefined, 'hold 备用形式保存不强制改写成 start/end');
+
+   FE.applyProfileText(JSON.stringify({ layouts: { default: {
+     sections: [{ type: 'rows', rows: [[{ ref: 'rime.q' }]] }],
+     split: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.q' }]] }] }
+   } } }));
+   FE.state.landscapeMode = true;
+   $('pt-landscape').checked = true;
+   FE.state.splitMode = false;
+   $('pt-split').checked = false;
+   FE.locateIssue({ layout: 'default', isSplit: true, sectionIndex: 0, rowIndex: 0, keyIndex: 0, group: 'rows' }, 'sel');
+   ok(FE.state.splitMode === true && FE.state.landscapeMode === false, '定位分体问题时关闭横屏模式');
+      ok($('pt-split').checked === true && $('pt-landscape').checked === false, '定位分体问题同步两个模式复选框');
+
+   FE.applyProfileText(JSON.stringify({ layouts: {
+     default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.q' }]] }] },
+     other: { sections: [{ type: 'rows', rows: [[{
+       ref: 'rime.q', hold: {
+          endAction: { type: 'switch_layout', layout: 'default' },
+          endActions: [{ type: 'switch_layout', layout: 'default' }]
+        }
+     }]] }] }
+   } }));
+   FE.state.layoutName = 'default';
+   FE.renderAll();
+   $('layout-rename').click();
+   var renameDlg = lastDialog();
+   var renameInp = renameDlg.querySelectorAll('.ui-dialog-input')[0];
+   renameInp.value = 'renamed';
+   renameDlg.querySelectorAll('.ui-dialog-ok')[0].click();
+   await sleep(0);
+      eq({
+    single: FE.state.profile.layouts.other.sections[0].rows[0][0].hold.endAction.layout,
+    array: FE.state.profile.layouts.other.sections[0].rows[0][0].hold.endActions[0].layout
+   }, { single: 'renamed', array: 'renamed' }, '布局重命名更新 hold 的 endAction/endActions switch_layout');
+
+   /* P1-popup：裸数组直接作为 normal 编辑，写 shifted 时才升级数据形态。 */
+
+  /* P1-popup：裸数组直接作为 normal 编辑，写 shifted 时才升级数据形态。 */
+  FE.state.popupProfile = FE.normalizePopupProfile({ type: 'foxy.popup-profile', schemas: { default: { q: ['a', 'b'] } } });
+  FE.ensureOpenSet('openPopupKeys').q = true;
+  var bareHost = FE.buildPopupKeyEditor('default', 'q', {}).host;
+  var bareNormalRow = bareHost.querySelectorAll('.popup-state-row')[0];
+  ok(bareNormalRow.textContent.indexOf('a') >= 0 && bareNormalRow.textContent.indexOf('b') >= 0,
+    'popup 裸数组 normal 在编辑器中显示候选');
+  bareNormalRow.querySelectorAll('.chip-add')[0].click();
+  var bareAddDlg = lastDialog();
+  var bareText = bareAddDlg.querySelectorAll('input').find(function (i) { return i.getAttribute('type') === 'text'; });
+  bareText.value = 'c';
+  bareText._fire('input');
+  bareAddDlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  eq(FE.state.popupProfile.schemas.default.q, ['a', 'b', 'c'], 'popup 裸数组新增 normal 候选后仍保留数组');
+  FE.performCandDrop(
+    { schema: 'default', pk: 'q', st: 'normal', ci: 0 },
+    { kind: 'before', loc: { schema: 'default', pk: 'q', st: 'normal', ci: 2 } });
+  eq(FE.state.popupProfile.schemas.default.q, ['b', 'a', 'c'], 'popup 裸数组 normal 候选支持同状态拖动排序');
+  var bareHost2 = FE.buildPopupKeyEditor('default', 'q', {}).host;
+  var shiftedRow = bareHost2.querySelectorAll('.popup-state-row')[1];
+  shiftedRow.querySelectorAll('button').find(function (b) { return b.textContent === '启用'; }).click();
+  ok(FE.isPlainObject(FE.state.popupProfile.schemas.default.q), '启用 shifted 时裸数组安全升级为对象');
+  eq(FE.state.popupProfile.schemas.default.q.normal, ['b', 'a', 'c'], '升级对象保留原 normal 候选');
+  eq(FE.state.popupProfile.schemas.default.q.shifted, [], '升级对象创建空 shifted 数组');
+  documentStub._openDialogs.length = 0;
+  FE.state.popupProfile = null;
+  FE.renderAll();
+
+
+  console.log('== 指针拖动取消不提交 ==');
+  var cancelDragNode = documentStub.createElement('div');
+  cancelDragNode.classList.add('chip-box');
+  documentStub._body.appendChild(cancelDragNode);
+  var cancelDrops = 0;
+  FE.attachPointerDrag(cancelDragNode, {
+    dropTarget: function () { return { el: cancelDragNode, markClass: 'drop-target' }; },
+    onDrop: function () { cancelDrops++; }
+  });
+  cancelDragNode._fire('pointerdown', { pointerId: 901, pointerType: 'touch', clientX: 0, clientY: 0 });
+  documentStub.dispatchEvent({ type: 'pointermove', pointerId: 901, clientX: 12, clientY: 0, cancelable: true, preventDefault: function () {} });
+  documentStub.dispatchEvent({ type: 'pointercancel', pointerId: 901, clientX: 12, clientY: 0 });
+  ok(cancelDrops === 0, 'pointercancel 不调用拖动 onDrop');
+  ok(!cancelDragNode.classList.contains('dragging') && !cancelDragNode.classList.contains('drop-target'), 'pointercancel 清理拖动状态与落点标记');
+  documentStub.dispatchEvent({ type: 'pointerup', pointerId: 901, clientX: 12, clientY: 0 });
+  ok(cancelDrops === 0, '取消后迟到的 pointerup 也不重复提交');
+  if (cancelDragNode.parentNode) cancelDragNode.parentNode.removeChild(cancelDragNode);
+
+
   tabs[0]._fire('click');
   FE.applyProfileText(JSON.stringify({
     layouts: { default: { sections: [{ type: 'rows', rows: [
@@ -2781,7 +2951,9 @@ await sleep(350);
       [{ ref: 'rime.d' }, { ref: 'rime.e' }]
     ] }] } }
   }), {});
-  ok(typeof FE.performChipDrop === 'function', '导出 performChipDrop 供拖动落点使用');
+     FE.setSplitMode(false);
+   FE.setLandscapeMode(false);
+   ok(typeof FE.performChipDrop === 'function', '导出 performChipDrop 供拖动落点使用');
   /* getRowKeys 会把数组行转成对象行 {keys:[...]}，两种形态都要能读 */
   const rowRefs = (ri) => {
     const r = FE.state.profile.layouts.default.sections[0].rows[ri];
@@ -2802,7 +2974,17 @@ await sleep(350);
   $('top-undo').click();
   eq(rowRefs(0), ['rime.b', 'rime.a'], '撤销恢复上一步拖动');
 
-  console.log('== 指针拖动：网格按键移动/交换（performGridDrop） ==');
+  console.log('== 网格 alias 移动/交换 ==');
+  FE.applyProfileText(JSON.stringify({ layouts: { default: { sections: [{ type: 'grid', columns: 4, rows: 1, keys: [
+    { col: 1, row: 0, ref: 'rime.a' }, { col: 2, row: 0, ref: 'rime.b' }
+  ] }] } } }));
+  FE.performGridDrop(0, 0, { kind: 'move', x: 3, y: 0 });
+  eq(FE.state.profile.layouts.default.sections[0].keys[0].col, 3, 'grid alias move 更新 col 而非制造 column');
+  ok(FE.state.profile.layouts.default.sections[0].keys[0].column === undefined, 'grid alias move 不留下冲突 column');
+  FE.performGridDrop(0, 0, { kind: 'swap', gi: 1 });
+  eq(FE.state.profile.layouts.default.sections[0].keys.map(function (k) { return k.col; }), [2, 3], 'grid alias swap 交换坐标');
+
+
   FE.applyProfileText(JSON.stringify({
     layouts: { default: { sections: [{ type: 'grid', columns: 3, rows: 2, keys: [
       { column: 0, row: 0, ref: 'rime.KP_1' },
@@ -4340,6 +4522,11 @@ await sleep(350);
     $('th-json-apply').click();
     eq(FE.state.themeProfile.name, 'fixme', 'JSON 卡片应用生效（含宽松修复）');
     eq(FE.state.themeProfile.light.keyboardColor, '#FFFFFFFF', '#RGB 归一化为 #AARRGGBB');
+     $('th-json').value = '{ type: "foxy.keyboard-theme", name: "manual" }';
+     $('th-json')._fire('input');
+     ok(FE.loadThemeProfileText(JSON.stringify({ type: 'foxy.keyboard-theme', name: 'loaded', light: {} })) === true,
+       '主题载入成功后清除 JSON dirty');
+     ok($('th-json').value.indexOf('"name": "loaded"') >= 0, '主题载入后 JSON textarea 立即回显规范化文本');
 
     /* 新建主题：type 正确、含两个槽位、方向提示色留空 */
     const fresh = FE.normalizeThemeProfile(FE.themeNewProfile());

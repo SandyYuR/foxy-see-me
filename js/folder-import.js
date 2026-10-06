@@ -262,6 +262,13 @@ FE.describePlan = function (plan) {
  * 布局文件里（否则引用会断）。
  * 返回 { layoutText, definitionsText, split: {kept, stripped} }；无共享定义时
  * definitionsText 为 null。 */
+function semanticJson(value) {
+  if (Array.isArray(value)) return '[' + value.map(semanticJson).join(',') + ']';
+  if (isPlainObject(value)) return '{' + Object.keys(value).sort().map(function (k) {
+    return JSON.stringify(k) + ':' + semanticJson(value[k]);
+  }).join(',') + '}';
+  return JSON.stringify(value);
+}
 FE.splitProfileForExport = function (profile, definitions) {
   if (!isPlainObject(definitions)) {
     return { layout: deepClone(profile), definitions: null, split: { kept: [], stripped: [] } };
@@ -275,7 +282,7 @@ FE.splitProfileForExport = function (profile, definitions) {
       if (!hasOwn(own, k)) continue;
       if (!hasOwn(shared, k)) { kept.push(section + '.' + k); continue; }
       /* 与共享定义逐字节一致 → 来自 definitions，剥离；否则视为本地改动，保留 */
-      if (JSON.stringify(own[k]) === JSON.stringify(shared[k])) {
+      if (semanticJson(own[k]) === semanticJson(shared[k])) {
         delete own[k];
         stripped.push(section + '.' + k);
       } else kept.push(section + '.' + k);

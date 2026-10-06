@@ -335,17 +335,21 @@ FE.buildMacroStepEditor = function (steps, opts) {
         drafts.forEach(function (d, k) { if (!d.readonly) d.spec = vals[k]; });
         if (FE.moveMacroStep(drafts, from, to)) redraw();
       }
-      function finish() {
+      function onCancel(ev) {
+         if (ev.pointerId !== pid) return;
+         finish();
+       }
+       function finish() {
         document.removeEventListener('pointermove', onMove, true);
         document.removeEventListener('pointerup', onUp, true);
-        document.removeEventListener('pointercancel', onUp, true);
+        document.removeEventListener('pointercancel', onCancel, true);
         row.classList.remove('dragging');
         root.querySelectorAll('.macro-step').forEach(function (r) { r.classList.remove('drop-gap'); });
         dragFrom = null;
       }
       document.addEventListener('pointermove', onMove, true);
       document.addEventListener('pointerup', onUp, true);
-      document.addEventListener('pointercancel', onUp, true);
+      document.addEventListener('pointercancel', onCancel, true);
     });
   }
 

@@ -36,7 +36,7 @@ node test/test-core.js
 node test/test-ui.js
 ```
 
-当前基线是 core 629、UI 1394，两个套件都必须 0 失败。按改动范围追加：
+当前基线是 core 629、UI 1425，两个套件都必须 0 失败。按改动范围追加：
 
 ```bash
 node test/test-color-source.js   # 改过 color-source.js 或颜色链路
