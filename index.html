@@ -54,6 +54,9 @@
             <label class="check" title="预览命名布局的 split 分体片段（由 Foxy 分体键盘设置选择），会**切换成 split 片段**渲染"><input type="checkbox" id="pt-split"> 分体</label>
             <label class="check" title="横屏预览：容器加宽到分体宽度（1228px）、按键按 flex 拉宽，但**仍渲染当前常规布局**，不切到 split 片段。用来查看同一套布局在宽屏下的观感"><input type="checkbox" id="pt-landscape"> 横屏</label>
             <label class="mini-label">状态标签示例 <input id="pt-status-text" type="text" class="mini-input" size="8" value="朙月拼音"></label>
+            <!-- 选项条件开关：由 app.js 的 renderPreviewOptionToggles() 按「条件里出现过的
+                 选项名 + 常开选项」动态填充（编辑器读不到 schema 的 switches 声明）。 -->
+            <span class="pt-options" id="pt-options"></span>
           </div>
         </div>
         <!-- 第二行：预览几何旋钮（高度 + 按键外观三项）与深浅键盘，独占一行。
@@ -224,6 +227,17 @@
           </div>
         </div>
         <div id="keys-list"></div>
+      </details>
+      <!-- 自定义图标（顶层 icons）：键的 icon 除四个内置名外，还可以是这里的名字 -->
+      <details class="card" open>
+        <summary>自定义图标（icons）— 键的 icon 可引用这里的名字</summary>
+        <div class="def-toolbar">
+          <div class="def-tool-group">
+            <input id="icons-new" type="text" class="mini-input" placeholder="新图标名，如 foxy.heart">
+            <button id="icons-add" type="button" class="mini-button primary">+ 新建自定义图标</button>
+          </div>
+        </div>
+        <div id="icons-list"></div>
       </details>
     </section>
 

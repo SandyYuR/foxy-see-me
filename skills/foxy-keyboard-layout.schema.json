@@ -11,6 +11,11 @@
     "keys": { "type": "object", "additionalProperties": { "$ref": "#/$defs/key" } },
     "actions": { "type": "object", "additionalProperties": { "$ref": "#/$defs/actionExpression" } },
     "macros": { "type": "object", "additionalProperties": { "type": "array", "items": { "$ref": "#/$defs/actionExpression" } } },
+    "icons": {
+      "type": "object",
+      "description": "Reusable custom key icons: name -> inline SVG/XML spec (also accepted from foxy.definitions.json).",
+      "additionalProperties": { "type": "string" }
+    },
     "layouts": { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/layout" } }
   },
   "additionalProperties": true,
@@ -83,11 +88,41 @@
     "statusWhen": {
       "type": "object",
       "properties": {
-        "rime": {
+        "rime": { "$ref": "#/$defs/variantCondition" }
+      },
+      "additionalProperties": true
+    },
+    "variantCondition": {
+      "type": "object",
+      "properties": {
+        "composing": { "type": "boolean" },
+        "ascii_mode": { "type": "boolean" },
+        "disabled": { "type": "boolean" },
+        "option": { "type": "string", "minLength": 1 },
+        "value": { "type": "boolean" },
+        "options": {
           "type": "object",
-          "properties": { "composing": { "type": "boolean" }, "ascii_mode": { "type": "boolean" }, "disabled": { "type": "boolean" } },
-          "additionalProperties": false
-        }
+          "additionalProperties": { "type": "boolean" }
+        },
+        "all_of": { "$ref": "#/$defs/variantConditionList" },
+        "any_of": { "$ref": "#/$defs/variantConditionList" },
+        "none_of": { "$ref": "#/$defs/variantConditionList" }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        { "if": { "required": ["value"] }, "then": { "required": ["option"] } }
+      ]
+    },
+    "variantConditionList": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/variantCondition" }
+    },
+    "keyVariant": {
+      "type": "object",
+      "required": ["when"],
+      "properties": {
+        "when": { "$ref": "#/$defs/statusWhen" }
       },
       "additionalProperties": true
     },
@@ -100,7 +135,7 @@
         "id": { "type": ["string", "null"] },
         "statusLabel": { "oneOf": [{ "type": "string" }, { "$ref": "#/$defs/statusLabel" }, { "type": "null" }] },
         "keyType": { "type": ["string", "null"] },
-        "icon": { "type": ["string", "null"] },
+        "icon": { "type": ["string", "null"], "description": "Built-in name (backspace/shift/enter/return), an icons-map name, or an inline svg:/xml: payload." },
         "modifier": { "type": ["string", "null"], "description": "SHIFT or CTRL, case-insensitive at runtime." },
         "textSize": { "type": ["number", "null"], "exclusiveMinimum": 0 },
         "hintTextSize": { "oneOf": [{ "type": "number", "exclusiveMinimum": 0 }, { "$ref": "#/$defs/hintTextSizes" }, { "type": "null" }] },
@@ -110,8 +145,9 @@
         "doubleTap": { "$ref": "#/$defs/gesture" },
         "longPress": { "$ref": "#/$defs/longPress" },
         "hold": { "$ref": "#/$defs/hold" },
+        "drag": { "$ref": "#/$defs/drag" },
         "swipe": { "$ref": "#/$defs/swipe" },
-        "variants": { "type": "array" },
+        "variants": { "type": "array", "items": { "$ref": "#/$defs/keyVariant" } },
         "colors": { "type": ["object", "null"] }
       },
       "additionalProperties": true
@@ -126,6 +162,26 @@
         "end": { "$ref": "#/$defs/actionExpression" },
         "action": { "$ref": "#/$defs/actionExpression" },
         "actions": { "type": "array", "items": { "$ref": "#/$defs/actionExpression" } },
+        "popup": { "type": ["boolean", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "drag": {
+      "type": ["object", "null"],
+      "description": "Continuous directional drag with per-step and release actions.",
+      "properties": {
+        "ref": { "type": "string", "description": "Reuses the referenced key's drag gesture." },
+        "label": { "type": ["string", "null"] },
+        "hint": { "type": ["string", "null"] },
+        "step": { "type": ["number", "null"], "exclusiveMinimum": 0, "description": "Step distance in dp; defaults to the cursor-step setting." },
+        "feedback": { "enum": ["none", "vibrate", "key"], "description": "Per-step feedback: none, repeat vibration, or full key sound+vibration." },
+        "up": { "$ref": "#/$defs/gesture" },
+        "down": { "$ref": "#/$defs/gesture" },
+        "left": { "$ref": "#/$defs/gesture" },
+        "right": { "$ref": "#/$defs/gesture" },
+        "end": { "$ref": "#/$defs/gesture" },
+        "endAction": { "$ref": "#/$defs/actionExpression" },
+        "endActions": { "type": "array", "items": { "$ref": "#/$defs/actionExpression" } },
         "popup": { "type": ["boolean", "null"] }
       },
       "additionalProperties": true

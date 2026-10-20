@@ -1323,7 +1323,7 @@ ok(FE.usageOf(cyc, 'action', 'y').count < 60, '互相引用的动作不会无限
 ok(FE.usageOf(cyc, 'action', 'y').items.some(i => i.loc), '环中的动作仍能追到布局坐标');
 
 /* ---- 空/异常输入安全 ---- */
-eq(FE.buildRefIndex(null, null), { key: {}, action: {}, macro: {} }, '空输入返回空索引');
+eq(FE.buildRefIndex(null, null), { key: {}, action: {}, macro: {}, icons: {} }, '空输入返回空索引');
 eq(FE.buildRefIndex({}, undefined).key, {}, '缺 popupProfile 不报错');
 
 /* ================================================================
@@ -1735,6 +1735,203 @@ console.log('== 主题：方向提示色的逐层回落 ==');
     FE.state.themeSlot = savedSlot2;
   }
 }
+
+
+/* ================================================================
+ * 对齐新版 skill：自定义图标（顶层 icons）/ drag 手势 / 条件组合
+ * ================================================================ */
+console.log('== 对齐新版 skill：icons / drag / 条件组合 ==');
+(function () {
+  const HEART = 'svg:<svg viewBox="0 0 24 24"><path d="M12 21s-8-5.4-8-11a4.6 4.6 0 0 1 8-3 4.6 4.6 0 0 1 8 3c0 5.6-8 11-8 11z"/></svg>';
+  const scopeWith = (icons) => ({ profile: { icons: icons } });
+
+  /* ---- 1. 自定义图标：内置名 / icons 映射 / 内联载荷 / 未知 ---- */
+  eq(FE.ICONS.join(','), 'backspace,shift,enter,return', '内置图标名仍是四个');
+  ok(FE.isBuiltinIcon('enter') && !FE.isBuiltinIcon('foxy.heart'), 'isBuiltinIcon 只认内置名');
+  ok(FE.isInlineIcon('svg:<svg/>') && FE.isInlineIcon('xml:<x/>'), 'isInlineIcon 认 svg: / xml:');
+  ok(!FE.isInlineIcon('foxy.heart'), 'isInlineIcon 不把图标名当载荷');
+
+  const sc = scopeWith({ 'foxy.heart': HEART });
+  ok(FE.iconSvgOf('backspace', sc).indexOf('<svg') === 0, '内置名解析为内置 SVG');
+  ok(FE.iconSvgOf('foxy.heart', sc).indexOf('<path') > 0, 'icons 映射的名字解析为映射里的载荷');
+  ok(FE.iconSvgOf(HEART, sc) != null, '键上直接写 svg: 载荷也能渲染');
+  eq(FE.iconSvgOf('no.such.icon', sc), null, '未知图标名不渲染（文档：renders without an icon）');
+  eq(FE.iconSvgOf(null, sc), null, '无 icon 字段不渲染');
+  eq(FE.iconNames(sc).join(','), 'foxy.heart', 'iconNames 列出映射里的名字');
+  eq(FE.iconNames(null).length, 0, '没有 profile 时 iconNames 为空');
+
+  /* 载荷清洗：脚本与内联事件必须被剥掉（icons 可来自导入的 definitions.json） */
+  const dirty = FE.iconMarkupFromPayload('svg:<svg onload="alert(1)"><script>bad()</script><path d="M0 0"/></svg>');
+  ok(dirty.indexOf('onload') < 0 && dirty.indexOf('script') < 0, 'icons 载荷里的脚本与内联事件被清掉');
+  ok(dirty.indexOf('<path') > 0, 'icons 载荷的图形内容保留');
+  eq(FE.iconMarkupFromPayload('foxy.heart'), null, '非内联载荷无法渲染');
+  eq(FE.iconMarkupFromPayload('svg:   '), null, '空前缀载荷无法渲染');
+
+  /* 顶层 icons 校验 */
+  const iconErrors = (icons) => FE.validateProfile(FE.normalizeProfile({
+    icons: icons, layouts: { d: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }] } }
+  })).errors;
+  ok(iconErrors('x').length === 1, 'icons 不是对象被检出');
+  ok(iconErrors({ '': HEART }).some(e => e.indexOf('空名字') >= 0), 'icons 空名字被检出');
+  ok(iconErrors({ a: 'foxy.other' }).some(e => e.indexOf('svg:') >= 0), 'icons 载荷缺前缀被检出');
+  ok(iconErrors({ a: 3 }).some(e => e.indexOf('字符串') >= 0), 'icons 载荷非字符串被检出');
+  eq(iconErrors({ 'foxy.heart': HEART }), [], '合法 icons 通过校验');
+  eq(FE.validateProfile(FE.normalizeProfile({
+    layouts: { d: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a', icon: 'no.such.icon' }]] }] } }
+  })).errors, [], '未知图标名不报错（渲染时按无图标处理）');
+
+  /* ---- 2. drag 手势 ---- */
+  ok(FE.GESTURE_FIELDS.indexOf('drag') >= 0, 'GESTURE_FIELDS 含 drag');
+  ok(FE.GESTURE_SLOTS.indexOf('drag') >= 0, 'GESTURE_SLOTS 含 drag');
+  eq(FE.DRAG_DIRS.join(','), 'up,down,left,right', 'drag 四向与 swipe 一致');
+  eq(FE.DRAG_FEEDBACKS.join(','), 'none,vibrate,key', 'drag 反馈取值与文档一致');
+  /* 新 skill 里 drag 用到的两个 app 命令 */
+  ok(FE.APP_COMMANDS.some(c => c[0] === 'editor_select_step'), 'editor_select_step 已加入 APP_COMMANDS');
+  ok(FE.APP_COMMANDS.some(c => c[0] === 'delete_selection'), 'delete_selection 已加入 APP_COMMANDS');
+
+  const dragNode = {
+    ref: 'rime.a',
+    drag: {
+      step: 12, feedback: 'key',
+      left: { action: { type: 'app', command: 'editor_select_step', argument: 'left' } },
+      right: { action: { type: 'app', command: 'editor_select_step', argument: 'right' } },
+      end: { action: { type: 'app', command: 'delete_selection' } }
+    }
+  };
+  const dragProfile = FE.normalizeProfile({
+    layouts: { d: { sections: [{ type: 'rows', rows: [[dragNode]] }] } }
+  });
+  eq(FE.validateProfile(dragProfile).errors, [], '带四向与松手的 drag 通过校验');
+  const dScope = FE.scopeFrom(dragProfile);
+  const di = FE.dragInfo(dragNode.drag, FE.NEUTRAL_STATUS, 0, dScope);
+  eq(di.step, 12, 'dragInfo 读出 step');
+  eq(di.feedback, 'key', 'dragInfo 读出 feedback');
+  ok(di.directions.left && di.directions.left.action.display.indexOf('editor_select_step') >= 0,
+    'dragInfo 解析出左向动作');
+  ok(di.end && di.end.action.display.indexOf('delete_selection') >= 0, 'dragInfo 解析出松手动作');
+  eq(FE.dragInfo({}, FE.NEUTRAL_STATUS, 0, dScope).feedback, 'vibrate', 'feedback 缺省为 vibrate');
+  eq(FE.dragInfo({}, FE.NEUTRAL_STATUS, 0, dScope).step, null, 'step 未写时为 null（取光标步长设置）');
+
+  /* drag 的 null 语义：整体 null 删手势，方向 null 只删该方向（与 swipe 同规则） */
+  const dragBase = () => ({ ref: 'rime.a', drag: { step: 5, left: 'a1' } });
+  const afterAll = FE.mergePatch(dragBase(), { drag: null });
+  ok(afterAll.drag === undefined, 'drag:null 删除整个 drag 手势');
+  const afterDir = FE.mergePatch(dragBase(), { drag: { left: null } });
+  ok(afterDir.drag && afterDir.drag.left === undefined, '方向 null 只删该方向');
+  eq(afterDir.drag.step, 5, '方向 null 不影响其它 drag 字段');
+  const afterMerge = FE.mergePatch(dragBase(), { drag: { right: 'a2' } });
+  eq(afterMerge.drag.left, 'a1', 'drag 按方向合并保留原有方向');
+  eq(afterMerge.drag.right, 'a2', 'drag 按方向合并写入新方向');
+
+  const dragErrors = (drag) => FE.validateProfile(FE.normalizeProfile({
+    layouts: { d: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a', drag: drag }]] }] } }
+  })).errors;
+  ok(dragErrors({ step: 0 }).some(e => e.indexOf('step') >= 0), 'step 为 0 被检出');
+  ok(dragErrors({ step: -3 }).some(e => e.indexOf('step') >= 0), 'step 为负数被检出');
+  ok(dragErrors({ feedback: 'bogus' }).some(e => e.indexOf('feedback') >= 0), 'feedback 非法值被检出');
+  eq(dragErrors({ feedback: 'none' }), [], 'feedback=none 合法');
+
+  /* 引用索引与编译层都要能下探 drag（否则「使用数」与预览提示会漏） */
+  const dragRefs = FE.buildRefIndex(FE.normalizeProfile({
+    actions: { a1: { type: 'key', key: 'LEFT' } },
+    layouts: { d: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a', drag: { left: 'a1', end: 'a1' } }]] }] } }
+  }), null);
+  ok(FE.usageOf(dragRefs, 'action', 'a1').count >= 2, 'drag 的方向与松手动作都计入引用次数');
+
+  const compiledDrag = FE.compileLayout(dragProfile, 'd', {});
+  const cItem = compiledDrag.sections[0].rows[0].keys[0];
+  ok(cItem.drag != null, '编译产物带上 drag');
+  eq(cItem.drag.step, 12, '编译产物保留 step');
+  ok(cItem.drag.dirs && cItem.drag.dirs.left, '编译产物保留各方向动作');
+  ok(cItem.drag.end != null, '编译产物保留松手动作');
+
+  /* ---- 3. 变体条件：option / value / options / all_of / any_of / none_of ---- */
+  const T = true, F = false, N = undefined;
+  eq(FE.condResult({ composing: true }, { composing: true }), T, '布尔叶子：成立');
+  eq(FE.condResult({ composing: true }, { composing: false }), F, '布尔叶子：不成立');
+  eq(FE.condResult({ option: 'full_shape' }, { options: { full_shape: true } }), T,
+    'option 隐含 value:true');
+  eq(FE.condResult({ option: 'full_shape', value: false }, { options: { full_shape: true } }), F,
+    'option + value:false 反选');
+  eq(FE.condResult({ option: 'full_shape' }, FE.NEUTRAL_STATUS), F,
+    '常开选项未开启时为假');
+  eq(FE.condResult({ option: 'not.declared' }, FE.NEUTRAL_STATUS), N,
+    '未声明的选项名是中性（不是 false）');
+  eq(FE.condResult({ options: { traditional: true } }, { options: { traditional: true } }), T,
+    'options 映射简写');
+  eq(FE.condResult({ value: true }, FE.NEUTRAL_STATUS), F, '只写 value 不写 option 非法（不匹配）');
+  eq(FE.condResult({ bogus: 1 }, FE.NEUTRAL_STATUS), F, '未知条件关键字永不匹配');
+  eq(FE.condResult({}, FE.NEUTRAL_STATUS), T, '空条件对象恒成立');
+
+  eq(FE.condResult({ all_of: [{ composing: false }, { ascii_mode: false }] }, FE.NEUTRAL_STATUS), T,
+    'all_of 全真');
+  eq(FE.condResult({ all_of: [{ composing: false }, { ascii_mode: true }] }, FE.NEUTRAL_STATUS), F,
+    'all_of 有假即假');
+  eq(FE.condResult({ all_of: [{ option: 'not.declared' }, { composing: false }] }, FE.NEUTRAL_STATUS), N,
+    'all_of 里未声明选项被忽略（中性）');
+  eq(FE.condResult({ all_of: [{ option: 'not.declared' }] }, FE.NEUTRAL_STATUS), N,
+    'all_of 全是未知仍为中性');
+  eq(FE.condResult({ any_of: [{ composing: true }, { ascii_mode: false }] }, FE.NEUTRAL_STATUS), T,
+    'any_of 有一真即真');
+  eq(FE.condResult({ any_of: [{ composing: true }, { ascii_mode: true }] }, FE.NEUTRAL_STATUS), F,
+    'any_of 全假为假');
+  /* 文档：any_of 在其它条件能决定结果时忽略未知项。任一成立即成立（中性不能把 true 拖成中性）。 */
+  eq(FE.condResult({ any_of: [{ option: 'not.declared' }, { composing: false }] }, FE.NEUTRAL_STATUS), T,
+    'any_of 里未知项不影响其它成立项');
+  eq(FE.condResult({ none_of: [{ composing: true }] }, FE.NEUTRAL_STATUS), T,
+    'none_of 子项不成立时成立');
+  eq(FE.condResult({ none_of: [{ composing: false }] }, FE.NEUTRAL_STATUS), F,
+    'none_of 子项成立时取反为假');
+  eq(FE.condResult({ none_of: [{ option: 'not.declared' }, { composing: false }] }, FE.NEUTRAL_STATUS), F,
+    'none_of 里未知项不改变被拒绝的结论');
+  eq(FE.condResult({ composing: false, all_of: [{ ascii_mode: false }] }, FE.NEUTRAL_STATUS), T,
+    '同一对象内字段 AND');
+
+  /* variantMatches 只认 true：全未知的组算不满足 */
+  eq(FE.variantMatches({ rime: { option: 'not.declared' } }, FE.NEUTRAL_STATUS), false,
+    '全未知条件组不匹配');
+  eq(FE.variantMatches({ rime: { composing: false } }, FE.NEUTRAL_STATUS), true, '条件成立时匹配');
+  eq(FE.variantMatches(null, FE.NEUTRAL_STATUS), true, '无条件变体恒匹配');
+
+  /* 条件摘要：选项与组合不能渲染成 [object Object] */
+  const sumText = FE.condSummaryText({ rime: { composing: true, option: 'full_shape', all_of: [{ option: 'x' }] } });
+  ok(sumText.indexOf('[object Object]') < 0, '条件摘要不含 [object Object]');
+  ok(sumText.indexOf('full_shape') >= 0, '条件摘要列出选项名');
+  eq(FE.condSummaryText(null), '（无条件）', '无条件时摘要为「（无条件）」');
+  /* condOptionNames 收的是条件对象本身（不是 {rime:...} 包裹层） */
+  const optNames = FE.condOptionNames({ all_of: [{ option: 'a' }, { options: { b: true } }] });
+  eq(optNames.b, true, 'condOptionNames 递归收集组合里的选项名（options 映射）');
+  eq(optNames.a, true, 'condOptionNames 递归收集组合里的选项名（option）');
+
+  /* 条件校验 */
+  /* actions 是顶层键，不能塞进 layouts 里（否则会被当成一个名叫 actions 的布局） */
+  const condErrors = (when) => FE.validateProfile(FE.normalizeProfile({
+    actions: { a1: { type: 'key', key: 'A' } },
+    layouts: { d: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a', variants: [{ when: when, tap: 'a1' }] }]] }] } }
+  })).errors;
+  eq(condErrors({ rime: { option: 'full_shape' } }), [], 'option 条件通过校验');
+  eq(condErrors({ rime: { all_of: [{ composing: true }] } }), [], 'all_of 条件通过校验');
+  ok(condErrors({ rime: { value: true } }).some(e => e.indexOf('option') >= 0), 'value 缺 option 被检出');
+  ok(condErrors({ rime: { all_of: [] } }).some(e => e.indexOf('all_of') >= 0), '空组合数组被检出');
+  ok(condErrors({ rime: { bogus: true } }).some(e => e.indexOf('bogus') >= 0), '未知条件关键字被警告/报错');
+
+  /* 校验结果带 optionNames：预览工具栏据此列出开关 */
+  const withOptions = FE.validateProfile(FE.normalizeProfile({
+    actions: { a1: { type: 'key', key: 'A' } },
+    layouts: { d: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a', variants: [{ when: { rime: { option: 'zenkaku' } }, tap: 'a1' }] }]] }] } }
+  }));
+  ok(withOptions.optionNames && withOptions.optionNames.indexOf('zenkaku') >= 0,
+    '校验结果收集到用过的选项名（供预览开关）');
+
+  /* ---- 4. definitions.json 的 icons 合并 ---- */
+  const merged = FE.mergeDefinitions(
+    FE.normalizeProfile({ icons: { own: HEART }, layouts: { d: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }] } } }),
+    { icons: { 'foxy.heart': HEART, own: 'svg:<svg></svg>' }, keys: { 'x.k': { ref: 'rime.b' } } }
+  );
+  ok(merged.profile.icons['foxy.heart'] != null, 'definitions.json 的 icons 被合并进来');
+  eq(merged.profile.icons.own, HEART, '布局自己的同名图标优先（不被 definitions 覆盖）');
+  ok(Array.isArray(merged.report.icons) && merged.report.icons.length >= 1, '导入报告记录共享图标数');
+})();
 
 /* 注：主题文档进入撤销栈 / 草稿的行为属 app.js 的 **UI 段**
  * （core 环境里 FE.mutate / FE.snapshotState 不存在），

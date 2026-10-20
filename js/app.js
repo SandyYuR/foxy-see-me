@@ -218,6 +218,7 @@ function mergePatch(target, patch) {
     /* 文档 null 语义：label 清空为空字符串；weight/height 恢复解析器默认 1 */
     if (v === null && k === 'label') { target.label = ''; continue; }
     if (v === null && (k === 'weight' || k === 'height')) { target[k] = 1; continue; }
+    if (k === 'drag' && v === null) { delete target.drag; continue; }   // drag:null 删除整个拖动手势
     if (k === 'swipe') {
       var base = (target.swipe && isPlainObject(target.swipe)) ? deepClone(target.swipe) : {};
       if (v === null) base = {};
@@ -225,6 +226,18 @@ function mergePatch(target, patch) {
         for (var d in v) { if (v[d] === null) delete base[d]; else base[d] = deepClone(v[d]); }
       }
       target.swipe = base;
+    } else if (k === 'drag') {
+      /* drag 与 swipe 同规则：整体 null 删除、方向 null 只删该方向；
+       * 其余字段（step / feedback / end 家族 / label / hint / popup / ref）逐个合并。 */
+      var dbase = (target.drag && isPlainObject(target.drag)) ? deepClone(target.drag) : {};
+      if (isPlainObject(v)) {
+        for (var dk in v) {
+          if (!Object.prototype.hasOwnProperty.call(v, dk)) continue;
+          if (v[dk] === null) delete dbase[dk];
+          else dbase[dk] = deepClone(v[dk]);
+        }
+      }
+      if (Object.keys(dbase).length) target.drag = dbase; else delete target.drag;
     } else if (k === 'hintTextSize') {
       if (isPlainObject(v) && isPlainObject(target.hintTextSize)) {
         var ht = deepClone(target.hintTextSize);
@@ -251,16 +264,199 @@ function mergePatch(target, patch) {
 }
 FE.mergePatch = mergePatch;
 
+/* ---------------- 变体条件求值 ----------------
+ * 条件对象的求值结果是三态：true / false / **neutral**（undefined）。
+ *   - 布尔叶子 composing / ascii_mode / disabled 直接与状态比较；
+ *   - 选项叶子 option（隐含 value:true）/ value / options 映射：选项名**未被声明**时为中性，
+ *     只有 schema 的 switches 声明过的（或常开的 full_shape/simplification/traditional/
+ *     ascii_punct）才参与比较 —— 与 Foxy 的 neutral 规则一致；
+ *   - 组合 all_of / any_of / none_of 递归求值：子项里只要有一个 false 就 false；
+ *     没有 false 但混着中性 → 中性；全为 true 才 true；
+ *   - 同一条件对象内的各字段 AND：任一 false 即 false，否则有中性则中性；
+ *   - 未知条件关键字永不匹配（直接 false）。
+ * 顶层 variantMatches 只认 true —— 全未知的条件组算「不满足」。 */
+var COND_TRUE = true, COND_FALSE = false, COND_NEUTRAL = undefined;
+
+function hasOwnProp(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+
+/* 当前可用的选项状态：常开选项先铺成 false，再叠加 status.options（预览开关/导入的 switches） */
+function optionState(status) {
+  var out = {};
+  for (var i = 0; i < FE.ALWAYS_ON_OPTIONS.length; i++) out[FE.ALWAYS_ON_OPTIONS[i]] = false;
+  var src = (status && isPlainObject(status.options)) ? status.options : null;
+  if (src) {
+    for (var k in src) if (hasOwnProp(src, k)) out[k] = !!src[k];
+  }
+  return out;
+}
+FE.optionState = optionState;
+
+function condResult(c, status) {
+  if (!isPlainObject(c)) return COND_FALSE;
+  var st = status || NEUTRAL_STATUS;
+  var opts = optionState(st);
+  var conds = Object.keys(c);
+  if (!conds.length) return COND_TRUE;
+  var leaves = [];
+  for (var i = 0; i < conds.length; i++) {
+    var key = conds[i];
+    if (FE.STATUS_CONDS.indexOf(key) >= 0) {
+      leaves.push(!!c[key] === !!st[key] ? COND_TRUE : COND_FALSE);
+    } else if (key === 'options') {
+      if (!isPlainObject(c.options)) return COND_FALSE;
+      for (var on in c.options) {
+        if (!hasOwnProp(c.options, on)) continue;
+        if (!hasOwnProp(opts, on)) { leaves.push(COND_NEUTRAL); continue; }
+        leaves.push(!!c.options[on] === opts[on] ? COND_TRUE : COND_FALSE);
+      }
+    } else if (key === 'option' || key === 'value') {
+      /* 两项在下面统筹处理：value 必须与 option 同时出现（schema 的 allOf 约束） */
+      continue;
+    } else if (FE.STATUS_GROUPS.indexOf(key) >= 0) {
+      leaves.push(groupResult(key, c[key], st));
+    } else {
+      return COND_FALSE;                       // 未知条件关键字不匹配
+    }
+  }
+  if (hasOwnProp(c, 'option')) {
+    if (typeof c.option !== 'string' || !c.option) return COND_FALSE;
+    var want = hasOwnProp(c, 'value') ? !!c.value : true;
+    if (!hasOwnProp(opts, c.option)) leaves.push(COND_NEUTRAL);
+    else leaves.push(opts[c.option] === want ? COND_TRUE : COND_FALSE);
+  } else if (hasOwnProp(c, 'value')) {
+    return COND_FALSE;                         // 只写 value 不写 option：非法
+  }
+  return andResults(leaves);
+}
+
+function andResults(list) {
+  var neutral = false;
+  for (var i = 0; i < list.length; i++) {
+    if (list[i] === COND_FALSE) return COND_FALSE;
+    if (list[i] === COND_NEUTRAL) neutral = true;
+  }
+  return neutral ? COND_NEUTRAL : COND_TRUE;
+}
+
+function groupResult(kind, list, status) {
+  if (!Array.isArray(list) || !list.length) return COND_FALSE;
+  var hasTrue = false, hasFalse = false, hasNeutral = false;
+  for (var i = 0; i < list.length; i++) {
+    var v = condResult(list[i], status);
+    if (v === COND_TRUE) hasTrue = true;
+    else if (v === COND_FALSE) hasFalse = true;
+    else hasNeutral = true;
+  }
+  if (kind === 'all_of') {
+    if (hasFalse) return COND_FALSE;
+    return hasNeutral ? COND_NEUTRAL : COND_TRUE;
+  }
+  if (kind === 'any_of') {
+    if (hasTrue) return COND_TRUE;
+    return hasNeutral ? COND_NEUTRAL : COND_FALSE;
+  }
+  /* none_of：子项全不成立才成立；有中性且没有成立项时按中性（其它条件决定结果） */
+  if (hasTrue) return COND_FALSE;
+  return hasNeutral ? COND_NEUTRAL : COND_TRUE;
+}
+
+/* 条件对象（when.rime 或布局变体的 when.rime）三态求值 */
+FE.condResult = condResult;
+
+/* ---------------- 条件对象的显示归一化（求值三态，显示两态） ----------------
+ * 运行时求值是三态（true / false / neutral，见上），但**手改条件的人只见到两态**：
+ * 真 / 假 / 忽略（不写字段）。Foxy 的规则是「未知选项名 = 中性，不决定结果」，
+ * 而编辑器读不到 schema 的 switches 声明 —— 若把未声明的选项一律显示成"假"，
+ * 用户看到的就与运行时相反（写的是"关"，预览却走了真分支）。
+ *
+ * 处理原则（**不要为了显示好看去改判定**）：
+ *   · 求值仍走 FE.condResult 原样三态；
+ *   · 显示时用 `!!` 把中性摊成假，并在摘要里标出该项其实是「未知 / 中性」；
+ *   · 条件编辑器（对话框 / 布局变体行）只允许写布尔叶子与 option+value，
+ *     要写组合请编辑 JSON —— 那是低频用法，图形化反而会把人绕晕。 */
+
+/* 单个条件项 → 显示用的布尔值（中性按假算） */
+function condShownValue(c, status) {
+  return !!condResult(c, status);
+}
+
+/* 条件对象 → 一组 {key, label, kind, value, raw, optionName?}，供面板按需渲染。
+ * kind: 'bool'（composing/ascii_mode/disabled）/
+ *       'option'（option + value，或 options 映射里的一项）/
+ *       'group'（all_of / any_of / none_of）
+ * 顺序固定：布尔叶子 → 选项叶子 → 组合。JSON 键序不影响显示。 */
+function condSummaryList(c, status) {
+  var out = [];
+  if (!isPlainObject(c)) return out;
+  var st = status || NEUTRAL_STATUS;
+  FE.STATUS_CONDS.forEach(function (k) {
+    if (!hasOwnProp(c, k)) return;
+    var one = {};
+    one[k] = !!c[k];
+    out.push({ key: k, kind: 'bool', label: k, value: condShownValue(one, st), raw: !!c[k] });
+  });
+  if (typeof c.option === 'string' && c.option) {
+    var want = hasOwnProp(c, 'value') ? !!c.value : true;
+    var byOption = { option: c.option, value: want };
+    out.push({
+      key: 'option', kind: 'option', label: c.option,
+      value: condShownValue(byOption, st), raw: want, optionName: c.option
+    });
+  } else if (isPlainObject(c.options)) {
+    for (var on in c.options) {
+      if (!hasOwnProp(c.options, on)) continue;
+      var m = {}; m[on] = !!c.options[on];
+      out.push({
+        key: 'options.' + on, kind: 'option', label: on,
+        value: condShownValue({ options: m }, st), raw: !!c.options[on], optionName: on
+      });
+    }
+  }
+  FE.STATUS_GROUPS.forEach(function (g) {
+    if (!hasOwnProp(c, g)) return;
+    var lst = Array.isArray(c[g]) ? c[g] : [];
+    var byGroup = {}; byGroup[g] = lst;
+    out.push({ key: g, kind: 'group', label: g + '(' + lst.length + ')', value: condShownValue(byGroup, st), raw: lst });
+  });
+  return out;
+}
+
+/* 一行条件摘要（键列表 / 变体卡片 / 布局变体行共用）：
+ * 布尔写 k=真/假，选项写 名=真/假，组合写 组名(条数)✓/✗。不可回写，只为人读。 */
+function condSummaryText(when) {
+  if (!when || !isPlainObject(when.rime)) return '（无条件）';
+  var parts = condSummaryList(when.rime, null).map(function (it) {
+    if (it.kind === 'group') return it.label + (it.value ? ' ✓' : ' ✗');
+    return it.label + '=' + (it.value ? '真' : '假');
+  });
+  if (!parts.length) return '（无条件）';
+  return parts.join(' 且 ');
+}
+
+/* 条件对象（**含组合内部递归**）里出现过的所有选项名。
+ * 校验时收集一份，喂给预览工具栏当开关；编辑器读不到 schema 的 switches，
+ * 只能"用户写了什么就列什么"。 */
+function condOptionNames(c, out) {
+  out = out || {};
+  if (!isPlainObject(c)) return out;
+  if (typeof c.option === 'string' && c.option) out[c.option] = true;
+  if (isPlainObject(c.options)) {
+    for (var k in c.options) if (hasOwnProp(c.options, k)) out[k] = true;
+  }
+  FE.STATUS_GROUPS.forEach(function (g) {
+    if (Array.isArray(c[g])) c[g].forEach(function (sub) { condOptionNames(sub, out); });
+  });
+  return out;
+}
+
+FE.condSummaryList = condSummaryList;
+FE.condSummaryText = condSummaryText;
+FE.condOptionNames = condOptionNames;
+
+
 function variantMatches(when, status) {
   if (!when || !isPlainObject(when.rime)) return true;
-  var r = when.rime;
-  var conds = Object.keys(r);
-  for (var i = 0; i < conds.length; i++) {
-    var cond = conds[i];
-    if (FE.STATUS_CONDS.indexOf(cond) < 0) return false;
-    if (!!r[cond] !== !!status[cond]) return false;
-  }
-  return true;
+  return condResult(when.rime, status) === COND_TRUE;
 }
 FE.variantMatches = variantMatches;
 
@@ -503,6 +699,59 @@ FE.gestureInfo = function (g, status, depth, scope) {
   else if (has(g, 'endAction')) out.end = (g.endAction == null) ? null : g.endAction;
   else if (has(g, 'endActions')) out.end = (g.endActions == null) ? null : g.endActions;
   else if (out.inheritedHold && out.inheritedHold.end != null) out.end = out.inheritedHold.end;
+  /* drag 专有字段：step（dp）/ feedback（none|vibrate|key）。其余方向与 end 家族
+   * 复用上面的手势解析，由 FE.dragInfo 逐方向展开。 */
+  if (has(g, 'step')) out.step = (g.step == null) ? null : g.step;
+  if (has(g, 'feedback')) out.feedback = (g.feedback == null) ? null : g.feedback;
+  return out;
+};
+
+/* drag 手势 → { directions:{up,down,left,right}, end, step, feedback, label, hint, popup, raw, ref }
+ * 语义要点（SKILL「Continuous drag」）：
+ *   - 四个方向各自一个「每步动作」，与 swipe 一样支持 ref 继承与 null 删除；
+ *   - end / endAction / endActions 三种写法等价，都是「松手跑一次」的动作；
+ *   - step 以 dp 计，缺省取 App 的光标移动步长设置；feedback 缺省 vibrate；
+ *   - drag:null 删除整个拖动手势，方向 null 只删该方向。 */
+FE.dragInfo = function (g, status, depth, scope) {
+  if (!isPlainObject(g)) return null;
+  depth = depth || 0;
+  if (depth > 12) return null;
+  var out = { raw: g, directions: {}, step: null, feedback: 'vibrate', label: null, hint: undefined, popup: undefined };
+  if (typeof g.ref === 'string' && g.ref) {
+    var sub = FE.evalPlacement({ ref: g.ref }, status, scope);
+    var base = (sub.eff && isPlainObject(sub.eff.drag)) ? sub.eff.drag : null;
+    if (base) {
+      var bi = FE.dragInfo(base, status, depth + 1, scope);
+      if (bi) {
+        out.directions = bi.directions;
+        out.step = bi.step;
+        out.feedback = bi.feedback;
+        out.label = bi.label;
+        out.hint = bi.hint;
+        out.popup = bi.popup;
+      }
+    }
+    out.ref = g.ref;
+  }
+  for (var i = 0; i < FE.DRAG_DIRS.length; i++) {
+    var d = FE.DRAG_DIRS[i];
+    if (!Object.prototype.hasOwnProperty.call(g, d)) continue;
+    if (g[d] == null) { delete out.directions[d]; continue; }
+    var gi = FE.gestureInfo(g[d], status, depth + 1, scope);
+    if (gi) out.directions[d] = gi;
+  }
+  /* end / endAction / endActions 三种写法等价；显式 null 表示清空（不回退到引用继承）。
+   * 必须在合并 ref 继承之后处理，才能覆盖被引用 drag 的松手动作。 */
+  var own = function (k) { return Object.prototype.hasOwnProperty.call(g, k); };
+  if (own('end')) out.end = (g.end == null) ? null : FE.gestureInfo(g.end, status, depth + 1, scope);
+  else if (own('endAction')) out.end = (g.endAction == null) ? null : FE.gestureInfo(g.endAction, status, depth + 1, scope);
+  else if (own('endActions')) out.end = (g.endActions == null) ? null : FE.gestureInfo(g.endActions, status, depth + 1, scope);
+  else if (out.end === undefined) out.end = null;
+  if (Object.prototype.hasOwnProperty.call(g, 'step')) out.step = (g.step == null) ? null : g.step;
+  if (Object.prototype.hasOwnProperty.call(g, 'feedback')) out.feedback = (g.feedback == null) ? 'vibrate' : g.feedback;
+  if (Object.prototype.hasOwnProperty.call(g, 'label')) out.label = (g.label == null) ? '' : g.label;
+  if (Object.prototype.hasOwnProperty.call(g, 'hint')) out.hint = (g.hint == null) ? '' : g.hint;
+  if (Object.prototype.hasOwnProperty.call(g, 'popup')) out.popup = (g.popup === null) ? false : g.popup;
   return out;
 };
 
@@ -796,6 +1045,44 @@ function appCommandExists(command) {
   return (FE.APP_COMMANDS || []).some(function (x) { return x[0] === command; });
 }
 
+/* ---------------- 变体条件（when.rime）校验 ----------------
+ * 与 FE.condResult 的求值口径严格对应：未知关键字报错（Foxy 端永远不匹配），
+ * value 必须与 option 同时出现（schema 的 allOf 约束），选项名允许自定义
+ * （编辑器读不到活动 schema 的 switches 声明，无法判断「未声明的选项」是错还是中性）。 */
+function validateCondition(c, where, err, warnFn, reportOptions) {
+  if (!isPlainObject(c)) { err(where + ' 必须是条件对象'); return; }
+  var keysList = Object.keys(c);
+  if (!keysList.length) { err(where + ' 是空条件对象（永远不会匹配任何状态）'); return; }
+  if (hasOwnProp(c, 'value') && !hasOwnProp(c, 'option')) err(where + ' 的 value 必须与 option 同时出现');
+  if (hasOwnProp(c, 'option') && (typeof c.option !== 'string' || !c.option)) err(where + ' 的 option 必须是非空字符串');
+  if (hasOwnProp(c, 'value') && typeof c.value !== 'boolean') err(where + ' 的 value 必须是布尔');
+  for (var i = 0; i < keysList.length; i++) {
+    var key = keysList[i];
+    if (FE.STATUS_CONDS.indexOf(key) >= 0) {
+      if (typeof c[key] !== 'boolean') err(where + '.' + key + ' 必须是布尔');
+    } else if (key === 'option') {
+      if (reportOptions && typeof c.option === 'string') reportOptions(c.option);
+    } else if (key === 'value') {
+      /* 上面已校验 */
+    } else if (key === 'options') {
+      if (!isPlainObject(c.options)) { err(where + '.options 必须是「选项名 → 布尔」对象'); continue; }
+      for (var on in c.options) {
+        if (!hasOwnProp(c.options, on)) continue;
+        if (typeof c.options[on] !== 'boolean') err(where + '.options.' + on + ' 必须是布尔');
+        if (reportOptions && on) reportOptions(on);
+      }
+    } else if (FE.STATUS_GROUPS.indexOf(key) >= 0) {
+      if (!Array.isArray(c[key]) || !c[key].length) { err(where + '.' + key + ' 必须是非空数组'); continue; }
+      for (var j = 0; j < c[key].length; j++) {
+        validateCondition(c[key][j], where + '.' + key + '[' + j + ']', err, warnFn, reportOptions);
+      }
+    } else {
+      err(where + ' 含未知条件关键字: ' + key + '（Foxy 端该条件永远不匹配）');
+    }
+  }
+}
+FE.validateCondition = validateCondition;
+
 /* 校验一个直接动作；profile 可省略（popup profile 没有命名布局上下文）。 */
 function validateAction(action, where, err, profile) {
   if (!isPlainObject(action)) { err(where + ' 必须是动作对象'); return; }
@@ -887,6 +1174,25 @@ function checkGestureRefs(container, where, err, profile, scope) {
   }
   ['tap', 'doubleTap', 'longPress', 'hold'].forEach(function (f) { checkOne(container[f], where + ' 的 ' + f); });
   if (isPlainObject(container.swipe)) FE.SWIPE_DIRS.forEach(function (d) { checkOne(container.swipe[d], where + ' 的 swipe.' + d); });
+  checkDrag(container.drag, where + ' 的 drag');
+  /* drag：方向槽位与 end 家族都走同一套手势校验，另外单独校验 step / feedback 的取值 */
+  function checkDrag(dg, dw) {
+    if (dg == null) return;
+    if (!isPlainObject(dg)) { err(dw + ' 必须是对象'); return; }
+    FE.DRAG_DIRS.forEach(function (d) { checkOne(dg[d], dw + '.' + d); });
+    if (dg.end != null) checkOne(dg.end, dw + '.end');
+    if (dg.endAction != null) checkOne(dg.endAction, dw + '.endAction');
+    if (dg.endActions != null) {
+      if (!Array.isArray(dg.endActions)) err(dw + '.endActions 必须是数组');
+      else dg.endActions.forEach(function (a, i) { validateAction(a, dw + '.endActions[' + i + ']', err, profile); });
+    }
+    if (dg.step != null && (typeof dg.step !== 'number' || !isFinite(dg.step) || dg.step <= 0)) {
+      err(dw + '.step 必须是大于 0 的数字（单位 dp）');
+    }
+    if (dg.feedback != null && FE.DRAG_FEEDBACKS.indexOf(dg.feedback) < 0) {
+      err(dw + '.feedback 只能是 ' + FE.DRAG_FEEDBACKS.join(' / ') + '：' + dg.feedback);
+    }
+  }
 }
 
 FE.validateProfile = function (profile) {
@@ -920,6 +1226,10 @@ FE.validateProfile = function (profile) {
   }
   function err(msg, loc) { addIssue('error', msg, loc); }
   function warn(msg, loc) { addIssue('warn', msg, loc); }
+  /* 变体条件里出现过的选项名：收集起来给预览工具栏当开关用（未声明的选项在
+   * Foxy 端是中性，编辑器读不到 schema switches，只能按「用户写了就列出来」处理）。 */
+  var optionNames = {};
+  function reportOptionName(name) { if (name) optionNames[name] = true; }
   /* 在给定定位上下文中执行 fn，结束后恢复（支持嵌套：区段 → 行 → 按键） */
   function inCtx(next, fn) {
     var prev = ctx;
@@ -938,6 +1248,22 @@ FE.validateProfile = function (profile) {
     }
     if (!isPlainObject(profile.layouts) || Object.keys(profile.layouts).length === 0) {
       err('layouts 必须是非空对象');
+    }
+    /* 顶层 icons：自定义图标名 → 内联 SVG/XML 载荷（文档：键的 icon 可以引用这里，
+     * definitions.json 里的 icons 与布局自己的同名合并、以布局为准）。
+     * 这里只查形状，不解析 SVG —— 渲染时 iconSvgOf 会做清洗并回落到文本标签。 */
+    if (profile.icons != null) {
+      if (!isPlainObject(profile.icons)) {
+        err('icons 必须是「图标名 → 内联 svg:/xml: 载荷」对象');
+      } else {
+        Object.keys(profile.icons).forEach(function (n) {
+          var v = profile.icons[n];
+          if (!n) err('icons 含空名字');
+          else if (typeof v !== 'string') err('icons.' + n + ' 必须是字符串');
+          else if (!FE.isInlineIcon(v)) err('icons.' + n + ' 必须以 svg: 或 xml: 开头（自定义图标载荷）');
+          else if (!FE.iconMarkupFromPayload(v)) err('icons.' + n + ' 的载荷内容为空或无有效标记');
+        });
+      }
     }
 
     var keys = isPlainObject(profile.keys) ? profile.keys : {};
@@ -970,6 +1296,8 @@ FE.validateProfile = function (profile) {
         kd.variants.forEach(function (v, vi) {
           if (!isPlainObject(v)) { err('按键定义 “' + kn + '” 的变体 ' + vi + ' 不是对象'); return; }
           if (typeof v.ref === 'string' && !lookupDef(v.ref, scope)) err('按键定义 “' + kn + '” 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref);
+          if (v.when != null && !isPlainObject(v.when)) err('按键定义 “' + kn + '” 变体 ' + vi + ' 的 when 必须是对象');
+          else if (isPlainObject(v.when)) validateCondition(v.when.rime, '按键定义 “' + kn + '” 变体 ' + vi + ' 的条件', err, warn, reportOptionName);
           checkGestureRefs(v, '按键定义 “' + kn + '” 变体 ' + vi, err, profile, scope);
         });
       }
@@ -989,6 +1317,10 @@ FE.validateProfile = function (profile) {
         L.variants.forEach(function (v, vi) {
           if (!isPlainObject(v) || typeof v.layout !== 'string') err('布局 “' + ln + '” 的变体 ' + vi + ' 缺少 layout 字段');
           else if (!(v.layout in profile.layouts)) err('布局 “' + ln + '” 的变体指向不存在的布局: ' + v.layout);
+          if (isPlainObject(v)) {
+            if (!isPlainObject(v.when)) err('布局 “' + ln + '” 的变体 ' + vi + ' 缺少 when 条件对象');
+            else validateCondition(v.when.rime, '布局 “' + ln + '” 的变体 ' + vi + ' 的条件', err, warn, reportOptionName);
+          }
         });
         /* 布局变体循环检测 */
         var lcolor = {};
@@ -1183,6 +1515,8 @@ FE.validateProfile = function (profile) {
       if (Array.isArray(k.variants)) k.variants.forEach(function (v, vi) {
         if (!isPlainObject(v)) { err(full + ' 的变体 ' + vi + ' 不是对象', { code: 'variant-not-object' }); return; }
         if (typeof v.ref === 'string' && !lookupDef(v.ref, scope)) err(full + ' 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref, { code: 'unresolved-ref' });
+        if (v.when != null && !isPlainObject(v.when)) err(full + ' 变体 ' + vi + ' 的 when 必须是对象', { code: 'variant-not-object' });
+        else if (isPlainObject(v.when)) validateCondition(v.when.rime, full + ' 变体 ' + vi + ' 的条件', err, warn, reportOptionName);
         checkGestureRefs(v, full + ' 变体 ' + vi, err, profile, scope);
       });
       if (isPlainObject(k.override)) {
@@ -1190,6 +1524,8 @@ FE.validateProfile = function (profile) {
         if (Array.isArray(k.override.variants)) k.override.variants.forEach(function (v, vi) {
           if (!isPlainObject(v)) { err(full + ' override 变体 ' + vi + ' 不是对象', { code: 'variant-not-object' }); return; }
           if (typeof v.ref === 'string' && !lookupDef(v.ref, scope)) err(full + ' override 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref, { code: 'unresolved-ref' });
+          if (v.when != null && !isPlainObject(v.when)) err(full + ' override 变体 ' + vi + ' 的 when 必须是对象', { code: 'variant-not-object' });
+          else if (isPlainObject(v.when)) validateCondition(v.when.rime, full + ' override 变体 ' + vi + ' 的条件', err, warn, reportOptionName);
           checkGestureRefs(v, full + ' override 变体 ' + vi, err, profile, scope);
         });
       }
@@ -1257,8 +1593,12 @@ FE.validateProfile = function (profile) {
     }
   }
   /* errors/warnings 保持字符串数组（历史 API 与既有断言不变）；
-   * issues 为等长的结构化版本，带 code 与区段/行/键坐标，供 UI 跳转定位。 */
-  return { errors: errors, warnings: warnings, issues: issues };
+   * issues 为等长的结构化版本，带 code 与区段/行/键坐标，供 UI 跳转定位。
+   * optionNames 是变体条件里出现过的选项名（排序后），供预览栏生成开关。 */
+  return {
+    errors: errors, warnings: warnings, issues: issues,
+    optionNames: Object.keys(optionNames).sort()
+  };
 };
 
 /* ================================================================
@@ -1524,8 +1864,8 @@ FE.hintSizeOf = hintSizeOf;
  * ================================================================ */
 function buildRefIndex(profile, popupProfile) {
   profile = isPlainObject(profile) ? profile : {};
-  var idx = { key: {}, action: {}, macro: {} };
-  var GESTURES = ['tap', 'doubleTap', 'longPress', 'hold'];
+  var idx = { key: {}, action: {}, macro: {}, icons: {} };
+  var GESTURES = FE.GESTURE_SLOTS;
   /* hold 的起始/结束侧有 start/end 与 action/endAction(s) 两种写法 */
   var HOLD_SIDES = ['start', 'end', 'endAction', 'endActions'];
 
@@ -1564,9 +1904,20 @@ function buildRefIndex(profile, popupProfile) {
   function nodeRefs(node, base, loc, depth) {
     if (!isPlainObject(node) || depth > 6) return;
     if (typeof node.ref === 'string') push('key', node.ref, base, loc);
+    /* 自定义图标（顶层 icons 的名字）也是一条引用：只统计**直接写在这个节点上**的 icon。
+     * 经 ref 继承来的图标不计入 —— 那属于被引用定义自己的说法，否则同一个定义
+     * 会被它的每个使用者重复计一次，「使用 N」就失去意义了。 */
+    if (typeof node.icon === 'string' && node.icon && !FE.isBuiltinIcon(node.icon) && !FE.isInlineIcon(node.icon)) {
+      push('icons', node.icon, base, loc);
+    }
     GESTURES.forEach(function (slot) { gestureRefs(node[slot], base + ' · ' + slot, loc); });
     if (isPlainObject(node.swipe)) {
       FE.SWIPE_DIRS.forEach(function (d) { gestureRefs(node.swipe[d], base + ' · swipe.' + d, loc); });
+    }
+    /* drag 的四个方向各不相同（swipe 是四向映射的同形写法，drag 也是），
+     * 松手动作（end/endAction/endActions）已由 gestureRefs 的 HOLD_SIDES 覆盖。 */
+    if (isPlainObject(node.drag)) {
+      FE.DRAG_DIRS.forEach(function (d) { gestureRefs(node.drag[d], base + ' · drag.' + d, loc); });
     }
     (Array.isArray(node.variants) ? node.variants : []).forEach(function (v, i) {
       if (isPlainObject(v)) nodeRefs(v, base + ' · 变体' + (i + 1), loc, depth + 1);
@@ -1671,6 +2022,12 @@ function buildRefIndex(profile, popupProfile) {
         FE.SWIPE_DIRS.forEach(function (d) { collectSpec(node.swipe[d], out, depth + 1); });
       }
       HOLD_SIDES.forEach(function (k) { if (node[k] != null) collectSpec(node[k], out, depth + 1); });
+      /* drag 的方向与松手动作不在 GESTURES/HOLD_SIDES 的扫描面上（它们挂在
+       * node.drag 里面），必须单独下探，否则「使用数」会漏掉连续拖动的每步动作。 */
+      if (isPlainObject(node.drag)) {
+        FE.DRAG_DIRS.forEach(function (d) { collectSpec(node.drag[d], out, depth + 1); });
+        FE.DRAG_END_SLOTS.forEach(function (s) { if (node.drag[s] != null) collectSpec(node.drag[s], out, depth + 1); });
+      }
       (Array.isArray(node.variants) ? node.variants : []).forEach(function (v) { collectNode(v, out, depth + 1); });
       if (isPlainObject(node.override)) collectNode(node.override, out, depth + 1);
     }
@@ -1753,7 +2110,7 @@ FE.usageOf = usageOf;
 function outgoingRefsOf(profile, kind, name) {
   profile = isPlainObject(profile) ? profile : {};
   var out = [], seen = {};
-  var GESTURES = ['tap', 'doubleTap', 'longPress', 'hold'];
+  var GESTURES = FE.GESTURE_SLOTS;
   var HOLD_SIDES = ['start', 'end', 'endAction', 'endActions'];
 
   function add(k, n, where) {
@@ -1789,6 +2146,10 @@ function outgoingRefsOf(profile, kind, name) {
     GESTURES.forEach(function (slot) { gestureRefs(node[slot], join(where, slot), depth + 1); });
     if (isPlainObject(node.swipe)) {
       FE.SWIPE_DIRS.forEach(function (d) { gestureRefs(node.swipe[d], join(where, 'swipe.' + d), depth + 1); });
+    }
+    if (isPlainObject(node.drag)) {
+      FE.DRAG_DIRS.forEach(function (d) { gestureRefs(node.drag[d], join(where, 'drag.' + d), depth + 1); });
+      FE.DRAG_END_SLOTS.forEach(function (s) { if (node.drag[s] != null) specRefs(node.drag[s], join(where, 'drag.' + s), depth + 1); });
     }
     (Array.isArray(node.variants) ? node.variants : []).forEach(function (v, i) {
       if (isPlainObject(v)) nodeRefs(v, join(where, '变体' + (i + 1)), depth + 1);
@@ -1902,6 +2263,26 @@ function compileKeyItem(placement, loc, status, scope) {
         label: (gi && gi.label != null && String(gi.label) !== '') ? String(gi.label) : null
       };
     });
+  }
+  /* drag 连续拖动：每步动作按方向记录，松手动作单独一条。
+   * 摘要形状与其它手势一致，tooltip 与定义列表徽标复用同一份数据。 */
+  if (eff.drag != null) {
+    var di = FE.dragInfo(eff.drag, status, 0, scope);
+    if (di) {
+      item.drag = { dirs: {}, step: di.step, feedback: di.feedback, label: di.label, hint: di.hint };
+      FE.DRAG_DIRS.forEach(function (d) {
+        var gi2 = di.directions[d];
+        if (!gi2) return;
+        item.drag.dirs[d] = {
+          display: gi2.action ? gi2.action.display : '',
+          label: (gi2.label != null && String(gi2.label) !== '') ? String(gi2.label) : null
+        };
+      });
+      if (di.end) item.drag.end = {
+        display: di.end.action ? di.end.action.display : '',
+        label: (di.end.label != null && String(di.end.label) !== '') ? String(di.end.label) : null
+      };
+    }
   }
   /* 徽标标签：长按（蓝）、按住（橙） */
   if (item.summaries.longPress && item.summaries.longPress.label) item.lpLabel = item.summaries.longPress.label;
@@ -2041,6 +2422,59 @@ FE.eachCompiledKey = function (compiled, cb) {
     }
   });
 };
+
+var ICONS_SVG = {
+  backspace: '<svg viewBox="0 0 24 24" class="kb-icon"><path d="M9 5h11a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 20 19H9l-6.2-6.2a1 1 0 0 1 0-1.6L9 5zm2.4 4.3-1.06 1.06L12.3 12.3l-1.96 1.96L11.4 15.3l1.96-1.95 1.95 1.95 1.07-1.07-1.96-1.95 1.96-1.96-1.07-1.06-1.95 1.95-1.96-1.95z" fill="currentColor"/></svg>',
+  shift: '<svg viewBox="0 0 24 24" class="kb-icon"><path d="M12 3.5 3.8 12.6c-.4.5-.05 1.2.58 1.2H9v5.2c0 .6.44 1 1 1h4c.56 0 1-.4 1-1v-5.2h4.62c.63 0 .98-.7.58-1.2L12 3.5z" fill="currentColor"/></svg>',
+  shiftOutline: '<svg viewBox="0 0 24 24" class="kb-icon"><path d="M12 4.4 4.9 12.4h3.6v5.4c0 .3.27.55.6.55h5.8c.33 0 .6-.25.6-.55v-5.4h3.6L12 4.4z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>',
+  enter: '<svg viewBox="0 0 24 24" class="kb-icon"><path d="M19 6.5v5.6c0 .9-.72 1.6-1.6 1.6H6.7l2.6-2.6-1.2-1.2-4.6 4.6 4.6 4.6 1.2-1.2-2.6-2.6h11.1c1.66 0 3-1.34 3-3V6.5h-2.2z" fill="currentColor"/></svg>'
+};
+/* 取图标映射（顶层 icons）。scope 可显式传入尚未装入 state 的 profile。 */
+function iconMapOf(scope) {
+  var p = scope ? scope.profile : state.profile;
+  if (!isPlainObject(p) || !isPlainObject(p.icons)) return {};
+  return p.icons;
+}
+FE.iconMapOf = iconMapOf;
+
+/* 内联 svg:/xml: 图标载荷 → 可直接 innerHTML 的标记。
+ * 编辑器打开的是本地文件，但 icons 也可能来自导入的 definitions.json，
+ * 因此仍按「不执行任何脚本」的最小白名单清洗一次：丢掉 <script> 与
+ * 内联事件属性（on*），其余原样保留（SVG 自带的 fill/stroke 颜色优先）。 */
+function iconMarkupFromPayload(payload) {
+  var s = String(payload == null ? '' : payload).trim();
+  var lower = s.toLowerCase();
+  var i = -1;
+  for (var k = 0; k < FE.INLINE_ICON_PREFIXES.length; k++) {
+    if (lower.indexOf(FE.INLINE_ICON_PREFIXES[k]) === 0) { i = FE.INLINE_ICON_PREFIXES[k].length; break; }
+  }
+  if (i < 0 || !s.slice(i).trim()) return null;
+  var out = s.slice(i).trim();
+  out = out.replace(/<script[\s\S]*?<\/script\s*>/gi, '');
+  out = out.replace(/<script[^>]*\/?>/gi, '');
+  out = out.replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  out = out.replace(/(href|src)\s*=\s*("javascript:[^"]*"|'javascript:[^']*')/gi, '');
+  if (!out.trim()) return null;
+  /* 统一挂上 kb-icon，保证尺寸/取色规则与内置图标一致 */
+  if (!/class\s*=/.test(out)) out = out.replace(/^<svg/i, '<svg class="kb-icon"');
+  return out;
+}
+FE.iconMarkupFromPayload = iconMarkupFromPayload;
+
+/* icon 取值 → SVG 标记（null = 不渲染图标，回落到文本标签）
+ * 解析顺序：内置名 → icons 映射（值本身可以是 svg: 载荷）→ 内联 svg:/xml: 载荷。
+ * 未知名字按 Foxy 规则「不渲染图标」。 */
+function iconSvgOf(icon, scope) {
+  if (typeof icon !== 'string' || !icon) return null;
+  if (ICONS_SVG[icon]) return ICONS_SVG[icon];
+  var map = iconMapOf(scope);
+  if (Object.prototype.hasOwnProperty.call(map, icon)) {
+    var mapped = iconMarkupFromPayload(map[icon]);
+    if (mapped) return mapped;
+  }
+  return iconMarkupFromPayload(icon);
+}
+FE.iconSvgOf = iconSvgOf;
 
 /* ================================================================
  * ================================================================
@@ -2731,6 +3165,44 @@ function syncPreviewPanelChrome() {
 }
 FE.syncPreviewPanelChrome = syncPreviewPanelChrome;
 
+/* ---------------- 预览工具栏：选项开关 ----------------
+ * Foxy 的变体条件除了 composing/ascii_mode/disabled 还有选项（option / options：
+ * 平假名、ASCII 标点、简繁……），编辑器不知道活动 schema 声明了哪些开关，
+ * 只能把「条件里出现过的选项名 + 常开选项」列成开关，让预览状态可调。
+ * 关掉的选项与未声明一样是中性：不写进条件里的时候不参与判定。 */
+function renderPreviewOptionToggles() {
+  var host = null;
+  if (typeof document !== 'undefined') host = document.getElementById('pt-options');
+  if (!host) return;
+  var st = state.status;
+  if (!isPlainObject(st.options)) st.options = {};
+  var names = {};
+  FE.ALWAYS_ON_OPTIONS.forEach(function (n) { names[n] = true; });
+  var used = (state.validation && state.validation.optionNames) || [];
+  used.forEach(function (n) { names[n] = true; });
+  var list = Object.keys(names).sort();
+  clearEl(host);
+  if (!list.length) { host.hidden = true; return; }
+  host.hidden = false;
+  host.appendChild(h('span', { class: 'mini-label' }, '选项'));
+  list.forEach(function (n) {
+    var cb = h('input', { type: 'checkbox' });
+    cb.checked = !!st.options[n];
+    cb.addEventListener('change', function () {
+      /* 只把「勾上」写成 true，取消勾选直接删键：
+       * optionState 对没写的名字返回 false，与显式 false 等价；删掉更接近
+       * 「这个选项没被使用」的原状，也不会把中性语义莫名其妙固化成假。 */
+      state.status.options = state.status.options || {};
+      if (cb.checked) state.status.options[n] = true;
+      else delete state.status.options[n];
+      renderPreview();
+    });
+    host.appendChild(h('label', { class: 'check', title: '选项条件 ' + n + '（预览按此开关判定）' }, cb, ' ' + n));
+  });
+}
+FE.renderPreviewOptionToggles = renderPreviewOptionToggles;
+
+
 /* ---------------- 当前布局访问 ---------------- */
 function curLayout() {
   return (state.profile && state.layoutName && state.profile.layouts[state.layoutName]) || null;
@@ -2760,13 +3232,6 @@ function ensureCurSections() {
 /* ================================================================
  * 预览渲染
  * ================================================================ */
-var ICONS_SVG = {
-  backspace: '<svg viewBox="0 0 24 24" class="kb-icon"><path d="M9 5h11a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 20 19H9l-6.2-6.2a1 1 0 0 1 0-1.6L9 5zm2.4 4.3-1.06 1.06L12.3 12.3l-1.96 1.96L11.4 15.3l1.96-1.95 1.95 1.95 1.07-1.07-1.96-1.95 1.96-1.96-1.07-1.06-1.95 1.95-1.96-1.95z" fill="currentColor"/></svg>',
-  shift: '<svg viewBox="0 0 24 24" class="kb-icon"><path d="M12 3.5 3.8 12.6c-.4.5-.05 1.2.58 1.2H9v5.2c0 .6.44 1 1 1h4c.56 0 1-.4 1-1v-5.2h4.62c.63 0 .98-.7.58-1.2L12 3.5z" fill="currentColor"/></svg>',
-  shiftOutline: '<svg viewBox="0 0 24 24" class="kb-icon"><path d="M12 4.4 4.9 12.4h3.6v5.4c0 .3.27.55.6.55h5.8c.33 0 .6-.25.6-.55v-5.4h3.6L12 4.4z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>',
-  enter: '<svg viewBox="0 0 24 24" class="kb-icon"><path d="M19 6.5v5.6c0 .9-.72 1.6-1.6 1.6H6.7l2.6-2.6-1.2-1.2-4.6 4.6 4.6 4.6 1.2-1.2-2.6-2.6h11.1c1.66 0 3-1.34 3-3V6.5h-2.2z" fill="currentColor"/></svg>'
-};
-
 /* 有效标签（应用 Shift 与状态标签示例）。
  * status / statusSample 由调用方传入，不再隐式读全局 state，便于任意状态渲染。 */
 function displayLabel(eff, status, statusSample) {
@@ -3138,6 +3603,25 @@ function itemTooltip(item, shift) {
     lines.push((f === 'longPress' ? '长按' : f === 'hold' ? '按住' : '双击') + ': ' +
       (s.display || '') + (s.label ? ' 「' + s.label + '」' : ''));
   });
+  if (item.drag) {
+    var dirCn = { up: '上', down: '下', left: '左', right: '右' };
+    var dragParts = [];
+    FE.DRAG_DIRS.forEach(function (d) {
+      var dd = item.drag.dirs[d];
+      if (!dd) return;
+      dragParts.push(dirCn[d] + ' ' + (dd.display || '') + (dd.label ? ' 「' + dd.label + '」' : ''));
+    });
+    var dragLine = '拖动: ' + (dragParts.length ? dragParts.join(' · ') : '（无每步动作）');
+    if (item.drag.end) {
+      dragLine += ' · 松手 ' + (item.drag.end.display || '') +
+        (item.drag.end.label ? ' 「' + item.drag.end.label + '」' : '');
+    }
+    var extra = [];
+    if (item.drag.step != null) extra.push('步长 ' + item.drag.step + 'dp');
+    if (item.drag.feedback) extra.push('反馈 ' + item.drag.feedback);
+    if (extra.length) dragLine += '（' + extra.join('，') + '）';
+    lines.push(dragLine);
+  }
   if (item.popupKey) {
     var tipLine = '长按弹出: popupKey=' + item.popupKey;
     if (state.popupProfile && FE.popupCandidates) {
@@ -3200,9 +3684,10 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
   }
   applyKeyColors(el, eff, false, status);
 
-  if (eff.icon && ICONS_SVG[eff.icon]) {
+  var iconSvg = eff.icon ? iconSvgOf(eff.icon, opts.scope) : null;
+  if (iconSvg) {
     var wrap = h('span', { class: 'kb-icon-wrap' });
-    var svg = ICONS_SVG[eff.icon];
+    var svg = iconSvg;
     if (eff.icon === 'shift' && eff.modifier === 'SHIFT') {
       svg = state.status.shift ? ICONS_SVG.shift : ICONS_SVG.shiftOutline;
       if (state.status.shift) wrap.classList.add('kb-icon-active');
@@ -3609,6 +4094,7 @@ function renderPreview() {
    * details 展开 等路径都会直接调 renderPreview，若只在切页时同步，
    * 这些路径下就会出现「渲染的是符号面板、标题却写布局预览」的错配。幂等，重复调无害。 */
   syncPreviewPanelChrome();
+  renderPreviewOptionToggles();
   clearEl(host);
   /* 先清空编译产物：提前返回的分支若留着上一次的结果，
    * renderMeta 的键数统计与后续消费 state.compiled 的逻辑会读到过期数据。 */
@@ -4088,23 +4574,6 @@ function renderLayoutSettings() {
   clearEl(vhost);
   var variants = (L && Array.isArray(L.variants)) ? L.variants : [];
   variants.forEach(function (v, vi) {
-    var condSel = function (cond) {
-      var val = v && v.when && v.when.rime ? v.when.rime[cond] : undefined;
-      var s = h('select', { class: 'mini-select' });
-      s.appendChild(h('option', { value: '' }, cond + ':忽略'));
-      s.appendChild(h('option', { value: '1', selected: val === true }, cond + ':真'));
-      s.appendChild(h('option', { value: '0', selected: val === false }, cond + ':假'));
-      s.onchange = function () {
-        mutate(function () {
-          var vv = curLayout().variants[vi];
-          if (!vv.when || !isPlainObject(vv.when.rime)) vv.when = { rime: {} };
-          if (s.value === '') delete vv.when.rime[cond];
-          else vv.when.rime[cond] = s.value === '1';
-          if (!Object.keys(vv.when.rime).length) delete vv.when;
-        });
-      };
-      return s;
-    };
     var target = h('select', { class: 'mini-select' });
     Object.keys(state.profile.layouts).forEach(function (n) {
       target.appendChild(h('option', { value: n, selected: v.layout === n }, n));
@@ -4112,11 +4581,27 @@ function renderLayoutSettings() {
     target.onchange = function () {
       mutate(function () { curLayout().variants[vi].layout = target.value; });
     };
-    vhost.appendChild(h('div', { class: 'variant-row' },
-      '当', condSel('composing'), condSel('ascii_mode'), condSel('disabled'),
-      '→ 使用', target,
-      h('button', { class: 'icon-button', title: '删除此变体', onclick: function () { mutate(function () { curLayout().variants.splice(vi, 1); }); } }, '✕')
-    ));
+    /* 条件用与键变体同一套编辑器（buildConditionEditor），
+     * 于是 option / options / 组合条件在布局变体上也能看能改；
+     * 组合条件只读保留（改组合请走 JSON）。 */
+    var condEd = FE.buildConditionEditor(v && v.when, { onChange: applyWhen });
+    /* 条件改变的落点：把编辑器产出的 when 整体写回该变体。
+     * 用 onChange 而不是在外层容器上接 change——DOM 桩的事件不冒泡。 */
+    function applyWhen() {
+      var when = condEd.getWhen();
+      mutate(function () {
+        var vv = curLayout().variants[vi];
+        if (!vv) return;
+        if (when) vv.when = when;
+        else delete vv.when;
+      });
+    }
+    var row = h('div', { class: 'variant-row' },
+      condEd.el,
+      h('div', { class: 'form-row form-inline' },
+        '→ 使用', target,
+        h('button', { class: 'icon-button', title: '删除此变体', onclick: function () { mutate(function () { curLayout().variants.splice(vi, 1); }); } }, '✕')));
+    vhost.appendChild(row);
   });
   var addVariant = h('button', {
     class: 'mini-button', onclick: function () {
@@ -5067,6 +5552,7 @@ function renderKeysTab() {
     if (kd.longPress) gestures.push('长按');
     if (kd.hold) gestures.push('按住');
     if (kd.doubleTap) gestures.push('双击');
+    if (kd.drag != null || (eff && eff.drag != null)) gestures.push('拖动');
     var label = rawLabelOf(eff, NEUTRAL_STATUS) || (eff.icon ? '图标 ' + eff.icon : '');
     var used = usageOf(refIdx, 'key', n);
 
@@ -5129,6 +5615,89 @@ function renderKeysTab() {
   });
 }
 
+
+
+/* ================================================================
+ * 自定义图标列表（顶层 icons）
+ * 键的 icon 除四个内置名外还能是这里的名字，所以这张表与「按键定义」并列放在同一页。
+ * 表里每行：预览 + 名字 + 载荷摘要 + 编辑/改名/删除。
+ * ================================================================ */
+function renderIconsList() {
+  var host = $('icons-list');
+  if (!host) return;
+  clearEl(host);
+  var map = (state.profile && isPlainObject(state.profile.icons)) ? state.profile.icons : {};
+  var names = Object.keys(map).sort();
+  if (!names.length) {
+    host.appendChild(h('div', { class: 'status' },
+      '尚无自定义图标。键的 icon 可以是内置的 backspace / shift / enter / return，' +
+      '也可以是这里的名字，或者直接写 svg:/xml: 载荷。'));
+    return;
+  }
+  var refIdx = currentRefIndex();
+  names.forEach(function (n) {
+    var payload = String(map[n] == null ? '' : map[n]);
+    var markup = FE.iconMarkupFromPayload(payload);
+    var used = refIdx && refIdx.icons ? (refIdx.icons[n] || []) : [];
+    var iconBox = h('span', { class: 'kb-icon-wrap icon-list-preview' });
+    if (markup) iconBox.innerHTML = markup;
+    else iconBox.textContent = '?';
+
+    function openEditor() {
+      if (!FE.openIconDialog) return;
+      FE.openIconDialog({
+        name: n, payload: payload, taken: map,
+        onChange: function (newName, newPayload) {
+          mutate(function () {
+            var ic = state.profile.icons || (state.profile.icons = {});
+            /* 改名：先删旧键再写新键，保持插入顺序稳定（对象键序在导出里会重排，故顺序不重要，
+             * 但删+写能让「改名」在撤销栈里是一次可回退的整体改动）。 */
+            if (newName !== n) delete ic[n];
+            ic[newName] = newPayload;
+          });
+        }
+      });
+    }
+    host.appendChild(h('div', {
+      class: 'def-item def-row-click',
+      title: '点击编辑这个自定义图标',
+      tabindex: '0',
+      onclick: function (e) { if (!clickedInteractive(e, this)) openEditor(); },
+      onkeydown: function (e) {
+        if (e.target !== this) return;
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { stopEv(e); openEditor(); }
+      }
+    },
+      h('div', { class: 'def-main' },
+        iconBox,
+        h('code', { class: 'def-name' }, n),
+        h('span', { class: 'def-badges' },
+          payload.length > 48 ? payload.slice(0, 48) + '…' : payload)),
+      h('div', { class: 'def-tools' },
+        h('button', {
+          type: 'button', class: 'mini-button def-usage-btn',
+          title: '查看哪些按键用了这个图标',
+          onclick: function (e) {
+            stopEv(e);
+            /* 两个方向都给出：谁用了这个图标（按名字引用），载荷本身是什么 */
+            showUsageDialog('自定义图标 “' + n + '” 的使用情况',
+              { count: used.length, items: used },
+              null);
+          }
+        }, '使用 ' + used.length),
+        h('button', {
+          type: 'button', class: 'danger mini-button',
+          onclick: async function (e) {
+            stopEv(e);
+            var msg = '删除自定义图标 “' + n + '”？';
+            if (used.length) msg += '\n它正被 ' + used.length + ' 处引用，删除后这些按键将不再显示图标。';
+            var okDel = await FE.uiConfirm(msg, { title: '删除自定义图标', danger: true, okLabel: '删除' });
+            if (okDel) mutate(function () { delete state.profile.icons[n]; });
+          }
+        }, '删除'))));
+  });
+}
+FE.renderIconsList = renderIconsList;
 
 /* ================================================================
  * 使用情况对话框（网页内建弹窗；可点击条目跳转到引用处）
@@ -5614,6 +6183,7 @@ function renderAll() {
   renderPreview();
   renderLayoutTab();
   renderKeysTab();
+  renderIconsList();
   renderActionsTab();
   renderJsonTab();
   renderOps();
@@ -5782,6 +6352,7 @@ function renderFolderOps() {
       (built.report.overridden.length ? '（本地覆盖 ' + built.report.overridden.length + '）' : ''));
   }
   if (built && built.report.macros.length) parts.push('宏 ' + built.report.macros.length + ' 个');
+  if (built && built.report.icons && built.report.icons.length) parts.push('共享图标 ' + built.report.icons.length + ' 个');
   if (built && built.popupMatch && built.popupMatch.covered > 0) {
     parts.push('弹出菜单 ' + built.popupMatch.entry.name + '（覆盖 ' +
       built.popupMatch.covered + '/' + built.popupMatch.total + ' 个 popupKey）');
@@ -6289,6 +6860,35 @@ function initToolbar() {
     section: 'keys', label: '按键定义', scrollHost: 'keys-list',
     initial: function () { return { ref: 'rime.Tab' }; }
   });
+
+  /* 自定义图标（icons）：**不复用 wireAdd** —— 键定义的空值是对象，图标的空值
+   * 必须是一段可渲染的 SVG 载荷，所以要先打开图标对话框让人写名字与载荷。
+   * 输入框里已经填了名字时把它带进对话框（这样「新建」与「改名」走同一套校验）。 */
+  (function wireIconsAdd() {
+    var inp = $('icons-new'), btn = $('icons-add');
+    if (!btn || !FE.openIconDialog) return;
+    function doAdd() {
+      var name = inp ? inp.value.trim() : '';
+      var map = (state.profile && isPlainObject(state.profile.icons)) ? state.profile.icons : {};
+      if (name && FE.isBuiltinIcon(name)) { FE.uiAlert('“' + name + '” 是内置图标名，不需要自定义'); if (inp) inp.focus(); return; }
+      if (name && map[name]) { FE.uiAlert('图标已存在：' + name); if (inp) inp.focus(); return; }
+      FE.openIconDialog({
+        name: name || null, payload: 'svg:', taken: map,
+        onChange: function (newName, newPayload) {
+          mutate(function () {
+            var ic = state.profile.icons || (state.profile.icons = {});
+            ic[newName] = newPayload;
+          });
+          if (inp) inp.value = '';
+          scrollToDefItem(newName, 'icons-list');
+        }
+      });
+    }
+    btn.addEventListener('click', function (e) { stopEv(e); doAdd(); });
+    if (inp) inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { stopEv(e); doAdd(); }
+    });
+  })();
 
   wireSearch('actions-filter', 'actions-search', renderActionsList, 'actions-filter-clear');
   wireAdd('actions-new', 'actions-add', {

@@ -36,7 +36,7 @@ node test/test-core.js
 node test/test-ui.js
 ```
 
-当前基线是 core 629、UI 1425，两个套件都必须 0 失败。按改动范围追加：
+当前基线是 core 715、UI 1461，两个套件都必须 0 失败。按改动范围追加：
 
 ```bash
 node test/test-color-source.js   # 改过 color-source.js 或颜色链路
@@ -62,6 +62,9 @@ node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 - 字段优先级固定为：定义链 < `override` < 直接字段。
 - 保存时按现有约定扁平化 `override`，不要改变解析结果。
 - `null` 按 Foxy 语义处理：它可能清空标签、恢复默认权重或清除颜色；`tap: null` 保留继承的点击动作。
+- `drag: null` 删除整条拖动手势；`swipe` 与 `drag` 的方向置 `null` 只删该方向，其余方向保留。
+- 变体条件按三态求值（真 / 假 / 中性），不要退化成布尔：未在活动 schema 声明的选项名是中性，未知条件关键字才是不匹配。求值入口是 `FE.condResult`，摘要入口是 `FE.condSummaryText`。
+- 键的 `icon` 只有 backspace / shift / enter / return 是内置名；其余名字先查 profile 顶层 `icons`，再看是否 `svg:` / `xml:` 内联载荷；查不到就不画图标（回落文本），不要报错。
 - `FE.validateProfile` 的 `errors` / `warnings` 字符串数组是兼容 API，不能删除或改类型。
 - `issues` 是与旧数组等长的结构化结果，保留 `level`、`message`、`path`、`code` 和点击定位坐标。
 - 新校验规则必须同时提供稳定 code 和定位信息；合并 issue 时不能丢坐标。
@@ -93,7 +96,8 @@ node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 - 多文件导入通过 `FE.planFolderImport(entries)` / `FE.buildProfileFromPlan(plan, layoutPath)` 规划，definitions 合并不修改输入对象。
 - 单文件、示例或 JSON 导入后清空 `state.folderPlan`、`state.folderDefs`、`state.folderLayoutPath`、`state.folderHint`。
 - 导出分包使用 `FE.splitProfileForExport()`；未改共享项回到 definitions，改动项留在布局文件。
-- `FE.buildRefIndex(profile, popupProfile)` 必须覆盖 key、action、macro；对象就地修改后显式 `invalidateRefIndex()`。
+- `FE.buildRefIndex(profile, popupProfile)` 必须覆盖 key、action、macro、icons 四类；对象就地修改后显式 `invalidateRefIndex()`。
+- 顶层 `icons` 与 `definitions.json` 的 `icons` 一起走 `FE.mergeDefinitions` / `FE.splitProfileForExport`，不要另开一条合并路径。
 - 示例既是用户入口也是测试语料。修改 `examples/` 后先跑 `node tools/build-examples.js`，再跑 core、UI 和真实文件体检。
 - `tools/build-examples.js` 要保留 layout、popup、theme、symbol 的分类映射；不要用会误伤颜文字的正则删除字符串内 `//`。
 

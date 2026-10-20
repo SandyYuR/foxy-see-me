@@ -453,7 +453,7 @@ value:
 "hintTextSize": { "up": 11, "down": 10, "left": 9, "right": 9 }
 ```
 
-The supported icon names are:
+The built-in icon names are:
 
 ```text
 backspace
@@ -462,8 +462,31 @@ enter
 return
 ```
 
-An unknown icon name renders without an icon. `id` is an optional stable
-identity string; it does not affect behavior.
+Any other `icon` value is treated as a custom icon. It can be a name defined in
+the top-level `icons` map (merged from the profile and `definitions.json`), or
+an inline `svg:`/`xml:` payload written directly on the key — the same forms a
+toolbar button's `icon` accepts. Custom icons should ship artwork and are
+tinted with the key text color unless the SVG carries its own colours.
+
+```json
+{
+  "icons": {
+    "foxy.heart": "svg:<svg viewBox=\"0 0 24 24\"><path fill=\"currentColor\" d=\"M12 21s-8-5-8-11a4 4 0 0 1 8-2 4 4 0 0 1 8 2c0 6-8 11-8 11z\"/></svg>"
+  },
+  "keys": {
+    "main.heart": {
+      "label": "♥",
+      "keyType": "FUNCTION",
+      "icon": "foxy.heart",
+      "tap": { "type": "text", "text": "♥" }
+    }
+  }
+}
+```
+
+An `icons` entry may also be placed in `definitions.json` to share it across
+profiles. An unknown icon name renders without an icon. `id` is an optional
+stable identity string; it does not affect behavior.
 
 ## Definition Examples
 
@@ -661,8 +684,8 @@ Foxy currently provides these built-in capabilities to layout authors:
   release event preserves the modifier mask and adds librime's `kReleaseMask`
   (`1 << 30`, or `0x40000000`). Layout authors do not define a separate
   release action.
-- Single tap, double tap, swipe, long press with optional repeat, and hold with
-  separate start/end actions.
+- Single tap, double tap, swipe, long press with optional repeat, hold with
+  separate start/end actions, and continuous drag with per-step/release actions.
 - Reusable action definitions, ordered macros, status-dependent variants, row
   layouts, grid layouts, key appearance overrides, and orientation-specific
   layout height overrides.
@@ -679,12 +702,12 @@ These definitions include Foxy behavior:
 | `foxy.Shift` | `⇧` | modifier key | Controls keyboard Shift state and carries the built-in `modifier: "SHIFT"` behavior. |
 | `foxy.LayoutNumpad` | `123` | function key | Switches directly to `numpad`. |
 | `foxy.LayoutDefault` | `ABC` | function key | Switches to `default`. |
-| `foxy.SelectAll` | `Sel` | function key | Sends `Ctrl+A` to the host editor. |
+| `foxy.SelectAll` | `Sel` | function key | Calls the host editor's native select-all action. |
 | `foxy.Undo` | `Undo` | function key | Calls the host editor's native undo action. |
 | `foxy.Redo` | `Redo` | function key | Calls the host editor's native redo action. |
-| `foxy.Cut` | `Cut` | regular key | Sends `Ctrl+X` to the host editor. |
-| `foxy.Copy` | `Copy` | regular key | Sends `Ctrl+C` to the host editor. |
-| `foxy.Paste` | `Paste` | regular key | Sends `Ctrl+V` to the host editor. |
+| `foxy.Cut` | `Cut` | regular key | Calls the host editor's native cut action. |
+| `foxy.Copy` | `Copy` | regular key | Calls the host editor's native copy action. |
+| `foxy.Paste` | `Paste` | regular key | Calls the host editor's native paste action. |
 | `foxy.KP_Enter` | `Enter` | action key | Sends keypad Enter (`KP_ENTER`) and displays the Enter icon. |
 | `foxy.Spacer` | empty | placeholder | Occupies layout space without drawing or handling input. |
 
@@ -855,7 +878,7 @@ The supported key fields are:
 ```text
 label, shiftedLabel, weight, height, modifier, keyType, id,
  statusLabel, textSize, hintTextSize, icon, colors,
-tap, doubleTap, swipe, longPress, hold
+tap, doubleTap, swipe, longPress, hold, drag
 ```
 
 Fields may also be written directly beside `ref`:
@@ -925,9 +948,10 @@ transparent shadow such as `#00000000`.
 
 `null` clears an inherited value instead of meaning "not specified".
 `label: null` clears the label to an empty string. `longPress: null` and
-`hold: null` remove those gestures, `swipe: null` removes all swipes, and a
-direction set to `null` removes only that swipe direction. `weight`/`height`
-reset to `1`. In a gesture reference, `label`/`hint` blank, `popup` becomes
+`hold: null` remove those gestures, `swipe: null` removes all swipes,
+`drag: null` removes the drag gesture, and a direction set to `null` removes
+only that swipe direction or drag direction. `weight`/`height` reset to `1`.
+In a gesture reference, `label`/`hint` blank, `popup` becomes
 `false`, and `action`/`actions` become empty. `tap: null` keeps the inherited
 click gesture because every key must remain clickable; it is the only `null`
 that does not clear.
@@ -980,6 +1004,35 @@ Common gesture forms:
   }
 }
 ```
+
+```json
+{
+  "drag": {
+    "feedback": "vibrate",
+    "left": { "action": { "type": "app", "command": "editor_select_step", "argument": "left" } },
+    "right": { "action": { "type": "app", "command": "editor_select_step", "argument": "right" } },
+    "end": { "action": { "type": "app", "command": "delete_selection" } }
+  }
+}
+```
+
+`drag` is continuous instead of one-shot: once travel crosses `step` (dp,
+defaulting to the cursor-step setting), the action for the current direction
+fires once per step. `end`/`endAction`/`endActions` run once on release. The
+axis is locked from the first movement past touch slop, so a horizontal drag
+does not drift vertically. A quick tap still fires `tap`; a drag only consumes
+the press after its first step.
+
+`feedback` controls the per-step side effects without throttling the actions:
+`none` is silent, `vibrate` (default) uses the repeat-vibration setting, and
+`key` plays the normal key sound plus press vibration. Step feedback is
+rate-limited independently (currently one event per 30 ms), so a fast drag can
+cross several steps while producing only one sound/vibration burst.
+
+The bundled backspace uses this form: swipe left/right to extend the editor
+selection, then release to delete it. Selection steps are suppressed while
+Rime owns a composition, so normal backspace behavior is preserved while
+composing.
 
 A key must not define both `hold` and `longPress`.
 
@@ -1043,17 +1096,61 @@ entry wins:
 }
 ```
 
-Supported `when.rime` boolean conditions are:
+Supported leaf conditions are:
 
 ```text
 composing
 ascii_mode
 disabled
+option        // option name, implies value: true
+value         // used with option, defaults to true
+options       // shorthand map: option name -> boolean
 ```
 
-Unknown condition names do not match. Variants can patch the same key fields
-and gestures as a regular key definition. A placement variant is useful when
-only one layout occurrence needs a status-dependent label or action:
+Conditions can be combined recursively with:
+
+```text
+all_of: [condition, ...]
+any_of: [condition, ...]
+none_of: [condition, ...]
+```
+
+Multiple fields in the same condition object are ANDed. `none_of` with one
+child is negation. The same conditions apply to key variants, placement
+variants, and named-layout variants.
+
+Unknown condition keywords do not match. Unknown option names are neutral:
+
+- `all_of` ignores an unknown option if another condition matches.
+- `any_of` ignores it if another condition matches.
+- `none_of` ignores it if another condition decides the result.
+- If every condition in the group is unknown, the group is not satisfied.
+
+```json
+{
+  "when": {
+    "rime": {
+      "all_of": [
+        { "option": "simplification" },
+        { "none_of": [{ "option": "full_shape" }] },
+        { "any_of": [
+            { "composing": true },
+            { "ascii_mode": true }
+        ]}
+      ]
+    }
+  }
+}
+```
+
+Options declared by the active schema's switches are available by name.
+`full_shape`, `simplification`, `traditional`, and `ascii_punct` are also
+available. Conditions for options the schema does not declare are neutral,
+not false.
+
+Variants can patch the same key fields and gestures as a regular key
+definition. A placement variant is useful when only one layout occurrence
+needs a status-dependent label or action:
 
 A selected variant may provide a `ref` to replace the key's base definition.
 The variant's own fields then override the referenced definition. If it also
@@ -1144,6 +1241,8 @@ expand_switches
 voice_start
 voice_stop
 commit_text
+delete_selection
+editor_select_step
 ```
 
 `data_directory_list` opens the Rime data-directory picker. The alias
@@ -1170,6 +1269,10 @@ Argument-bearing commands use the action's `argument` string:
   "tap": { "type": "app", "command": "data_directory_list" }
 }
 ```
+
+`editor_select_step` takes `left`, `right`, `up`, or `down` as its `argument`
+and moves the host editor selection by one step; `delete_selection` removes
+the current editor selection. Both are used by drag gestures.
 
 `commit_text` reads its content from the action's optional `argument` field:
 

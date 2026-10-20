@@ -96,10 +96,12 @@ FE.classifyFoxyFile = function (text, path) {
  * 返回 { profile, report }；profile 为合并后的新对象（不改动入参）。 */
 FE.mergeDefinitions = function (profile, definitions) {
   var out = deepClone(profile || {});
-  var report = { keys: [], actions: [], macros: [], overridden: [], skipped: [] };
+  var report = { keys: [], actions: [], macros: [], icons: [], overridden: [], skipped: [] };
   if (!isPlainObject(definitions)) return { profile: out, report: report };
 
-  ['keys', 'actions', 'macros'].forEach(function (section) {
+  /* icons 也参与合并：文档写明自定义图标名来自 "top-level icons map"，
+   * 且 definitions 里的 icons 与布局自己的 icons 同样合并、同名以布局为准。 */
+  ['keys', 'actions', 'macros', 'icons'].forEach(function (section) {
     var shared = isPlainObject(definitions[section]) ? definitions[section] : {};
     var own = isPlainObject(out[section]) ? out[section] : {};
     var merged = {};
@@ -275,7 +277,9 @@ FE.splitProfileForExport = function (profile, definitions) {
   }
   var out = deepClone(profile);
   var kept = [], stripped = [];
-  ['keys', 'actions', 'macros'].forEach(function (section) {
+  /* icons 与 keys/actions/macros 同样处理：与共享定义逐字节一致就剥离，
+   * 否则视为本地自定义图标保留在布局里。 */
+  ['keys', 'actions', 'macros', 'icons'].forEach(function (section) {
     var shared = isPlainObject(definitions[section]) ? definitions[section] : {};
     var own = isPlainObject(out[section]) ? out[section] : {};
     for (var k in own) {
@@ -299,7 +303,7 @@ FE.serializeDefinitions = function (definitions) {
   var ordered = {};
   if (out.type != null) ordered.type = out.type;
   if (out.author != null) ordered.author = out.author;
-  ['keys', 'actions', 'macros'].forEach(function (s) { if (out[s] != null) ordered[s] = out[s]; });
+  ['keys', 'actions', 'macros', 'icons'].forEach(function (s) { if (out[s] != null) ordered[s] = out[s]; });
   for (var k in out) {
     if (hasOwn(out, k) && !hasOwn(ordered, k)) ordered[k] = out[k];
   }

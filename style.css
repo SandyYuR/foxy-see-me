@@ -1009,6 +1009,22 @@ html.site-light .gesture-name { color: #1c1e22; }
   html.site-auto .gesture-name { color: #1c1e22; }
 }
 
+/* ---------------- 自定义图标 / 选项条件 / 拖动面板 ----------------
+ * 这三块是「对齐新版 skill」新增的 UI，样式集中在这里：
+ *   .icon-list-preview  按键定义页的图标列表预览方块
+ *   .icon-preview       图标对话框里的实时预览
+ *   .cond-editor        变体条件编辑器（布尔 select + 选项条件列表）
+ *   .pt-options         预览工具栏动态生成的选项开关组
+ *   .gesture-drag-panel drag 手势的四向 / 松手槽位面板
+ * 图标一律 currentColor（与键上的 .kb-icon-wrap 同一口径，见上文 §图标色）。 */
+.icon-list-preview { width: 22px; height: 22px; flex: 0 0 22px; }
+.icon-preview { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cond-editor { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.variant-option-box { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.variant-option-sugg { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pt-options { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gesture-drag-panel { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+
 /* ---------------- 按键定义列表 ---------------- */
 .def-item {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;

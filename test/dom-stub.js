@@ -472,7 +472,8 @@ function buildSkeleton() {
         el('label', null, el('input', { type: 'checkbox', id: 'pt-disabled' })),
         el('label', null, el('input', { type: 'checkbox', id: 'pt-split' })),
         el('label', null, el('input', { type: 'checkbox', id: 'pt-landscape' })),
-        el('input', { type: 'text', id: 'pt-status-text' }))),
+        el('input', { type: 'text', id: 'pt-status-text' }),
+        el('span', { id: 'pt-options' }))),
     el('div', { class: 'preview-toggles preview-toggles-geom' },
       /* 几何滑杆组：切到符号页时**整组隐藏**（深浅下拉不在这一层，故保留） */
       el('div', { class: 'pt-geom-sliders', id: 'pt-geom-sliders' },
@@ -578,7 +579,10 @@ function buildSkeleton() {
    * 搜索框外面包 .search-wrap（内含 ✕ 清空按钮），结构要与 index.html 一致 ——
    * 少了这层，测试里 $(...).parentNode.className 之类的结构断言就会对不上。 */
   const tabKeys = el('section', { class: 'tabpanel', id: 'tab-keys' });
-  tabKeys.appendChild(el('details', { class: 'card', open: 'open' },
+  /* ⚠️ 用 append（可变参数）而不是 appendChild：按钮定义卡片与自定义图标卡片是
+   * **两个并列的 details**，appendChild 只吃第一个参数，第二张卡片会被静默丢掉
+   * ——那会让 #icons-list 在测试里根本不存在，renderIconsList 直接早退而看不出错。 */
+  tabKeys.append(el('details', { class: 'card', open: 'open' },
     el('div', { class: 'def-toolbar' },
       el('div', { class: 'def-tool-group' },
         el('span', { class: 'search-wrap' },
@@ -588,7 +592,14 @@ function buildSkeleton() {
       el('div', { class: 'def-tool-group' },
         el('input', { id: 'keys-new', type: 'text', placeholder: '新按键定义名称，如 my.tab' }),
         el('button', { id: 'keys-add' }, '+ 新建按键定义'))),
-    el('div', { id: 'keys-list' })));
+    el('div', { id: 'keys-list' })),
+  el('details', { class: 'card', open: 'open' },
+    el('summary', null, '自定义图标（icons）'),
+    el('div', { class: 'def-toolbar' },
+      el('div', { class: 'def-tool-group' },
+        el('input', { id: 'icons-new', type: 'text', placeholder: '新图标名，如 foxy.heart' }),
+        el('button', { id: 'icons-add' }, '+ 新建自定义图标'))),
+    el('div', { id: 'icons-list' })));
 
   /* 动作与宏面板（与按键定义页同构：各自一组搜索、一组新建） */
   const tabActions = el('section', { class: 'tabpanel', id: 'tab-actions' });

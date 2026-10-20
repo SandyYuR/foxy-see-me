@@ -53,7 +53,8 @@
 | 示例与多文件阶段 | `tools/build-examples.js`、`folder-import.js` | 把工作区样本打包为可离线运行的示例，支持 `definitions.json`、布局、popup 的整包导入和分包导出。 |
 | 主题与符号阶段 | 记录为 2026-09 修订 | 加入 `foxy.keyboard-theme` 编辑、主题预览、符号/emoji/颜文字面板；仍不做 App 全局主题设置。 |
 | 网格与设备验证阶段 | 记录为 2026-09-29 的 `16键.json` 实测 | 修正 numpad 网格轨道、文字溢出、rowHeights 和真实移动端触摸/滚动方面的问题。 |
-| 当前阶段 | 本次文档重组前后实测 | core 629、UI 1394、颜色解析 96、真实文件体检 46 个示例且 0 错误。 |
+| 对齐新版 skill 阶段 | 2026-10-20 实测 | 补上自定义图标（顶层 `icons`）、`drag` 连续拖动手势、`variants` 三态条件（`option` / `value` / `options` / `all_of` / `any_of` / `none_of`）与两个新 app 命令；core 715、UI 1461。 |
+| 当前阶段 | 本次文档重组前后实测 | core 715、UI 1461、颜色解析 96、真实文件体检 46 个示例且 0 错误。 |
 
 ## 2. 长期有效的决策记录
 
@@ -386,6 +387,18 @@ jscolor 的颜色值和 CSS/JSON 顺序不同。项目保留它的字节序约�
 
 列表重建必须保持滚动位置。`afterChange` 中的 `captureScroll` / `restoreScroll` 需要处理两个异步因素：被删除的焦点元素会让浏览器回到顶部，清空列表期间文档变矮会临时夹住 scrollTop。补帧恢复要用 `scrollRestoreSeq`，任何有意滚动到错误位置前先调用 `FE.cancelScrollRestore()`。
 
+### 6.6 对齐新版 skill：自定义图标、drag 与三态条件
+
+2026-10-20 的 `skills/SKILL.md` 与 `foxy-keyboard-layout.schema.json` 更新带来四类格式变化，编辑器按下面的口径补齐；文本类的命令描述修正（`foxy.SelectAll` / `foxy.Cut` / `foxy.Copy` / `foxy.Paste` 改成 native 动作）不影响编辑器行为，未单独改代码。
+
+**自定义图标**。内置名只有 backspace / shift / enter / return；其它 `icon` 值先查 profile 顶层 `icons`（`definitions.json` 的 `icons` 也合并进同一个映射），再看是否 `svg:` / `xml:` 内联载荷。解析链是 `FE.iconSvgOf(icon, scope)` → `iconMapOf(scope)` → `iconMarkupFromPayload(payload)`；清洗会剥掉 `<script>`、`on*` 属性和 `javascript:`，没有 `class` 时补 `class="kb-icon"`。未知名字按文档不画图标、回落文本标签，不报错。这套函数必须放在 app.js 的 UI 守卫之前——早期把它们写在守卫之后，Node 侧根本执行不到，`FE.iconSvgOf` 在 core 测试里是 undefined。
+
+**drag 连续拖动**。`drag` 是对象型手势，独立于 `tap` / `swipe` 家族：`step`（dp，缺省取光标步长设置）、`feedback`（none / vibrate / key，缺省 vibrate）、四个方向各自的每步动作、`end` / `endAction` / `endActions` 松手动作。`FE.dragInfo` 负责解析（支持 `ref` 继承）、`FE.checkDrag` 负责校验 step 与 feedback；`FE.GESTURE_SLOTS` 加了 drag 之后，引用索引、重命名和手势区渲染都自动覆盖。手势对话框里 drag 只有 inherit / ref / direct 三种来源（drag 没有“动作名称 / 宏调用”形态），方向槽位复用嵌套手势对话框，空值与 `null` 分别显示“（继承）”和“（已清除）”。
+
+**三态条件**。变体条件从“三个布尔”扩成布尔 + `option` / `value` / `options` + `all_of` / `any_of` / `none_of` 组合。求值必须保留中性：`FE.condResult` 返回真 / 假 / 中性三态，未在活动 schema 声明的选项名是中性而不是假，未知条件关键字才是不匹配。编辑器拿不到活动 schema 的 `switches` 声明，因此选项名不自动推断，而是把“条件里出现过的名字 + 常开选项”做成预览工具栏开关（`renderPreviewOptionToggles`）；组合条件在图形化编辑器里只读保留、提示改 JSON，避免把它压平成不存在的语义。
+
+`condResult` 的三态容易被写成布尔，早期测试就踩过 `any_of` 的断言：`{any_of:[{option:'not.declared'},{composing:true}]}` 在 `NEUTRAL_STATUS` 下两项都不为真，结果是中性，不是 true。
+
 ## 7. 验证基线与文档维护记录
 
 ### 7.1 当前验证命令
@@ -399,8 +412,8 @@ node test/test-ui.js
 
 当前 AGENT 开头记录的基线是：
 
-- core：629 通过，0 失败；
-- UI：1394 通过，0 失败；
+- core：715 通过，0 失败；
+- UI：1461 通过，0 失败；
 - 颜色解析：`node test/test-color-source.js`，96 通过；
 - 真实文件：`node test/check-real-files.js`，46 个示例，0 个错误。
 
@@ -440,7 +453,8 @@ node tools/check-agent-sync.js
 → 275（JSON 宽松修复）
 → 215 core + 355 UI（模块化 UI 阶段）
 → 626 core + 1363 UI（此前入口文档记录的阶段）
-→ 629 core + 1394 UI（本次实测当前基线）
+→ 629 core + 1394 UI（文档重组时的实测）
+→ 715 core + 1461 UI（对齐新版 skill 后的当前基线）
 ```
 
 另有一段旧的 AGENT 末尾仍写着：core 531、UI 1062、示例 20（16 布局 + 4 popup）。它是文档未同步时留下的历史基线，不能覆盖文件顶部和标准工作流中的当前数字。重组文档时保留这条说明，是为了让以后看到旧提交或旧截图的人知道数字差异来自文档漂移，而不是测试随机变化。

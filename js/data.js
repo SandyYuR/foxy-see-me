@@ -254,12 +254,39 @@ FE.APP_COMMANDS = [
   ['toggle_toolbar_container', '工具栏容器开关'],
   ['toggle_switch', '开关面板'], ['expand_switches', '展开开关'],
   ['voice_start', '开始语音'], ['voice_stop', '结束语音'],
-  ['commit_text', '上屏文本（需参数）']
+  ['commit_text', '上屏文本（需参数）'],
+  /* 宿主编辑器选区操作（新增）：drag 连续拖动手势的每步动作与松手动作。
+   * editor_select_step 用 argument 指定方向 left/right/up/down。 */
+  ['editor_select_step', '移动编辑器选区一步（需参数）'],
+  ['delete_selection', '删除编辑器选区']
 ];
 
 /* 支持的 keyType / 图标 / 修饰键取值 */
 FE.KEY_TYPES = ['LETTER', 'FUNCTION', 'ACTION'];
+/* **内置**图标名（带内置 SVG 渲染）。icon 取值不限于此：
+ *   - 内置名：backspace / shift / enter / return（本数组）
+ *   - 自定义名：来自顶层 icons 映射（profile 与 foxy.definitions.json 合并）
+ *   - 内联载荷：直接写 svg:<svg …></svg> 或 xml:<svg …></svg>
+ * 未知名字按 Foxy 规则「不渲染图标」，编辑器的预览同样跳过图标回落到文本。 */
 FE.ICONS = ['backspace', 'shift', 'enter', 'return'];
+/* 自定义图标名的新增/重命名校验用：不能是内置名、不能为空 */
+FE.isBuiltinIcon = function (name) {
+  return FE.ICONS.indexOf(String(name == null ? '' : name)) >= 0;
+};
+/* icons 映射里的自定义图标名（按名字排序，供下拉/列表稳定输出） */
+FE.iconNames = function (scope) {
+  var map = scope && scope.profile && FE.isPlainObject(scope.profile.icons) ? scope.profile.icons : null;
+  return map ? Object.keys(map).sort() : [];
+};
+/* 内联 SVG/XML 图标载荷前缀（与工具栏按钮 icon 同形式） */
+FE.INLINE_ICON_PREFIXES = ['svg:', 'xml:'];
+FE.isInlineIcon = function (value) {
+  var s = String(value == null ? '' : value).trim().toLowerCase();
+  for (var i = 0; i < FE.INLINE_ICON_PREFIXES.length; i++) {
+    if (s.indexOf(FE.INLINE_ICON_PREFIXES[i]) === 0) return true;
+  }
+  return false;
+};
 FE.MODIFIERS = ['SHIFT', 'CTRL'];
 /* Foxy App 的 key.meta 解析同时接受 "ctrl" 与 "control"；编辑器
  * 需要在校验和表单回显时使用同一套别名口径，但导出仍保留用户原文，
@@ -274,12 +301,25 @@ FE.canonicalModifierName = function (value) {
 };
 /* 修饰键状态：TOGGLE_LOCKED 是命令而非持久状态（未锁定→锁定，已锁定→关闭） */
 FE.MODIFIER_STATES = ['OFF', 'ONESHOT', 'LOCKED', 'TOGGLE_LOCKED'];
-FE.GESTURE_FIELDS = ['tap', 'doubleTap', 'swipe', 'longPress', 'hold'];
+FE.GESTURE_FIELDS = ['tap', 'doubleTap', 'swipe', 'longPress', 'hold', 'drag'];
+/* 单槽手势（swipe / drag 是四方向映射，单独处理）—— 引用收集、重命名、编译都按这份清单走，
+ * 免得每处各抄一遍数组、新加手势时漏改其中一处。 */
+FE.GESTURE_SLOTS = ['tap', 'doubleTap', 'longPress', 'hold', 'drag'];
 FE.SWIPE_DIRS = ['up', 'down', 'left', 'right'];
+/* drag 的四个方向与「松手动作」槽位（end / endAction / endActions 三者等价，归一到 end） */
+FE.DRAG_DIRS = ['up', 'down', 'left', 'right'];
+FE.DRAG_END_SLOTS = ['end', 'endAction', 'endActions'];
+/* drag 步进反馈（缺省 vibrate） */
+FE.DRAG_FEEDBACKS = ['none', 'vibrate', 'key'];
+/* 状态条件叶子键（都是布尔）+ 组合键（都是条件数组） */
 FE.STATUS_CONDS = ['composing', 'ascii_mode', 'disabled'];
+FE.STATUS_OPTION_KEYS = ['option', 'value', 'options'];
+FE.STATUS_GROUPS = ['all_of', 'any_of', 'none_of'];
+/* 常开选项名：不必由活动 schema 的 switches 声明也始终可用 */
+FE.ALWAYS_ON_OPTIONS = ['full_shape', 'simplification', 'traditional', 'ascii_punct'];
 
 /* 键字段清单（放置/定义均可使用的补丁字段） */
 FE.KEY_FIELD_NAMES = ['label', 'shiftedLabel', 'weight', 'height', 'modifier', 'keyType', 'id',
   'statusLabel', 'textSize', 'hintTextSize', 'icon', 'colors',
-  'tap', 'doubleTap', 'swipe', 'longPress', 'hold', 'variants'];
+  'tap', 'doubleTap', 'swipe', 'longPress', 'hold', 'drag', 'variants'];
 })();

@@ -939,11 +939,18 @@ FE.openGestureDialog = function (opts) {
   var slot = opts.slot;
   var isLongPress = slot === 'longPress';
   var isHold = slot === 'hold';
+  /* drag 与 hold 一样是「带子槽位的手势对象」：自带 step / feedback / 四向每步动作
+   * 与松手动作。进入本对话框时 slot 恰为 drag；四向与松手用嵌套对话框（slot 为
+   * drag.up 之类）复用同一套「引用 / 直接动作 / 动作名 / 宏」编辑能力。 */
+  var isDrag = slot === 'drag';
   var names = {
     tap: '点击（tap）', doubleTap: '双击（doubleTap）',
     'swipe.up': '上滑（swipe.up）', 'swipe.down': '下滑（swipe.down）',
     'swipe.left': '左滑（swipe.left）', 'swipe.right': '右滑（swipe.right）',
-    longPress: '长按（longPress）', hold: '按住（hold）'
+    longPress: '长按（longPress）', hold: '按住（hold）',
+    drag: '拖动（drag）',
+    'drag.up': '拖动·上（drag.up）', 'drag.down': '拖动·下（drag.down）',
+    'drag.left': '拖动·左（drag.left）', 'drag.right': '拖动·右（drag.right）'
   };
   var guard = FE.snapshotGuard(function () {
     return {
@@ -958,7 +965,11 @@ FE.openGestureDialog = function (opts) {
       popupKey: popupKeyInp.value,
       direct: area._editor ? area._editor.getValue() : null,
       start: startEditor ? startEditor.getValue() : null,
-      end: endEditor ? endEditor.getValue() : null
+      end: endEditor ? endEditor.getValue() : null,
+      /* drag 的四个方向与松手不经过上面的 editor，单独进快照 */
+      drag: isDrag ? FE.deepClone(dragDraft) : null,
+      step: isDrag ? stepInp.value : '',
+      feedback: isDrag ? feedbackSel.value : ''
     };
   });
   var modal = openModal({
@@ -1053,6 +1064,14 @@ FE.openGestureDialog = function (opts) {
     ['macro', '宏调用']
   ];
   modeOptions.forEach(function (m) { modeSel.appendChild(h('option', { value: m[0], selected: m[0] === mode }, m[1])); });
+  /* drag 是独立的手势对象（schema 的 $defs.drag，不是 gesture），它没有"动作名称"
+   * 与"宏调用"这两种来源：动作只挂在四个方向与松手上。 */
+  if (isDrag) {
+    Array.prototype.slice.call(modeSel.children).forEach(function (o) {
+      if (o.value === 'action-name' || o.value === 'macro') modeSel.removeChild(o);
+    });
+    if (mode !== 'inherit' && mode !== 'ref') modeSel.value = 'direct';
+  }
 
   var modeBox = h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '来源'), modeSel);
   var area = h('div', { class: 'gesture-area' });
@@ -1075,6 +1094,117 @@ FE.openGestureDialog = function (opts) {
   var popupKeyInp = h('input', { type: 'text', class: 'mini-input', value: (FE.isPlainObject(g) && g.popupKey != null) ? String(g.popupKey) : '', placeholder: '如 q（弹出菜单 profile 的键）' });
 
   var startEditor = null, endEditor = null;
+
+  /* ---- drag 专用面板（schema $defs.drag） ----
+   * drag 与其它手势形状不同：它没有"自己的动作"，动作挂在四个方向与松手上，
+   * 另有 step / feedback。四向与松手用嵌套的小对话框编辑（slot 为 drag.up 之类），
+   * 因为这些槽位的值仍是完整的手势对象（字符串引用 / action / actions / type），
+   * 全展开会让主对话框长到不可用。
+   *
+   * dragDraft 只留"本对话框不直接编辑"的字段（step / feedback / 四向 / end 家族），
+   * 顶层已有控件的 ref / label / hint / popup 交给 labelInp 那批控件，
+   * 这样保存时不会把同一字段写两遍。 */
+  var dragDraft = (isDrag && FE.isPlainObject(g)) ? FE.deepClone(g) : {};
+  if (!FE.isPlainObject(dragDraft)) dragDraft = {};
+  if (isDrag) ['ref', 'label', 'hint', 'popup', 'step', 'feedback'].forEach(function (k) { delete dragDraft[k]; });
+
+  /* step / feedback 的控件建一次，重画时重新挂进 box（输入值不丢） */
+  var stepInp = h('input', {
+    type: 'number', class: 'mini-input', min: '1', step: '1',
+    value: (isDrag && FE.isPlainObject(g) && g.step != null) ? String(g.step) : ''
+  });
+  var feedbackSel = h('select', { class: 'mini-select' });
+  FE.DRAG_FEEDBACKS.forEach(function (fb) {
+    feedbackSel.appendChild(h('option', { value: fb }, fb === 'none' ? 'none（无反馈）' :
+      (fb === 'vibrate' ? 'vibrate（逐步震动，默认）' : 'key（完整按键反馈）')));
+  });
+  feedbackSel.value = (isDrag && FE.isPlainObject(g) && FE.DRAG_FEEDBACKS.indexOf(g.feedback) >= 0)
+    ? g.feedback : 'vibrate';
+
+  function dragSlotValue(key) {
+    return Object.prototype.hasOwnProperty.call(dragDraft, key) ? dragDraft[key] : undefined;
+  }
+  function setDragSlot(key, nv) {
+    if (nv === undefined) delete dragDraft[key];
+    else dragDraft[key] = nv;
+    buildArea();
+  }
+  function dragSlotRow(key, label) {
+    var val = dragSlotValue(key);
+    var sum;
+    if (val === undefined) {
+      /* 没写就是继承（引用时来自被引用按键，否则无动作） */
+      sum = '（继承）';
+    } else if (val === null) {
+      sum = '（已清除）';
+    } else {
+      var gi = FE.gestureInfo(val, FE.NEUTRAL_STATUS);
+      sum = gi && gi.action ? gi.action.display : '（无动作）';
+    }
+    return h('div', { class: 'gesture-row' },
+      h('span', { class: 'gesture-name' }, label),
+      h('span', { class: 'gesture-sum' }, sum),
+      h('button', {
+        type: 'button', class: 'mini-button',
+        onclick: function () {
+          FE.openGestureDialog({
+            slot: 'drag.' + key,
+            gesture: val === undefined ? null : val,
+            onChange: function (nv) { setDragSlot(key, nv); }
+          });
+        }
+      }, '编辑…'),
+      h('button', {
+        type: 'button', class: 'mini-button danger',
+        title: '置 null，屏蔽继承',
+        onclick: function () { setDragSlot(key, null); }
+      }, '清除'),
+      val !== undefined ? h('button', {
+        type: 'button', class: 'mini-button',
+        title: '删除字段，恢复继承',
+        onclick: function () { setDragSlot(key, undefined); }
+      }, '继承') : null
+    );
+  }
+
+  function buildDragPanel() {
+    var box = area._dragBox || h('div', { class: 'gesture-drag-panel' });
+    area._dragBox = box;
+    clearEl(box);
+
+    box.appendChild(h('div', { class: 'form-row form-inline' },
+      h('label', { class: 'mini-label' }, '步长'),
+      stepInp, h('span', { class: 'status' }, 'dp，留空取光标步长设置'),
+      h('label', { class: 'mini-label' }, '反馈'), feedbackSel));
+    FE.DRAG_DIRS.forEach(function (d) {
+      box.appendChild(dragSlotRow(d, '拖动·' + ({ up: '上', down: '下', left: '左', right: '右' })[d]));
+    });
+    box.appendChild(dragSlotRow('end', '松手动作 end'));
+    box.appendChild(h('div', { class: 'status' },
+      '语义：越过 step 后每步执行一次当前方向的动作；首次超过触摸阈值后锁定轴线；' +
+      '快速轻点仍走 tap；松手执行 end。内置退格即此形式（左右滑扩选、松手删除）。'));
+    area.appendChild(box);
+  }
+
+  /* drag 保存：以 dragDraft 为底（保留未在图形界面里出现的字段），
+   * 再把对话框顶层控件的值写回去。四向与松手在 dragDraft 里已是最终形态。 */
+  function collectDragValue(extras, hasRef) {
+    var out = FE.deepClone(dragDraft);
+    delete out.step;
+    delete out.feedback;
+    var stepNum = stepInp.value.trim() === '' ? null : Number(stepInp.value);
+    if (stepNum != null && (!isFinite(stepNum) || stepNum <= 0)) {
+      FE.uiAlert('步长必须是大于 0 的数字，或留空取光标步长设置');
+      return null;
+    }
+    if (stepNum != null) out.step = stepNum;
+    if (feedbackSel.value && feedbackSel.value !== 'vibrate') out.feedback = feedbackSel.value;
+    /* 继承语义：既没有 ref 也没有任何实际内容，就当"移除字段"处理 */
+    var hasBody = false;
+    Object.keys(out).forEach(function (k) { if (out[k] !== undefined) hasBody = true; });
+    if (!hasRef && !hasBody && !Object.keys(extras).length) return undefined;
+    return Object.assign(out, extras);
+  }
 
   function buildArea() {
     clearEl(area);
@@ -1121,7 +1251,7 @@ FE.openGestureDialog = function (opts) {
       msel.addEventListener('change', function () { macroName = msel.value; });
       if (macroName) msel.value = macroName;
       area.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '宏'), msel));
-    } else if (m === 'direct' && !isHold) {
+    } else if (m === 'direct' && !isHold && !isDrag) {
       var ed = FE.buildActionEditor(directSpec);
       area.appendChild(h('div', { class: 'form-row' }, ed.el));
       area._editor = ed;
@@ -1172,6 +1302,7 @@ FE.openGestureDialog = function (opts) {
         area.appendChild(h('div', { class: 'form-row' }, h('label', { class: 'mini-label' }, '开始动作' + (holdStartKey && holdStartKey !== 'start' ? '（' + holdStartKey + '）' : '')), startEditor.el));
         area.appendChild(h('div', { class: 'form-row' }, h('label', { class: 'mini-label' }, '结束动作' + (holdEndKey && holdEndKey !== 'end' ? '（' + holdEndKey + '）' : '')), endEditor.el));
       }
+      if (isDrag) buildDragPanel();
     }
   }
   modeSel.addEventListener('change', buildArea);
@@ -1207,12 +1338,21 @@ FE.openGestureDialog = function (opts) {
             writeHoldSide(value, 'start', holdStartKey, startEditor, startSpec);
             writeHoldSide(value, 'end', holdEndKey, endEditor, endSpec);
           }
+          /* drag 引用同样允许覆盖四向与松手（与 hold 引用覆盖 start/end 同理） */
+          if (isDrag) {
+            var dg = collectDragValue(extras, true);
+            if (dg === null) return;
+            value = Object.assign({ ref: refName }, dg);
+          }
         } else if (m === 'action-name') {
           if (!actionName) { FE.uiAlert('请选择动作'); return; }
           value = Object.keys(extras).length ? Object.assign({ action: actionName }, extras) : actionName;
         } else if (m === 'macro') {
           if (!macroName) { FE.uiAlert('请选择宏'); return; }
           value = Object.assign({ macro: macroName }, extras);
+        } else if (isDrag) {
+          value = collectDragValue(extras, !!refName);
+          if (value === null) return;
         } else {
           var act = area._editor ? area._editor.getValue() : null;
           if (isHold) {
@@ -1243,14 +1383,162 @@ FE.openGestureDialog = function (opts) {
 /* ================================================================
  * 状态变体对话框
  * opts: { variant, onChange(newVariant) }
+ *
+ * 条件对象的编辑器（布尔叶子 + 选项条件）由 buildConditionEditor 提供，
+ * 键定义的状态变体与布局变体共用同一套 UI，避免两处各写一份 select 逻辑。
+ * 组合条件（all_of / any_of / none_of）只读保留：图形化嵌套数组容易写错，
+ * 而它本身是低频用法，改组合请直接编辑 JSON。
  * ================================================================ */
+function buildConditionEditor(when, opts) {
+  opts = opts || {};
+  /* 变更回调：布局变体行直接用它把结果写回 profile（DOM 桩不冒泡，
+   * 不能指望在外层容器上接 change）。键变体对话框不需要——保存时统一取值。 */
+  function notify() { if (typeof opts.onChange === 'function') opts.onChange(); }
+  var base = (when && FE.isPlainObject(when.rime)) ? when.rime : null;
+  var boolSels = {};
+  var boolBox = h('div', { class: 'form-row form-inline' });
+  FE.STATUS_CONDS.forEach(function (c) {
+    var cur = base ? base[c] : undefined;
+    var s = h('select', { class: 'mini-select' });
+    s.appendChild(h('option', { value: '' }, c + ':忽略'));
+    s.appendChild(h('option', { value: '1', selected: cur === true }, c + ':真'));
+    s.appendChild(h('option', { value: '0', selected: cur === false }, c + ':假'));
+    s.addEventListener('change', notify);
+    boolSels[c] = s;
+    boolBox.appendChild(s);
+  });
+
+  /* 选项条件：Foxy 的选项名来自活动 schema 的 switches，编辑器读不到那份声明，
+   * 因此这里只做「列出已经用过的名字 + 允许手填新名」。未声明的选项在 Foxy 端
+   * 是中性（不决定结果），编辑器不去猜它有效与否。 */
+  var optConds = [];
+  var baseUsedOption = false;
+  if (base) {
+    if (typeof base.option === 'string' && base.option) {
+      baseUsedOption = true;
+      optConds.push({ name: base.option, value: base.value === undefined ? true : !!base.value });
+    } else if (FE.isPlainObject(base.options)) {
+      Object.keys(base.options).forEach(function (n) { optConds.push({ name: n, value: !!base.options[n] }); });
+    }
+  }
+
+  var optListEl = h('div', { class: 'variant-option-list' });
+  var suggBox = h('div', { class: 'variant-option-sugg' });
+  var optBox = h('div', { class: 'variant-option-box' }, optListEl, suggBox);
+
+  function suggestions() {
+    var names = FE.ALWAYS_ON_OPTIONS.slice();
+    var known = (FE.state && FE.state.validation && FE.state.validation.optionNames) || [];
+    known.forEach(function (n) { if (names.indexOf(n) < 0) names.push(n); });
+    return names;
+  }
+  /* 提示条不用 datalist：对话框关闭后元素仍留在文档里，反复打开会积攒同 id 的
+   * datalist，为零依赖的纯前端加清理逻辑不划算。改成按钮，点一下填进最后一行。 */
+  function renderSuggestions() {
+    clearEl(suggBox);
+    if (!optConds.length) return;
+    var names = suggestions();
+    if (!names.length) return;
+    suggBox.appendChild(h('span', { class: 'status' }, '可用名：'));
+    names.forEach(function (n) {
+      suggBox.appendChild(h('button', {
+        type: 'button', class: 'mini-button', title: '填入最后一行的选项名',
+        onclick: function () {
+          if (!optConds.length) return;
+          optConds[optConds.length - 1].name = n;
+          renderOptConds();
+        }
+      }, n));
+    });
+  }
+  function renderOptConds() {
+    clearEl(optListEl);
+    renderSuggestions();
+    if (!optConds.length) {
+      optListEl.appendChild(h('span', { class: 'status' }, '（未按选项区分）'));
+      return;
+    }
+    optConds.forEach(function (it, i) {
+      var nameInp = h('input', { type: 'text', class: 'mini-input', value: it.name, placeholder: '选项名，如 full_shape' });
+      nameInp.addEventListener('input', function () { it.name = nameInp.value.trim(); });
+      /* 每敲一个字就重建整页会打断输入，所以只在失焦/确认时通知 */
+      nameInp.addEventListener('change', notify);
+      var valSel = h('select', { class: 'mini-select' });
+      valSel.appendChild(h('option', { value: '1', selected: it.value === true }, '真'));
+      valSel.appendChild(h('option', { value: '0', selected: it.value === false }, '假'));
+      valSel.addEventListener('change', function () { it.value = valSel.value === '1'; notify(); });
+      optListEl.appendChild(h('div', { class: 'gesture-row' },
+        h('span', { class: 'gesture-name' }, '选项'), nameInp, valSel,
+        h('button', {
+          type: 'button', class: 'mini-button danger',
+          onclick: function () { optConds.splice(i, 1); renderOptConds(); notify(); }
+        }, '✕')));
+    });
+  }
+  renderOptConds();
+
+  var addBtn = h('button', {
+    type: 'button', class: 'mini-button',
+    onclick: function () { optConds.push({ name: '', value: true }); renderOptConds(); }
+  }, '+ 添加选项条件');
+  optBox.appendChild(addBtn);
+
+  var groupNote = null;
+  if (base) {
+    var groups = FE.STATUS_GROUPS.filter(function (g) { return Object.prototype.hasOwnProperty.call(base, g); });
+    if (groups.length) {
+      groupNote = h('div', { class: 'status' },
+        '含组合条件 ' + groups.join(' / ') + '（' + FE.condSummaryText(when) + '）：组合条件只读保留，编辑请改 JSON');
+    }
+  }
+
+  var el = h('div', { class: 'cond-editor' },
+    h('div', { class: 'form-row' }, h('label', { class: 'mini-label' }, '状态条件（同时满足，最后匹配者生效）'), boolBox),
+    h('div', { class: 'form-row' }, h('label', { class: 'mini-label' }, '选项条件（开关名 → 真/假）'), optBox),
+    groupNote);
+
+  function getWhenRime() {
+    var out = {};
+    FE.STATUS_CONDS.forEach(function (c) {
+      if (boolSels[c].value !== '') out[c] = boolSels[c].value === '1';
+    });
+    var pairs = optConds.filter(function (it) { return it.name; });
+    /* 单个选项条件且原本写的是 option+value 时沿用原形态：两种写法语义相同，
+     * 保留用户原样更容易与 schema / 文档对照。 */
+    if (pairs.length === 1 && baseUsedOption) {
+      out.option = pairs[0].name;
+      out.value = pairs[0].value;
+    } else if (pairs.length) {
+      out.options = {};
+      pairs.forEach(function (it) { out.options[it.name] = it.value; });
+    }
+    if (base) {
+      FE.STATUS_GROUPS.forEach(function (g) {
+        if (Object.prototype.hasOwnProperty.call(base, g)) out[g] = FE.deepClone(base[g]);
+      });
+    }
+    return out;
+  }
+  function getWhen() {
+    var rime = getWhenRime();
+    return Object.keys(rime).length ? { rime: rime } : null;
+  }
+  function snapshot() {
+    var r = {};
+    FE.STATUS_CONDS.forEach(function (c) { r[c] = boolSels[c].value; });
+    r.opts = optConds.map(function (it) { return it.name + '=' + (it.value ? '1' : '0'); });
+    return r;
+  }
+  return { el: el, getWhenRime: getWhenRime, getWhen: getWhen, snapshot: snapshot };
+}
+FE.buildConditionEditor = buildConditionEditor;
+
 FE.openVariantDialog = function (opts) {
   var v = FE.isPlainObject(opts.variant) ? FE.deepClone(opts.variant) : {};
+  var condEd = buildConditionEditor(v.when);
   var guard = FE.snapshotGuard(function () {
-    var conds = {};
-    ['composing', 'ascii_mode', 'disabled'].forEach(function (c) { conds[c] = condSels[c].value; });
     return {
-      conds: conds,
+      cond: condEd.snapshot(),
       ref: refName,
       label: labelInp.value,
       shiftedLabel: shiftedInp.value,
@@ -1260,24 +1548,8 @@ FE.openVariantDialog = function (opts) {
       extra: extraTa.value
     };
   });
-  var modal = openModal({
-    title: '编辑状态变体',
-    onBeforeClose: guard.onBeforeClose
-  });
-
-  var condSels = {};
-  var condBox = h('div', { class: 'form-row form-inline' });
-  ['composing', 'ascii_mode', 'disabled'].forEach(function (c) {
-    var cur = v.when && v.when.rime ? v.when.rime[c] : undefined;
-    var s = h('select', { class: 'mini-select' });
-    s.appendChild(h('option', { value: '' }, c + ':忽略'));
-    s.appendChild(h('option', { value: '1', selected: cur === true }, c + ':真'));
-    s.appendChild(h('option', { value: '0', selected: cur === false }, c + ':假'));
-    condSels[c] = s;
-    condBox.appendChild(s);
-  });
-  modal.body.appendChild(h('div', { class: 'form-row' }, h('label', { class: 'mini-label' }, '当条件（同时满足，最后匹配者生效）'), condBox));
-
+  var modal = openModal({ title: '编辑状态变体', onBeforeClose: guard.onBeforeClose });
+  modal.body.appendChild(condEd.el);
   var refName = typeof v.ref === 'string' ? v.ref : null;
   var refBtn = h('button', {
     type: 'button',
@@ -1331,11 +1603,8 @@ FE.openVariantDialog = function (opts) {
     type: 'button', class: 'primary',
     onclick: function () {
       var out = {};
-      var when = {};
-      ['composing', 'ascii_mode', 'disabled'].forEach(function (c) {
-        if (condSels[c].value !== '') when[c] = condSels[c].value === '1';
-      });
-      if (Object.keys(when).length) out.when = { rime: when };
+      var when = condEd.getWhen();
+      if (when) out.when = when;
       if (refName) out.ref = refName;
       if (labelInp.value !== '') out.label = labelInp.value;
       if (shiftedInp.value !== '') out.shiftedLabel = shiftedInp.value;
@@ -1347,6 +1616,82 @@ FE.openVariantDialog = function (opts) {
       Object.keys(extra).forEach(function (k) { if (!(k in out)) out[k] = extra[k]; });
       modal.close();
       opts.onChange(out);
+    }
+  }, '保存'));
+};
+
+
+/* ================================================================
+ * 自定义图标编辑器（顶层 icons 映射）
+ * opts: { name, payload, taken, onChange(newName, newPayload) }
+ *
+ * Foxy 的自定义图标 = 「名字 → 内联 svg:/xml: 载荷」，名字可以被键的 icon 引用，
+ * 载荷也可以直接写在键上（与工具栏按钮 icon 同形式）。这里不解析 SVG 语义，
+ * 只校验「带 svg:/xml: 前缀且清洗后仍有标记」，并把清洗结果渲染成预览。
+ * ================================================================ */
+FE.openIconDialog = function (opts) {
+  opts = opts || {};
+  var taken = opts.taken || {};
+  var guard = FE.snapshotGuard(function () {
+    return { name: nameInp.value, payload: payloadTa.value };
+  });
+  var modal = openModal({ title: opts.name ? ('编辑自定义图标 “' + opts.name + '”') : '新建自定义图标', onBeforeClose: guard.onBeforeClose });
+
+  var nameInp = h('input', {
+    type: 'text', class: 'mini-input',
+    value: opts.name != null ? String(opts.name) : '',
+    placeholder: '图标名，如 foxy.heart'
+  });
+  var payloadTa = h('textarea', { class: 'json-editor small', rows: 6, spellcheck: 'false' });
+  payloadTa.value = opts.payload != null ? String(opts.payload) : 'svg:';
+  var preview = h('div', { class: 'icon-preview' });
+  var errBox = h('div', { class: 'ui-dialog-error' });
+
+  function renderPreview() {
+    clearEl(preview);
+    var markup = FE.iconMarkupFromPayload(payloadTa.value);
+    if (!markup) {
+      preview.appendChild(h('span', { class: 'mini-label' }, '（载荷无法渲染：需以 svg: 或 xml: 开头）'));
+      return;
+    }
+    var box = h('span', { class: 'kb-icon-wrap', style: { width: '34px', height: '34px' } });
+    box.innerHTML = markup;
+    preview.appendChild(box);
+    preview.appendChild(h('span', { class: 'mini-label' }, '按键文字色着色（SVG 自带颜色优先）'));
+  }
+  payloadTa.addEventListener('input', renderPreview);
+  payloadTa.addEventListener('change', renderPreview);
+
+  modal.body.appendChild(h('div', { class: 'form-row' },
+    h('label', { class: 'mini-label' }, '名字'), nameInp));
+  modal.body.appendChild(h('div', { class: 'form-row' },
+    h('label', { class: 'mini-label' }, '内联 SVG/XML 载荷（svg: 或 xml: 开头）'), payloadTa));
+  modal.body.appendChild(h('div', { class: 'form-row' }, preview));
+  modal.body.appendChild(errBox);
+  modal.body.appendChild(h('div', { class: 'mini-label' },
+    '编辑器只清掉 <script> 与内联事件属性（on*）与 javascript: 链接，其余标记原样保留。'));
+  renderPreview();
+
+  function fail(msg) {
+    clearEl(errBox);
+    errBox.appendChild(document.createTextNode(String(msg)));
+  }
+
+  /* 「取消」走守卫：有改动先确认 */
+  guard.reset();
+  modal.toolbar.appendChild(h('button', { type: 'button', onclick: function () { modal.requestClose(); } }, '取消'));
+  modal.toolbar.appendChild(h('button', {
+    type: 'button', class: 'primary',
+    onclick: function () {
+      var name = nameInp.value.trim();
+      var payload = payloadTa.value.trim();
+      if (!name) return fail('名字不能为空');
+      if (FE.isBuiltinIcon(name)) return fail('“' + name + '” 是内置图标名，不需要自定义');
+      if (taken[name] && name !== opts.name) return fail('已经有同名图标: ' + name);
+      if (!FE.isInlineIcon(payload)) return fail('载荷必须以 svg: 或 xml: 开头');
+      if (!FE.iconMarkupFromPayload(payload)) return fail('载荷清洗后没有任何标记，无法渲染');
+      modal.close();
+      opts.onChange(name, payload);
     }
   }, '保存'));
 };
@@ -1495,10 +1840,29 @@ FE.openKeyDialog = function (opts) {
       else if (ktSel.value === '__null__') draft.keyType = null;
       else draft.keyType = ktSel.value;
     });
+    /* 图标：内置四个 + profile.icons 里自定义的名字 + 内联 svg:/xml: 载荷。
+     * 自定义图标不在 FE.ICONS 里，所以下拉按「内置 / 自定义映射 / 内联载荷」分组，
+     * 并且当前值不在任何一组时也补一项，免得打开对话框就把它悄悄改掉。 */
     var iconSel = h('select', { class: 'mini-select' });
     iconSel.appendChild(h('option', { value: '', selected: draft.icon == null }, '继承' + (effRaw('icon') ? '（' + effRaw('icon') + '）' : '')));
     iconSel.appendChild(h('option', { value: '__null__', selected: draft.icon === null }, '清除（null）'));
-    FE.ICONS.forEach(function (t) { iconSel.appendChild(h('option', { value: t, selected: draft.icon === t }, t)); });
+    var iconNames = FE.iconNames({ profile: state.profile });
+    var builtinGroup = h('optgroup', { label: '内置' });
+    FE.ICONS.forEach(function (t) { builtinGroup.appendChild(h('option', { value: t, selected: draft.icon === t }, t)); });
+    iconSel.appendChild(builtinGroup);
+    if (iconNames.length) {
+      var customGroup = h('optgroup', { label: '自定义（icons 映射）' });
+      iconNames.forEach(function (t) { customGroup.appendChild(h('option', { value: t, selected: draft.icon === t }, t)); });
+      iconSel.appendChild(customGroup);
+    }
+    var curIcon = draft.icon;
+    if (typeof curIcon === 'string' && curIcon !== '' && FE.ICONS.indexOf(curIcon) < 0 &&
+        iconNames.indexOf(curIcon) < 0 && !FE.isInlineIcon(curIcon)) {
+      iconSel.appendChild(h('option', { value: curIcon, selected: true }, '当前值（' + curIcon + '）'));
+    }
+    if (FE.isInlineIcon(curIcon)) {
+      iconSel.appendChild(h('option', { value: curIcon, selected: true }, '当前值（内联 ' + curIcon.slice(0, curIcon.indexOf(':') + 1) + '…）'));
+    }
     iconSel.addEventListener('change', function () {
       if (iconSel.value === '') delete draft.icon;
       else if (iconSel.value === '__null__') draft.icon = null;
@@ -1673,19 +2037,36 @@ FE.openKeyDialog = function (opts) {
     gcard2.appendChild(h('summary', null, '手势'));
     var gb2 = h('div', { class: 'inner-card-body' });
 
+    /* 手势行摘要：drag 有自己的形状（四方向 + 松手），单独出一句中文摘要，
+     * 其余手势沿用「标签 + 动作」。 */
+    function summaryOf(slot, val) {
+      if (slot === 'drag') {
+        if (val == null) return '（无）';
+        var di = FE.dragInfo(val, FE.NEUTRAL_STATUS);
+        if (!di) return '（结构无效）';
+        var cn = { up: '上', down: '下', left: '左', right: '右' };
+        var parts = [];
+        FE.DRAG_DIRS.forEach(function (d) {
+          if (!di.directions[d]) return;
+          parts.push(cn[d] + ' ' + (di.directions[d].action ? di.directions[d].action.display : '无动作'));
+        });
+        var tail = di.end ? ('，松手 ' + (di.end.action ? di.end.action.display : '无动作')) : '';
+        return (di.label ? '「' + di.label + '」 ' : '') +
+          (parts.length ? parts.join(' / ') : '无每步动作') + tail;
+      }
+      var gi = val !== undefined && val !== null ? FE.gestureInfo(val, FE.NEUTRAL_STATUS) : null;
+      return gi ? ((gi.label ? '「' + gi.label + '」 ' : '') + (gi.action ? gi.action.display : '无动作')) : '（无）';
+    }
     function gestureRow(slot, label) {
-      var cur = draft;
       var val;
       if (slot.indexOf('swipe.') === 0) {
         val = (FE.isPlainObject(draft.swipe) ? draft.swipe[slot.slice(6)] : undefined);
       } else val = draft[slot];
-      var gi = val !== undefined ? FE.gestureInfo(val, FE.NEUTRAL_STATUS) : null;
-      var summary = gi ? ((gi.label ? '「' + gi.label + '」 ' : '') + (gi.action ? gi.action.display : '无动作')) : '（继承）';
+      var summary = val !== undefined ? summaryOf(slot, val) : '（继承）';
       if (val === undefined) {
         var effG = effObj();
         var effVal = slot.indexOf('swipe.') === 0 ? (effG.swipe ? effG.swipe[slot.slice(6)] : undefined) : effG[slot];
-        var gi2 = effVal !== undefined && effVal != null ? FE.gestureInfo(effVal, FE.NEUTRAL_STATUS) : null;
-        summary = gi2 ? ((gi2.label ? '「' + gi2.label + '」 ' : '') + (gi2.action ? gi2.action.display : '无动作')) : '（无）';
+        summary = summaryOf(slot, effVal === undefined ? null : effVal);
       }
       var canClear = slot !== 'tap';
       return h('div', { class: 'gesture-row' },
@@ -1736,16 +2117,19 @@ FE.openKeyDialog = function (opts) {
     });
     gb2.appendChild(gestureRow('longPress', '长按 longPress'));
     gb2.appendChild(gestureRow('hold', '按住 hold'));
+    gb2.appendChild(gestureRow('drag', '拖动 drag'));
     gcard2.appendChild(gb2);
     formHost.appendChild(gcard2);
 
     /* 状态变体 */
     var vcard = h('details', { class: 'card inner-card' });
-    vcard.appendChild(h('summary', null, '状态变体（组字 / ASCII / 停用时切换）'));
+    vcard.appendChild(h('summary', null, '状态变体（组字 / ASCII / 停用 / 选项开关 / 组合条件）'));
     var vb = h('div', { class: 'inner-card-body' });
     var variants = Array.isArray(draft.variants) ? draft.variants : [];
     variants.forEach(function (v, vi) {
-      var conds = v && v.when && v.when.rime ? Object.keys(v.when.rime).map(function (c) { return c + '=' + v.when.rime[c]; }).join(' ') : '（无条件）';
+      /* 条件摘要统一走 FE.condSummaryText：选项条件与 all_of/any_of/none_of
+       * 直接 Object.keys 拼字符串会渲染成 [object Object]。 */
+      var conds = FE.condSummaryText(v && v.when);
       var fields = v ? Object.keys(FE.omit(v, ['when'])).join(', ') : '';
       vb.appendChild(h('div', { class: 'variant-row' },
         h('span', { class: 'gesture-name' }, conds),
@@ -2427,9 +2811,14 @@ function renameKeyDef(oldN, newN) {
     });
   }
   function updGestures(c) {
-    ['tap', 'doubleTap', 'longPress', 'hold'].forEach(function (f) { updGesture(c[f]); });
+    FE.GESTURE_SLOTS.forEach(function (f) { updGesture(c[f]); });
     if (FE.isPlainObject(c.swipe)) {
       FE.SWIPE_DIRS.forEach(function (d) { updGesture(c.swipe[d]); });
+    }
+    /* drag 的每步动作与松手动作同样可能引用动作/宏名，重命名必须一并改写 */
+    if (FE.isPlainObject(c.drag)) {
+      FE.DRAG_DIRS.forEach(function (d) { updGesture(c.drag[d]); });
+      FE.DRAG_END_SLOTS.forEach(function (s) { updGesture(c.drag[s]); });
     }
   }
   function updNode(node) {

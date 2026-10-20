@@ -332,7 +332,7 @@ FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
 const kd = documentStub._openDialogs[0];
 ok(kd.textContent.indexOf('编辑按键定义') >= 0, '定义模式对话框打开');
 const editBtns = kd.querySelectorAll('button').filter(b => b.textContent === '编辑…');
-ok(editBtns.length === 8, '8 个手势编辑入口（tap/双击/四向滑动/长按/按住）');
+ok(editBtns.length === 9, '9 个手势编辑入口（tap/双击/四向滑动/长按/按住/拖动）');
 editBtns[2].click(); /* swipe.up */
 const gd = documentStub._openDialogs[documentStub._openDialogs.length - 1];
 ok(gd.textContent.indexOf('上滑') >= 0, '手势对话框标题正确');
@@ -5131,6 +5131,163 @@ console.log('== 符号面板预览 ==');
     FE.activateTab(savedTab === 'tab-symbols' ? 'tab-layout' : savedTab);
     FE.renderAll();
   }
+}
+
+/* ================================================================
+ * 对齐新版 skill：drag 拖动面板 / 自定义图标（icons）
+ * ================================================================ */
+console.log('== 拖动手势（drag）面板 ==');
+{
+  documentStub._openDialogs.length = 0;
+  let dragOut = 'UNSET';
+  FE.openGestureDialog({
+    slot: 'drag',
+    gesture: {
+      step: 12, feedback: 'key',
+      left: { action: { type: 'app', command: 'editor_select_step', argument: 'left' } },
+      end: { action: { type: 'app', command: 'delete_selection' } }
+    },
+    onChange: v => { dragOut = v; }
+  });
+  const dd = documentStub._openDialogs[0];
+  eq(dd.querySelectorAll('.gesture-row').length, 5, 'drag 面板含四向 + 松手共 5 个槽位');
+  /* drag 是独立于 gesture 的对象，没有「动作名称 / 宏调用」这两种来源 */
+  eq(dd.querySelectorAll('select')[0].querySelectorAll('option').map(o => o.getAttribute('value')),
+    ['inherit', 'ref', 'direct'], 'drag 来源只有 继承 / 引用 / 直接动作');
+  const ddNum = dd.querySelectorAll('input').filter(i => i.getAttribute('type') === 'number')[0];
+  eq(ddNum.value, '12', 'drag 面板回填 step');
+  const ddFb = dd.querySelectorAll('select').filter(s =>
+    s.querySelectorAll('option').some(o => o.getAttribute('value') === 'none'))[0];
+  eq(ddFb.value, 'key', 'drag 面板回填 feedback');
+  let rows = dd.querySelectorAll('.gesture-row');
+  ok(rows[2].textContent.indexOf('editor_select_step') >= 0, '左向槽位摘要显示方向命令');
+  ok(rows[4].textContent.indexOf('delete_selection') >= 0, '松手槽位摘要显示命令');
+
+  /* 上向槽位 → 嵌套手势对话框（完整五种来源），配一个 app 动作 */
+  documentStub._openDialogs.length = 0;
+  rows[0].querySelectorAll('button').filter(b => b.textContent === '编辑…')[0].click();
+  const upDlg = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  ok(upDlg.textContent.indexOf('拖动·上') >= 0, '上向槽位打开嵌套手势对话框');
+  const upMode = upDlg.querySelectorAll('select')[0];
+  upMode.value = 'direct';
+  upMode._fire('change');
+  const upType = upDlg.querySelectorAll('select').filter(s =>
+    s.querySelectorAll('option').some(o => o.getAttribute('value') === 'app'))[0];
+  ok(!!upType, '嵌套对话框的直接动作编辑器有 app 类型');
+  upType.value = 'app';
+  upType._fire('change');
+  const upCmd = upDlg.querySelectorAll('select').filter(s =>
+    s.querySelectorAll('option').some(o => o.getAttribute('value') === 'editor_select_step'))[0];
+  ok(!!upCmd, 'app 命令下拉含 editor_select_step');
+  ok(upCmd.querySelectorAll('option').some(o => o.getAttribute('value') === 'delete_selection'),
+    'app 命令下拉含 delete_selection');
+  upCmd.value = 'editor_select_step';
+  upCmd._fire('change');
+  const upArg = upDlg.querySelectorAll('input').filter(i =>
+    String(i.getAttribute('placeholder') || '').indexOf('参数') >= 0)[0];
+  upArg.value = 'up';
+  upArg._fire('change');
+  upDlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  ok(!upDlg.open, '上向嵌套对话框保存后关闭');
+
+  /* 左向槽位清除 → 显式 null（屏蔽继承，与 swipe 方向同规则） */
+  rows = dd.querySelectorAll('.gesture-row');
+  rows[2].querySelectorAll('button').filter(b => b.textContent === '清除')[0].click();
+  rows = dd.querySelectorAll('.gesture-row');
+  ok(rows[2].textContent.indexOf('已清除') >= 0, '方向槽位置 null 后摘要显示已清除');
+
+  dd.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  eq(dragOut.up, { type: 'app', command: 'editor_select_step', argument: 'up' }, '上向动作写入 drag');
+  ok(dragOut.left === null, '左向置 null 原样保留');
+  eq(dragOut.end, { action: { type: 'app', command: 'delete_selection' } }, '松手动作原样保留');
+  eq(dragOut.step, 12, '保存后 step 保留');
+  eq(dragOut.feedback, 'key', '保存后 feedback 保留');
+
+  /* 「清除（置 null 屏蔽继承）」把整条 drag 置 null（文档：drag:null 删除 drag） */
+  documentStub._openDialogs.length = 0;
+  let dragNull = 'UNSET';
+  FE.openGestureDialog({ slot: 'drag', gesture: { step: 5 }, onChange: v => { dragNull = v; } });
+  const dni = documentStub._openDialogs[0];
+  dni.querySelectorAll('button').filter(b => b.textContent.indexOf('清除（置 null') === 0)[0].click();
+  ok(dragNull === null, '整条 drag 可置 null（屏蔽继承）');
+
+  /* 键对话框里的「拖动 drag」行摘要 */
+  documentStub._openDialogs.length = 0;
+  FE.state.profile.keys['drag.sum'] = { label: '拖', tap: { type: 'key', key: 'A' },
+    drag: { step: 8, left: { type: 'app', command: 'editor_select_step', argument: 'left' } } };
+  FE.openKeyDialog({ mode: 'definition', name: 'drag.sum' });
+  const kdDrag = documentStub._openDialogs[0];
+  const dragRow = kdDrag.querySelectorAll('.gesture-row').filter(r => r.textContent.indexOf('拖动') >= 0)[0];
+  ok(!!dragRow, '键对话框渲染「拖动 drag」行');
+  ok(dragRow.textContent.indexOf('editor_select_step') >= 0, '拖动行摘要带方向动作');
+  kdDrag.close();
+  documentStub._openDialogs.length = 0;
+  delete FE.state.profile.keys['drag.sum'];
+  FE.renderAll();
+}
+
+console.log('== 自定义图标（icons）列表与编辑 ==');
+{
+  const HEART = 'svg:<svg viewBox="0 0 24 24"><path d="M12 21"/></svg>';
+  FE.state.profile.icons = { 'foxy.heart': HEART };
+  FE.state.profile.keys['ic.k'] = { label: '♥', icon: 'foxy.heart', tap: { type: 'text', text: '♥' } };
+  FE.renderAll();
+  const icRows = $('icons-list').querySelectorAll('.def-item.def-row-click');
+  eq(icRows.length, 1, 'icons 列表渲染 1 行');
+  eq(icRows[0].querySelectorAll('.def-name')[0].textContent, 'foxy.heart', 'icons 行显示图标名');
+  ok(icRows[0].querySelectorAll('.icon-list-preview')[0].innerHTML.indexOf('<svg') === 0,
+    'icons 行用载荷渲染色块预览');
+  ok(/使用 \d+/.test(icRows[0].textContent), 'icons 行显示引用次数（实际 ' + icRows[0].textContent + '）');
+
+  /* 点行 → 编辑对话框；载荷不是 svg:/xml: 时拒绝保存 */
+  documentStub._openDialogs.length = 0;
+  icRows[0]._fire('click');
+  const icDlg = documentStub._openDialogs[0];
+  ok(!!icDlg, '点 icons 行打开编辑对话框');
+  const icName = icDlg.querySelectorAll('input').filter(i => i.getAttribute('type') === 'text')[0];
+  const icPayload = icDlg.querySelectorAll('textarea')[0];
+  ok(!!icName && !!icPayload, '图标对话框含名字与载荷输入');
+  eq(icName.value, 'foxy.heart', '图标对话框回填名字');
+  icName.value = 'foxy.star';
+  icPayload.value = 'nope';
+  icDlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  ok(icDlg.open, '载荷不是 svg:/xml: 时保存被拒（对话框不关）');
+  icPayload.value = 'svg:<svg viewBox="0 0 24 24"><path d="M2 2"/></svg>';
+  icDlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  ok(!icDlg.open, '合法载荷保存后关闭对话框');
+  ok(!!FE.state.profile.icons['foxy.star'], '改名后写入新图标名');
+  ok(FE.state.profile.icons['foxy.heart'] === undefined, '旧图标名同时移除');
+
+  /* 键对话框的图标下拉能选到 icons 映射里的自定义名 */
+  documentStub._openDialogs.length = 0;
+  FE.openKeyDialog({ mode: 'definition', name: 'ic.k' });
+  const kdIcon = documentStub._openDialogs[0];
+  const iconSel = kdIcon.querySelectorAll('select').filter(s =>
+    s.querySelectorAll('option').some(o => o.getAttribute('value') === 'foxy.star'))[0];
+  ok(!!iconSel, '图标下拉含 icons 映射里的自定义名');
+  ok(iconSel.querySelectorAll('optgroup').some(g => String(g.getAttribute('label')).indexOf('自定义') === 0),
+    '自定义名归在「自定义（icons 映射）」分组');
+  kdIcon.close();
+  documentStub._openDialogs.length = 0;
+
+  /* 键盘预览：icon 指向已改名删掉的旧名字 → 按文档「未知图标名不渲染图标」；
+   * 改成新名字后同一键才渲染出载荷里的图形。 */
+  const icRow0 = FE.state.profile.layouts.default.sections[0].rows[0];
+  icRow0.push({ ref: 'ic.k' });
+  FE.renderAll();
+  const staleWrap = q('.kb-key .kb-icon-wrap').filter(w => w.innerHTML.indexOf('M2 2') >= 0);
+  eq(staleWrap.length, 0, '仍指向旧图标名的键不渲染图标（未知名字按文档不画）');
+  ok(q('.kb-key').filter(k => k.textContent.indexOf('♥') >= 0).length >= 1, '该键回落到文本标签');
+  FE.state.profile.keys['ic.k'].icon = 'foxy.star';
+  FE.renderAll();
+  const icWrap = q('.kb-key .kb-icon-wrap').filter(w => w.innerHTML.indexOf('M2 2') >= 0);
+  ok(icWrap.length >= 1, '键盘预览用 icons 载荷渲染自定义图标（实际 ' + icWrap.length + '）');
+  icRow0.pop();
+  FE.renderAll();
+
+  delete FE.state.profile.keys['ic.k'];
+  delete FE.state.profile.icons;
+  FE.renderAll();
 }
 
 }   /* 结束 await sleep(350) 后的主体块 */
