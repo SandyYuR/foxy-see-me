@@ -1933,6 +1933,60 @@ console.log('== 对齐新版 skill：icons / drag / 条件组合 ==');
   ok(Array.isArray(merged.report.icons) && merged.report.icons.length >= 1, '导入报告记录共享图标数');
 })();
 
+
+/* ================================================================
+ * 对齐 2026-10 的 modifier 语义：SHIFT / CTRL / ALT / META 四值
+ *   - key / override / 变体上的 modifier 字段（此前完全没校验）
+ *   - modifier 动作的 modifier 取值
+ *   - 预览状态位按「该键自己声明的修饰键」判定（不再写死 SHIFT）
+ *   - status.shift 作为 SHIFT 的历史镜像继续有效
+ * ================================================================ */
+(function () {
+  eq(FE.MODIFIERS.join(','), 'SHIFT,CTRL,ALT,META', 'MODIFIERS 是四值枚举');
+  ok(FE.isModifierName('alt'), 'modifier 名大小写不敏感');
+  ok(FE.isModifierName(' Meta '), 'modifier 名容忍首尾空白');
+  ok(!FE.isModifierName('HYPER'), 'HYPER 不是合法 modifier');
+  ok(!FE.isModifierName(''), '空串不是合法 modifier');
+
+  const keyModErrors = (tree) => FE.validateProfile(FE.normalizeProfile(tree)).errors;
+  const layoutWith = (node) => ({ layouts: { d: { sections: [{ type: 'rows', rows: [[node]] }] } } });
+
+  eq(keyModErrors(layoutWith({ ref: 'rime.a', modifier: 'ALT' })), [], '键级 modifier:ALT 通过校验');
+  eq(keyModErrors(layoutWith({ ref: 'rime.a', modifier: 'meta' })), [], '键级 modifier 大小写不敏感');
+  eq(keyModErrors(layoutWith({ ref: 'rime.a', modifier: null })), [], '键级 modifier:null（取消修饰键）合法');
+  ok(keyModErrors(layoutWith({ ref: 'rime.a', modifier: 'HYPER' })).some(e => e.indexOf('HYPER') >= 0),
+    '键级 modifier:HYPER 被检出');
+  ok(keyModErrors(layoutWith({ ref: 'rime.a', modifier: 3 })).some(e => e.indexOf('modifier') >= 0),
+    '键级 modifier 非字符串被检出');
+  ok(keyModErrors(layoutWith({ ref: 'rime.a', override: { modifier: 'NOPE' } })).some(e => e.indexOf('NOPE') >= 0),
+    'override.modifier 同样被校验');
+  ok(keyModErrors(layoutWith({ ref: 'rime.a', variants: [{ when: { rime: { composing: true } }, modifier: 'BAD' }] }))
+    .some(e => e.indexOf('BAD') >= 0), '变体的 modifier 同样被校验');
+
+  /* modifier 动作：ALT/META 与 SHIFT/CTRL 同级 */
+  const modActionErrors = (mod) => keyModErrors(layoutWith({
+    ref: 'rime.a', tap: { type: 'modifier', modifier: mod, state: 'LOCKED' }
+  }));
+  eq(modActionErrors('ALT'), [], 'modifier 动作支持 ALT');
+  eq(modActionErrors('meta'), [], 'modifier 动作支持 META（大小写不敏感）');
+  ok(modActionErrors('HYPER').some(e => e.indexOf('HYPER') >= 0), 'modifier 动作 HYPER 被检出');
+
+  /* 预览状态位：按 key 自己声明的修饰键点亮，含 SHIFT 历史镜像 */
+  const altKey = { modifier: 'ALT' };
+  const altOn = FE.keyStateOpts(altKey, { modifiers: { SHIFT: false, CTRL: false, ALT: true, META: false } }, false);
+  ok(altOn.modifierActive, 'ALT 键在 Alt 开启时进入 modifierActive');
+  ok(!FE.keyStateOpts(altKey, { modifiers: { ALT: false } }, false).modifierActive, 'Alt 关闭时不激活');
+  ok(!FE.keyStateOpts(altKey, { modifiers: { ALT: true } }, true).modifierActive, 'pressed 时不报 modifierActive');
+  ok(FE.keyStateOpts({ modifier: 'SHIFT' }, { shift: true }, false).modifierActive,
+    '只有 status.shift 时 SHIFT 键仍激活（历史调用口径）');
+  ok(!FE.keyStateOpts({ modifier: 'CTRL' }, { shift: true }, false).modifierActive,
+    'Shift 开启不点亮 CTRL 键');
+  ok(!FE.keyStateOpts({}, { modifiers: { SHIFT: true, ALT: true } }, false).modifierActive,
+    '没有 modifier 字段的键永不激活');
+  ok(FE.statusModifierOn({ modifiers: { META: true } }, 'meta'), 'statusModifierOn 读 modifiers 表');
+  ok(FE.statusModifierOn({ shift: true }, 'SHIFT'), 'statusModifierOn 兼容 status.shift');
+  ok(!FE.statusModifierOn({ shift: true }, 'ALT'), 'status.shift 不影响其它修饰键');
+})();
 /* 注：主题文档进入撤销栈 / 草稿的行为属 app.js 的 **UI 段**
  * （core 环境里 FE.mutate / FE.snapshotState 不存在），
  * 相关断言放在 test-ui.js 的「主题页」区块。 */

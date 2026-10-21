@@ -467,6 +467,9 @@ function buildSkeleton() {
       /* 键盘状态开关组：切到符号面板页时整组隐藏（app.js 的 syncPreviewPanelChrome） */
       el('div', { class: 'pt-state-group', id: 'pt-state-group' },
         el('label', null, el('input', { type: 'checkbox', id: 'pt-shift' })),
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-ctrl' })),
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-alt' })),
+        el('label', null, el('input', { type: 'checkbox', id: 'pt-meta' })),
         el('label', null, el('input', { type: 'checkbox', id: 'pt-composing' })),
         el('label', null, el('input', { type: 'checkbox', id: 'pt-ascii' })),
         el('label', null, el('input', { type: 'checkbox', id: 'pt-disabled' })),

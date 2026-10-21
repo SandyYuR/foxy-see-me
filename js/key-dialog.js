@@ -1993,7 +1993,10 @@ FE.openKeyDialog = function (opts) {
     var modSel = h('select', { class: 'mini-select' });
     modSel.appendChild(h('option', { value: '', selected: draft.modifier == null }, '继承（' + (effRaw('modifier') || '无') + '）'));
     modSel.appendChild(h('option', { value: '__null__', selected: draft.modifier === null }, '清除（null）'));
-    FE.MODIFIERS.forEach(function (m) { modSel.appendChild(h('option', { value: m, selected: draft.modifier === m }, m)); });
+    /* 已有值按规范大小写不敏感比较，避免手写 "alt" 的键在下拉里显示成「继承」 */
+    var curMod = draft.modifier == null ? null
+      : (FE.canonicalModifierName ? FE.canonicalModifierName(draft.modifier) : String(draft.modifier).toUpperCase());
+    FE.MODIFIERS.forEach(function (m) { modSel.appendChild(h('option', { value: m, selected: curMod === m }, m)); });
     modSel.addEventListener('change', function () {
       if (modSel.value === '') delete draft.modifier;
       else if (modSel.value === '__null__') draft.modifier = null;
@@ -2002,6 +2005,12 @@ FE.openKeyDialog = function (opts) {
     b.appendChild(h('div', { class: 'form-grid-2' },
       h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '状态标签'), slSel),
       h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '修饰键'), modSel)));
+    /* 长按锁定是**运行时**行为，编辑器不建模按压时长，所以只在表单里说明语义：
+     * 声明了 modifier 的键长按会隐式锁定该修饰键（即使没写 longPress）；
+     * 写了显式 hold 手势则关闭这个隐式回退；没有 modifier 的原始键（如 rime.Alt_L）
+     * 长按仍只发该键本身，不参与修饰键锁定。 */
+    b.appendChild(h('div', { class: 'status' },
+      '声明了修饰键的键长按会隐式锁定它（不必写 longPress）；写了 hold 手势则关闭该回退。没有修饰键的原始键（如 rime.Alt_L）长按只发本键，不参与锁定。'));
     /* 选中 switch:<name> 源时才显示开关名输入框 */
     if (slIsSwitch) {
       b.appendChild(h('div', { class: 'form-row form-inline' },

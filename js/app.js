@@ -55,7 +55,11 @@ var state = {
   folderLayoutPath: null, // 当前正在编辑的包内布局文件路径
   folderHint: null,       // 需补选文件夹时的提示文案（null = 不提示，由 renderFolderOps 派生渲染）
   layoutName: null,       // 当前正在编辑/预览的命名布局
-  status: { composing: false, ascii_mode: false, disabled: false, shift: false },
+  /* 预览的「键盘状态」模拟。shift 是历史字段（决定 shiftedLabel / 弹出候选），
+   * 同时镜像 modifiers.SHIFT；modifiers 是本轮按规范扩出来的四修饰键模拟表
+   * （SHIFT/CTRL/ALT/META，对应 key.modifier 的合法取值）。 */
+  status: { composing: false, ascii_mode: false, disabled: false, shift: false,
+    modifiers: { SHIFT: false, CTRL: false, ALT: false, META: false } },
   statusSample: '朙月拼音',
   theme: 'light',
   includeType: true,
@@ -1133,6 +1137,24 @@ function validateAction(action, where, err, profile) {
 }
 FE.validateAction = validateAction;
 
+/* key / override / 变体上的 modifier 字段（规范：SHIFT/CTRL/ALT/META，大小写不敏感；
+ * 显式 null 表示「这个位置不是修饰键」，用于把继承来的 foxy.Shift 变回普通键）。
+ * 这个字段此前完全没校验 —— 写成 "HYPER" 或数字会一路带到预览里静默失效。 */
+function checkKeyModifier(obj, where, err, code) {
+  if (!isPlainObject(obj)) return;
+  if (!hasOwnProp(obj, 'modifier')) return;
+  var v = obj.modifier;
+  if (v === null) return;
+  if (typeof v !== 'string') {
+    err(where + ' 的 modifier 必须是字符串或 null', { code: code || 'bad-modifier' });
+    return;
+  }
+  if (!FE.isModifierName(v)) {
+    err(where + ' 的 modifier 不在枚举内: ' + JSON.stringify(v) + '（可用 ' + FE.MODIFIERS.join(' / ') + '，大小写不敏感）',
+      { code: code || 'bad-modifier' });
+  }
+}
+
 function refNameOf(placement) {
   return (isPlainObject(placement) && typeof placement.ref === 'string') ? placement.ref : '内联按键';
 }
@@ -1292,9 +1314,11 @@ FE.validateProfile = function (profile) {
       if (kd.ref === kn) err('按键定义 “' + kn + '” 引用了自身');
       if (kd.hold != null && kd.longPress != null) err('按键定义 “' + kn + '” 同时定义了 hold 与 longPress');
       checkGestureRefs(kd, '按键定义 “' + kn + '”', err, profile, scope);
+      checkKeyModifier(kd, '按键定义 “' + kn + '”', err);
       if (Array.isArray(kd.variants)) {
         kd.variants.forEach(function (v, vi) {
           if (!isPlainObject(v)) { err('按键定义 “' + kn + '” 的变体 ' + vi + ' 不是对象'); return; }
+          checkKeyModifier(v, '按键定义 “' + kn + '” 变体 ' + vi, err);
           if (typeof v.ref === 'string' && !lookupDef(v.ref, scope)) err('按键定义 “' + kn + '” 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref);
           if (v.when != null && !isPlainObject(v.when)) err('按键定义 “' + kn + '” 变体 ' + vi + ' 的 when 必须是对象');
           else if (isPlainObject(v.when)) validateCondition(v.when.rime, '按键定义 “' + kn + '” 变体 ' + vi + ' 的条件', err, warn, reportOptionName);
@@ -1512,8 +1536,10 @@ FE.validateProfile = function (profile) {
       if (ev.eff.tap == null) err(full + '（' + refNameOf(k) + '）解析后缺少点击动作 tap', { code: 'no-tap' });
       if (ev.eff.hold != null && ev.eff.longPress != null) err(full + '（' + refNameOf(k) + '）同时定义了 hold 与 longPress', { code: 'hold-longpress' });
       checkGestureRefs(k, full, err, profile, scope);
+      checkKeyModifier(k, full, err);
       if (Array.isArray(k.variants)) k.variants.forEach(function (v, vi) {
         if (!isPlainObject(v)) { err(full + ' 的变体 ' + vi + ' 不是对象', { code: 'variant-not-object' }); return; }
+        checkKeyModifier(v, full + ' 变体 ' + vi, err);
         if (typeof v.ref === 'string' && !lookupDef(v.ref, scope)) err(full + ' 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref, { code: 'unresolved-ref' });
         if (v.when != null && !isPlainObject(v.when)) err(full + ' 变体 ' + vi + ' 的 when 必须是对象', { code: 'variant-not-object' });
         else if (isPlainObject(v.when)) validateCondition(v.when.rime, full + ' 变体 ' + vi + ' 的条件', err, warn, reportOptionName);
@@ -1521,8 +1547,10 @@ FE.validateProfile = function (profile) {
       });
       if (isPlainObject(k.override)) {
         checkGestureRefs(k.override, full + ' override', err, profile, scope);
+        checkKeyModifier(k.override, full + ' override', err);
         if (Array.isArray(k.override.variants)) k.override.variants.forEach(function (v, vi) {
           if (!isPlainObject(v)) { err(full + ' override 变体 ' + vi + ' 不是对象', { code: 'variant-not-object' }); return; }
+          checkKeyModifier(v, full + ' override 变体 ' + vi, err);
           if (typeof v.ref === 'string' && !lookupDef(v.ref, scope)) err(full + ' override 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref, { code: 'unresolved-ref' });
           if (v.when != null && !isPlainObject(v.when)) err(full + ' override 变体 ' + vi + ' 的 when 必须是对象', { code: 'variant-not-object' });
           else if (isPlainObject(v.when)) validateCondition(v.when.rime, full + ' override 变体 ' + vi + ' 的条件', err, warn, reportOptionName);
@@ -3510,11 +3538,20 @@ function applyKeyColors(el, eff, pressed, status) {
   /* 运行时状态色：优先级 modifierActive < modifierLocked < pressed，按序叠加。
    * 状态判定统一走 FE.keyStateOpts（color-source.js），与预览/编辑面口径一致：
    * 该方法按 App 的 m00.k 返回 { pressed, modifierActive, modifierLocked }。
-   * ⚠️ 编辑器目前只模拟 modifierActive（Shift + 状态栏勾选），**没有 modifierLocked
-   * 的模拟入口**（App 端锁定是另一个状态，l30 枚举里独立存在）。这里仍让 locked
-   * 参与叠加链，一旦将来加了锁定开关，无需改这段。 */
+   * ⚠️ 编辑器目前只模拟 modifierActive（按该键自己声明的 modifier 查预览的修饰键
+   * 模拟表 state.status.modifiers，Shift/Ctrl/Alt/Meta 各一个开关），**没有
+   * modifierLocked 的模拟入口**（App 端锁定是另一个状态，l30 枚举里独立存在）。
+   * 这里仍让 locked 参与叠加链，一旦将来加了锁定开关，无需改这段。
+   * 下面 fallback 仅在 color-source.js 尚未加载（脚本顺序在 app.js 之后）时生效，
+   * 必须与 FE.keyStateOpts 的判定保持一致。 */
   var stOpts = (FE.keyStateOpts ? FE.keyStateOpts(eff, status, pressed)
-    : { pressed: !!pressed, modifierActive: !pressed && eff.modifier === 'SHIFT' && !!(status && status.shift), modifierLocked: false });
+    : { pressed: !!pressed,
+        /* 与 FE.keyStateOpts 逐字对应：statusModifierOn 缺失时仅对 SHIFT 回落 status.shift，
+         * 这样「color-source.js 已加载 / 未加载」两条路径的判定完全一致。 */
+        modifierActive: !pressed && eff.modifier != null && (FE.statusModifierOn
+          ? FE.statusModifierOn(status, eff.modifier)
+          : (FE.canonicalModifierName(eff.modifier) === 'SHIFT' && !!(status && status.shift))),
+        modifierLocked: false });
   var modifierOn = !!(stOpts.modifierActive || stOpts.modifierLocked);
   var chain = [];
   if (isPlainObject(c.states)) {
@@ -3688,9 +3725,12 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
   if (iconSvg) {
     var wrap = h('span', { class: 'kb-icon-wrap' });
     var svg = iconSvg;
-    if (eff.icon === 'shift' && eff.modifier === 'SHIFT') {
-      svg = state.status.shift ? ICONS_SVG.shift : ICONS_SVG.shiftOutline;
-      if (state.status.shift) wrap.classList.add('kb-icon-active');
+    /* Shift 图标随「Shift 是否开启」切实心/描边。modifier 大小写不敏感，
+     * 开着 CTRL/ALT/META 不该点亮 Shift 图标，故按该键自己的修饰键判断。 */
+    if (eff.icon === 'shift' && FE.canonicalModifierName(eff.modifier) === 'SHIFT') {
+      var shiftOn = FE.statusModifierOn(state.status, 'SHIFT');
+      svg = shiftOn ? ICONS_SVG.shift : ICONS_SVG.shiftOutline;
+      if (shiftOn) wrap.classList.add('kb-icon-active');
     }
     wrap.innerHTML = svg;
     /* 下限也分情况：行区段保持原来的 14px（窄窗口下外观零变化），
@@ -6903,7 +6943,20 @@ function initToolbar() {
   });
 
   /* 预览控件 */
-  $('pt-shift').addEventListener('change', function () { state.status.shift = this.checked; renderPreview(); });
+  /* 修饰键模拟（四个）：键的 modifier 命中哪个枚举，就由对应开关点亮它的
+   * modifierActive 状态色。Shift 额外镜像到历史字段 status.shift —— 后者还决定
+   * shiftedLabel/弹出候选等语义（见 displayLabel、popupCandidates）。 */
+  FE.MODIFIERS.forEach(function (m) {
+    var el = $(m === 'SHIFT' ? 'pt-shift' : 'pt-' + m.toLowerCase());
+    if (!el) return;
+    el.addEventListener('change', function () {
+      var on = !!this.checked;
+      if (!state.status.modifiers) state.status.modifiers = {};
+      state.status.modifiers[m] = on;
+      if (m === 'SHIFT') state.status.shift = on;
+      renderPreview();
+    });
+  });
   $('pt-composing').addEventListener('change', function () { state.status.composing = this.checked; renderPreview(); });
   $('pt-ascii').addEventListener('change', function () { state.status.ascii_mode = this.checked; renderPreview(); });
   $('pt-disabled') && $('pt-disabled').addEventListener('change', function () { state.status.disabled = this.checked; renderPreview(); });

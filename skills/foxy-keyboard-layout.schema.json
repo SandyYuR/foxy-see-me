@@ -136,7 +136,11 @@
         "statusLabel": { "oneOf": [{ "type": "string" }, { "$ref": "#/$defs/statusLabel" }, { "type": "null" }] },
         "keyType": { "type": ["string", "null"] },
         "icon": { "type": ["string", "null"], "description": "Built-in name (backspace/shift/enter/return), an icons-map name, or an inline svg:/xml: payload." },
-        "modifier": { "type": ["string", "null"], "description": "SHIFT or CTRL, case-insensitive at runtime." },
+        "modifier": {
+          "type": ["string", "null"],
+          "pattern": "^(?:[sS][hH][iI][fF][tT]|[cC][tT][rR][lL]|[aA][lL][tT]|[mM][eE][tT][aA])$",
+          "description": "SHIFT, CTRL, ALT, or META; case-insensitive at runtime."
+        },
         "textSize": { "type": ["number", "null"], "exclusiveMinimum": 0 },
         "hintTextSize": { "oneOf": [{ "type": "number", "exclusiveMinimum": 0 }, { "$ref": "#/$defs/hintTextSizes" }, { "type": "null" }] },
         "weight": { "oneOf": [{ "type": "number", "exclusiveMinimum": 0 }, { "const": "auto" }, { "type": "null" }] },
@@ -253,7 +257,7 @@
         "type": { "enum": ["key", "modifier", "text", "commit", "switch_layout", "app"] },
         "key": { "type": "string", "minLength": 1 },
         "meta": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
-        "modifier": { "type": "string", "pattern": "^(?:[sS][hH][iI][fF][tT]|[cC][tT][rR][lL])$" },
+        "modifier": { "type": "string", "pattern": "^(?:[sS][hH][iI][fF][tT]|[cC][tT][rR][lL]|[aA][lL][tT]|[mM][eE][tT][aA])$" },
         "state": { "enum": ["OFF", "ONESHOT", "LOCKED", "TOGGLE_LOCKED"] },
         "text": { "type": "string" },
         "layout": { "type": "string", "minLength": 1 },

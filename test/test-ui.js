@@ -5290,6 +5290,51 @@ console.log('== 自定义图标（icons）列表与编辑 ==');
   FE.renderAll();
 }
 
+
+{
+  /* ---------------- 修饰键模拟：四开关 + ALT 键的激活态 ---------------- */
+  console.log('== 预览修饰键模拟：SHIFT / CTRL / ALT / META ==');
+  ['pt-shift', 'pt-ctrl', 'pt-alt', 'pt-meta'].forEach(function (id) {
+    ok(!!$(id), '预览工具栏有 #' + id + ' 修饰键开关');
+  });
+
+  /* 一把 ALT 修饰键：开关按下时进入 modifierActive 状态色 */
+  FE.state.profile.keys['mod.alt'] = {
+    label: 'A', modifier: 'ALT', keyType: 'FUNCTION',
+    tap: { type: 'modifier', modifier: 'ALT', state: 'ONESHOT' },
+    colors: { background: '#010203', states: { modifierActive: { background: '#0A0B0C' } } }
+  };
+  const modRow = FE.state.profile.layouts.default.sections[0].rows[0];
+  modRow.push({ ref: 'mod.alt' });
+  const findModKey = () => q('.kb-key').find(function (k) {
+    return String(k.getAttribute('title') || '').indexOf('mod.alt') >= 0;
+  });
+  $('pt-alt').checked = false; $('pt-alt')._fire('change');
+  FE.renderAll();
+  const altKeyOff = findModKey();
+  ok(!!altKeyOff, '找到 ALT 修饰键的预览按键');
+  eq(altKeyOff.style.background, '#010203', 'Alt 关闭时用基础背景色');
+  $('pt-alt').checked = true; $('pt-alt')._fire('change');
+  const altKeyOn = findModKey();
+  eq(altKeyOn.style.background, '#0A0B0C', 'Alt 开启时 ALT 键命中 modifierActive');
+  /* 别的修饰键开关不该点亮它 —— 这正是把 SHIFT 写死时漏掉的分支 */
+  $('pt-alt').checked = false; $('pt-alt')._fire('change');
+  $('pt-ctrl').checked = true; $('pt-ctrl')._fire('change');
+  const altKeyCtrl = findModKey();
+  eq(altKeyCtrl.style.background, '#010203', 'Ctrl 开启不点亮 ALT 键');
+  $('pt-ctrl').checked = false; $('pt-ctrl')._fire('change');
+  modRow.pop();
+  delete FE.state.profile.keys['mod.alt'];
+
+  /* Shift 开关仍镜像 status.shift（决定 shiftedLabel），并写回 modifiers 表 */
+  $('pt-shift').checked = true; $('pt-shift')._fire('change');
+  ok(FE.state.status.shift === true, 'Shift 开关仍写 status.shift（历史字段）');
+  ok(FE.state.status.modifiers && FE.state.status.modifiers.SHIFT === true,
+    'Shift 开关同时写 status.modifiers.SHIFT');
+  $('pt-shift').checked = false; $('pt-shift')._fire('change');
+  ok(FE.state.status.modifiers.SHIFT === false, '取消 Shift 同步清掉 modifiers.SHIFT');
+  FE.renderAll();
+}
 }   /* 结束 await sleep(350) 后的主体块 */
 
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');

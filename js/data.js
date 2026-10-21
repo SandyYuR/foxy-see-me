@@ -287,7 +287,9 @@ FE.isInlineIcon = function (value) {
   }
   return false;
 };
-FE.MODIFIERS = ['SHIFT', 'CTRL'];
+/* 修饰键枚举（SKILL.md「modifier actions」）：SHIFT / CTRL / ALT / META，运行时大小写不敏感。
+ * 它同时是 key/override/variants 的 modifier 字段与 modifier 动作的唯一取值来源。 */
+FE.MODIFIERS = ['SHIFT', 'CTRL', 'ALT', 'META'];
 /* Foxy App 的 key.meta 解析同时接受 "ctrl" 与 "control"；编辑器
  * 需要在校验和表单回显时使用同一套别名口径，但导出仍保留用户原文，
  * 只有通过图形化编辑器重新保存时才写出规范的 CTRL。 */
@@ -295,9 +297,25 @@ FE.canonicalMetaName = function (value) {
   var name = String(value == null ? '' : value).trim().toUpperCase();
   return name === 'CONTROL' ? 'CTRL' : name;
 };
-/* modifier 字段在 Foxy 中是 SHIFT / CTRL 枚举，运行时按大小写不敏感解析。 */
+/* modifier 字段在 Foxy 中是 SHIFT / CTRL / ALT / META 枚举，运行时按大小写不敏感解析。 */
 FE.canonicalModifierName = function (value) {
   return String(value == null ? '' : value).trim().toUpperCase();
+};
+/* 是否为合法 modifier 名（null/空串表示「无修饰键」由调用方先行排除） */
+FE.isModifierName = function (value) {
+  return FE.MODIFIERS.indexOf(FE.canonicalModifierName(value)) >= 0;
+};
+/* 预览里「该修饰键当前是否开启」。
+ * status.modifiers 是编辑器的修饰键模拟表（{SHIFT,CTRL,ALT,META} 四值）；
+ * status.shift 是历史字段（Shift 决定 shiftedLabel / 弹出候选等语义），
+ * 这里把它当作 SHIFT 的兼容镜像，老调用方（只传 {shift:true}）照旧成立。 */
+FE.statusModifierOn = function (status, name) {
+  var n = FE.canonicalModifierName(name);
+  if (!n) return false;
+  var mods = status && status.modifiers;
+  if (mods && typeof mods === 'object' && Object.prototype.hasOwnProperty.call(mods, n)) return !!mods[n];
+  if (n === 'SHIFT') return !!(status && status.shift);
+  return false;
 };
 /* 修饰键状态：TOGGLE_LOCKED 是命令而非持久状态（未锁定→锁定，已锁定→关闭） */
 FE.MODIFIER_STATES = ['OFF', 'ONESHOT', 'LOCKED', 'TOGGLE_LOCKED'];

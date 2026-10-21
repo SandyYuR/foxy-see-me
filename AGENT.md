@@ -36,7 +36,7 @@ node test/test-core.js
 node test/test-ui.js
 ```
 
-当前基线是 core 715、UI 1461，两个套件都必须 0 失败。按改动范围追加：
+当前基线是 core 739、UI 1472，两个套件都必须 0 失败。按改动范围追加：
 
 ```bash
 node test/test-color-source.js   # 改过 color-source.js 或颜色链路
@@ -64,6 +64,9 @@ node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 - `null` 按 Foxy 语义处理：它可能清空标签、恢复默认权重或清除颜色；`tap: null` 保留继承的点击动作。
 - `drag: null` 删除整条拖动手势；`swipe` 与 `drag` 的方向置 `null` 只删该方向，其余方向保留。
 - 变体条件按三态求值（真 / 假 / 中性），不要退化成布尔：未在活动 schema 声明的选项名是中性，未知条件关键字才是不匹配。求值入口是 `FE.condResult`，摘要入口是 `FE.condSummaryText`。
+- `modifier` 是 SHIFT / CTRL / ALT / META 四值枚举（大小写不敏感），既是 `key.action` 里 `type: "modifier"` 的 `modifier`，也是键/override/变体上的 `modifier` 字段；后者显式 `null` 表示「这个位置不是修饰键」。取值来源只有 `FE.MODIFIERS` + `FE.canonicalModifierName`（另有 `FE.isModifierName`），不要另抄一份数组。
+- 声明了 `modifier` 的键长按会隐式锁定该修饰键，不写 `longPress` 也成立；写了显式 `hold` 手势则关闭该回退。没有 `modifier` 的原始键（如 `rime.Alt_L`）长按只发本键、不参与锁定。编辑器不建模按压时长，因此这条语义不产生校验规则（`hold` 与 `longPress` 仍互斥报错），只在键对话框给提示。
+- 预览的修饰键模拟表是 `state.status.modifiers`（四值布尔）；`status.shift` 是历史字段，决定 `shiftedLabel` / 弹出候选，并作为 SHIFT 的镜像。判定某键是否进入 `modifierActive` 一律走 `FE.keyStateOpts` + `FE.statusModifierOn`，不要在任何渲染处写死 `'SHIFT'`。
 - 键的 `icon` 只有 backspace / shift / enter / return 是内置名；其余名字先查 profile 顶层 `icons`，再看是否 `svg:` / `xml:` 内联载荷；查不到就不画图标（回落文本），不要报错。
 - `FE.validateProfile` 的 `errors` / `warnings` 字符串数组是兼容 API，不能删除或改类型。
 - `issues` 是与旧数组等长的结构化结果，保留 `level`、`message`、`path`、`code` 和点击定位坐标。
@@ -105,6 +108,7 @@ node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 
 - 主题颜色优先级为：布局状态色 > 布局每键 `colors` > 主题 `keyTypes` > 主题全局色。
 - 预览工具栏的边框、描边、滑动提示开关只影响预览，不写入主题 JSON；关闭阴影时显式写 `none`。
+- 预览第一行的 Shift / Ctrl / Alt / Meta 是修饰键模拟开关（`#pt-shift` / `#pt-ctrl` / `#pt-alt` / `#pt-meta`），只影响当前声明了同名 `modifier` 的键；新增开关要同步 `test/dom-stub.js` 的状态组桩。
 - 符号事实来源是 `state.symbolProfiles[kind]`；snapshot、restore、autosave、boot 都处理复数槽位。
 - 符号预览替换同一个 `#preview-kb`，左右列滚动容器设置 `min-height: 0`；内容挂载后再恢复类别 scrollTop。
 - 搜索/新建工具条覆盖 keys、actions、macros、popup、symbol；重建列表时保持滚动位置。

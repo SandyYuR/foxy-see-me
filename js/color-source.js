@@ -173,11 +173,19 @@ FE.currentKeyState = function (opts) {
 };
 
 /* 由布局 status 与按键本身的 modifier 推导三个状态位（供调用方少写样板）。
- * 与 applyKeyColors 原口径一致：modifierActive 仅在 Shift + status.shift 时成立。 */
+ * 规范（SKILL.md「modifier actions」）里 key.modifier 是 SHIFT/CTRL/ALT/META 四值，
+ * 所以这里按**该键自己声明的修饰键**去查预览模拟表，不再把 SHIFT 写死：
+ * 一把 ALT 键在「Alt 开启」时同样进入 modifierActive。
+ * statusModifierOn 负责 status.modifiers 与历史字段 status.shift 的兼容。 */
 FE.keyStateOpts = function (eff, status, pressed) {
   status = status || (FE.state && FE.state.status) || {};
-  var modifierOn = !pressed && eff && eff.modifier === 'SHIFT' && !!status.shift;
-  return { pressed: !!pressed, modifierActive: modifierOn, modifierLocked: false };
+  var on = function (name) {
+    return FE.statusModifierOn ? FE.statusModifierOn(status, name)
+      : (FE.canonicalModifierName(name) === 'SHIFT' && !!status.shift);
+  };
+  var declared = eff && eff.modifier != null ? eff.modifier : null;
+  var modifierOn = !pressed && declared != null && on(declared);
+  return { pressed: !!pressed, modifierActive: !!modifierOn, modifierLocked: false };
 };
 
 /* ---------------- 单角色解析（核心） ---------------- */

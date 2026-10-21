@@ -1432,7 +1432,7 @@ Use `actions: []` for an intentionally empty action sequence. The singular
 For a key action, `key` must be one of the listed low-level `KeyCode` names.
 The `meta` value may be a string or an array containing `SHIFT`, `CTRL`,
 `ALT`, or `META` (matching is case-insensitive). For modifier actions, the
-modifier names are `SHIFT` or `CTRL`; supported states are `OFF`, `ONESHOT`,
+modifier names are `SHIFT`, `CTRL`, `ALT`, or `META`; supported states are `OFF`, `ONESHOT`,
 `LOCKED`, and `TOGGLE_LOCKED`. `TOGGLE_LOCKED` changes `OFF` or `ONESHOT` to
 `LOCKED`, and changes `LOCKED` back to `OFF`:
 
@@ -1464,6 +1464,10 @@ its active and locked presentation:
 ```
 
 All keys registered for the same modifier receive the same state updates.
+A key with a `modifier` field locks on long press even when it omits a
+`longPress` gesture; adding an explicit `hold` gesture disables that implicit
+fallback. A raw key such as `rime.Alt_L` without a `modifier` field still sends
+the key itself and does not participate in modifier locking.
 
 Prefer a public `rime.*` reference in user-authored layouts. For example, use
 `{ "tap": { "ref": "rime.Shift_L" } }` to send a Rime `Shift_L` event. The

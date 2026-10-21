@@ -54,7 +54,8 @@
 | 主题与符号阶段 | 记录为 2026-09 修订 | 加入 `foxy.keyboard-theme` 编辑、主题预览、符号/emoji/颜文字面板；仍不做 App 全局主题设置。 |
 | 网格与设备验证阶段 | 记录为 2026-09-29 的 `16键.json` 实测 | 修正 numpad 网格轨道、文字溢出、rowHeights 和真实移动端触摸/滚动方面的问题。 |
 | 对齐新版 skill 阶段 | 2026-10-20 实测 | 补上自定义图标（顶层 `icons`）、`drag` 连续拖动手势、`variants` 三态条件（`option` / `value` / `options` / `all_of` / `any_of` / `none_of`）与两个新 app 命令；core 715、UI 1461。 |
-| 当前阶段 | 本次文档重组前后实测 | core 715、UI 1461、颜色解析 96、真实文件体检 46 个示例且 0 错误。 |
+| 四修饰键阶段 | 2026-10-21 实测 | `modifier` 从 SHIFT / CTRL 扩到 SHIFT / CTRL / ALT / META，补齐键/override/变体的 `modifier` 字段校验，预览加 Ctrl / Alt / Meta 修饰键模拟；core 739、UI 1472。 |
+| 当前阶段 | 本次文档重组前后实测 | core 739、UI 1472、颜色解析 96、真实文件体检 46 个示例且 0 错误。 |
 
 ## 2. 长期有效的决策记录
 
@@ -399,6 +400,20 @@ jscolor 的颜色值和 CSS/JSON 顺序不同。项目保留它的字节序约�
 
 `condResult` 的三态容易被写成布尔，早期测试就踩过 `any_of` 的断言：`{any_of:[{option:'not.declared'},{composing:true}]}` 在 `NEUTRAL_STATUS` 下两项都不为真，结果是中性，不是 true。
 
+### 6.7 四修饰键：ALT / META、键级 modifier 校验与长按隐式锁定
+
+2026-10-21 的 `skills/SKILL.md` 与 `foxy-keyboard-layout.schema.json` 把修饰键从 SHIFT / CTRL 扩到 SHIFT / CTRL / ALT / META，并补了一条长按语义。编辑器按下面口径对齐。
+
+**枚举扩为四值**。`FE.MODIFIERS` 是唯一取值来源，从两值改为四值后自动覆盖四处引用：键动作的修饰复选、动作编辑器的 modifier 下拉、键级「修饰键」下拉、以及校验。`FE.canonicalModifierName` 做 trim + 转大写，所以 `alt`、`Meta`、` CTRL ` 都归一；额外导出 `FE.isModifierName` 供校验复用，避免再抄一份数组。
+
+**键级 modifier 从前完全没有校验**。本轮新增 `checkKeyModifier(obj, where, err, code)`：缺字段跳过、`null` 合法（表示「改回普通键」，SKILL.md 要求 `foxy.Shift` 的变体改成普通键时必须显式 `"modifier": null`）、非字符串报错、不在枚举报错，issue code 为 `bad-modifier`。接入点是四处：按键定义、按键定义变体、`checkPlacement` 主体与其变体、以及 `k.override` 与其变体。
+
+**长按隐式锁定**。新增语义是：声明了 `modifier` 的键长按会隐式锁定该修饰键，即使没写 `longPress`；写了显式 `hold` 手势则关闭这个回退；没有 `modifier` 的原始键（如 `rime.Alt_L`）长按只发本键、不参与锁定。编辑器不建模按压时长，因此不新增校验规则（`hold` 与 `longPress` 的互斥检查保持不变），只在键对话框「修饰键」下拉下方给一行说明，避免用户以为必须手写 `longPress` 才能锁修饰键。
+
+**预览的修饰键模拟**。原来只有 `#pt-shift` 一个开关，且 `FE.keyStateOpts` 写死 `eff.modifier === 'SHIFT'`，导致 ALT / META 键永远进不了 `modifierActive`。现在 `state.status.modifiers` 是四值布尔表，`status.shift` 退为历史字段（仍决定 `shiftedLabel` 与弹出候选，并作为 SHIFT 的镜像）。`FE.statusModifierOn(status, name)` 先查表、查不到时仅对 SHIFT 回落 `status.shift`；`FE.keyStateOpts` 与 app.js 的 fallback 都改走它。Shift 图标的实心/描边判定也改成 `FE.canonicalModifierName(eff.modifier) === 'SHIFT'` 且读表，开 Ctrl / Alt / Meta 不再误点亮 Shift 图标。
+
+**踩坑**。`color-source.js` 在 `index.html` 里排在 `app.js` **之后**加载，所以 app.js 用到 `FE.keyStateOpts` 的地方必须保留内联 fallback，否则首次渲染时函数还不存在；两处逻辑必须同步改，否则会出现「预览开关点了但颜色只对部分键生效」。新增预览开关还要同步 `test/dom-stub.js` 的状态组桩，否则 UI 测试里 `$('#pt-alt')` 是 null。
+
 ## 7. 验证基线与文档维护记录
 
 ### 7.1 当前验证命令
@@ -412,8 +427,8 @@ node test/test-ui.js
 
 当前 AGENT 开头记录的基线是：
 
-- core：715 通过，0 失败；
-- UI：1461 通过，0 失败；
+- core：739 通过，0 失败；
+- UI：1472 通过，0 失败；
 - 颜色解析：`node test/test-color-source.js`，96 通过；
 - 真实文件：`node test/check-real-files.js`，46 个示例，0 个错误。
 
@@ -454,7 +469,8 @@ node tools/check-agent-sync.js
 → 215 core + 355 UI（模块化 UI 阶段）
 → 626 core + 1363 UI（此前入口文档记录的阶段）
 → 629 core + 1394 UI（文档重组时的实测）
-→ 715 core + 1461 UI（对齐新版 skill 后的当前基线）
+→ 715 core + 1461 UI（对齐新版 skill 后的基线）
+→ 739 core + 1472 UI（2026-10-21 四修饰键后的当前基线）
 ```
 
 另有一段旧的 AGENT 末尾仍写着：core 531、UI 1062、示例 20（16 布局 + 4 popup）。它是文档未同步时留下的历史基线，不能覆盖文件顶部和标准工作流中的当前数字。重组文档时保留这条说明，是为了让以后看到旧提交或旧截图的人知道数字差异来自文档漂移，而不是测试随机变化。

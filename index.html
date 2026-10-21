@@ -47,7 +47,13 @@
                切到「符号面板」页时整组隐藏，只留下面的深浅配色（符号面板底也跟它走）。
                由 app.js 的 syncPreviewPanelChrome() 按 state.activeTab 控制。 -->
           <div class="pt-state-group" id="pt-state-group">
+            <!-- 修饰键模拟：对应的键声明了同一个 modifier 时才点亮 modifierActive 状态色
+                 （规范里 key.modifier 是 SHIFT/CTRL/ALT/META 四值）。Shift 还额外决定
+                 shiftedLabel 与弹出候选的显示，所以它始终排在最前。 -->
             <label class="check"><input type="checkbox" id="pt-shift"> Shift</label>
+            <label class="check"><input type="checkbox" id="pt-ctrl"> Ctrl</label>
+            <label class="check"><input type="checkbox" id="pt-alt"> Alt</label>
+            <label class="check"><input type="checkbox" id="pt-meta"> Meta</label>
             <label class="check"><input type="checkbox" id="pt-composing"> 组字</label>
             <label class="check"><input type="checkbox" id="pt-ascii"> ASCII</label>
             <label class="check"><input type="checkbox" id="pt-disabled"> 停用</label>
