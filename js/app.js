@@ -155,6 +155,23 @@ var state = {
   /* text_editor 预览只在 UI 中派生，不写入布局草稿；结构无效时记录是否显示了 App 内置编辑行。 */
   textEditorPreviewFallback: false,
   textEditorPreviewFrameUnits: null,
+  /* ---- 键盘上方工具栏预览（toolbar-preview.js）----
+   * App 的工具栏是**键盘正上方**独立的一行（os.java，FrameLayout），不是键面的一部分。
+   * 这些字段纯属预览建模，**不写进主题 JSON / 布局 JSON**（与边框/描边开关同一策略）：
+   *   previewToolbar          是否在预览里画工具栏（默认画，能让主题作者看到效果）
+   *   previewToolbarExpanded  工具栏当前处于哪种状态（false = main / true = expanded）
+   *   toolbarIcons            导入的图标 { 按钮id: {icon, activeIcon} }，为空则回落内置矢量
+   *   previewFontFamily       导入的符号字体 family 名（挂到 --kb-preview-font）
+   *   previewFontName         字体文件名（状态行展示用）
+   *   previewFontCoverage     该字体覆盖的码位集合（解析失败为 null，表示"无法解析覆盖度"）
+   *   previewFontFontFace     注册到 document.fonts 的 FontFace（清除时 unload） */
+  previewToolbar: true,
+  previewToolbarExpanded: false,
+  toolbarIcons: null,
+  previewFontFamily: null,
+  previewFontName: null,
+  previewFontCoverage: null,
+  previewFontFontFace: null,
   /* 引用索引缓存（「使用数」用）。按 profile/popupProfile 的**对象引用**比对，
    * 但 mutate 多为就地改属性、引用不变，所以数据变更处必须显式
    * 调 invalidateRefIndex()，只靠引用比对会让计数停在旧值。 */
@@ -2822,7 +2839,12 @@ function autosave() {
       swipeHints: state.swipeHints !== false,
       swipeHintUp: state.swipeHintUp !== false,
       swipeHintDown: state.swipeHintDown !== false,
-      swipeHintSide: state.swipeHintSide !== false
+      swipeHintSide: state.swipeHintSide !== false,
+      /* 工具栏预览（toolbar-preview.js）：开关、两态、导入的图标。
+       * 字体**不存**：二进制没法进 localStorage，刷新后要重新导入（状态行会提示）。 */
+      previewToolbar: state.previewToolbar !== false,
+      previewToolbarExpanded: state.previewToolbarExpanded === true,
+      toolbarIcons: state.toolbarIcons || null
     }));
   } catch (e) { /* 忽略存储失败 */ }
 }
@@ -3190,6 +3212,9 @@ function syncPreviewPanelChrome() {
   if (legend) legend.hidden = isSym;
   var lt = $('layout-tabs');
   if (lt) lt.hidden = isSym;
+  /* 工具栏在符号面板页**也必须显示**（用户口径：实机打开符号面板时工具栏不会消失，
+   * 否则切页签时键盘面板高度会跳）。它的显隐只由「预览选项」里的开关决定，
+   * 交给 FE.renderPreviewToolbar 自己管，这里不再按页签强制隐藏。 */
 }
 FE.syncPreviewPanelChrome = syncPreviewPanelChrome;
 
@@ -4119,6 +4144,9 @@ function buildGridSection(compiledSection, unit) {
 }
 
 /* 把编译产物渲染进容器（预览与将来的导出/对比渲染共用） */
+/* #preview-toolbar 的节点引用（见 renderPreview 里的说明：符号面板分支会把它从文档里摘掉） */
+var toolbarHostRef = null;
+
 function renderCompiledInto(host, compiled, unit) {
   (compiled.sections || []).forEach(function (sec) {
     if (sec.type === 'rows') host.appendChild(buildRowsSection(sec, unit));
@@ -4135,7 +4163,23 @@ function renderPreview() {
    * 这些路径下就会出现「渲染的是符号面板、标题却写布局预览」的错配。幂等，重复调无害。 */
   syncPreviewPanelChrome();
   renderPreviewOptionToggles();
+  /* 键盘上方的工具栏（toolbar-preview.js）：它是 **#preview-kb 的子节点**，
+   * 也就是键盘面板的最上面一行（实机里工具栏与键面同底色同宽度，是同一块面板）。
+   * ⚠️ clearEl(host) 会把它一起摘掉，所以这里要先取引用、清空后立刻挂回首位，
+   * 否则每帧重绘后工具栏就消失了（符号页分支里 renderSymbolPreview 也会清空 host，
+   * 那个分支不挂回 —— 符号面板上方本来就没有工具栏）。 */
+  /* 节点可能正被上一轮的符号面板分支摘掉（renderSymbolPreview 会 clearEl(host)），
+   * 那时 document 里查不到它；用一个模块级引用兜住，切回布局页才挂得回去。 */
+  var toolbarHost = $('preview-toolbar') || toolbarHostRef;
+  if (toolbarHost) toolbarHostRef = toolbarHost;
   clearEl(host);
+  if (toolbarHost && toolbarHost.parentNode !== host) host.appendChild(toolbarHost);
+  /* **先画一次**：缺布局/缺 split 片段等提前 return 的分支也要让工具栏处在正确状态
+   * （显示或按符号页隐藏），否则那些分支会留着上一次的外壳。
+   * 下面 unit 确定后再画一次，让 chip 尺寸与键盘按键同一物理口径。 */
+  if (FE.renderPreviewToolbar && toolbarHost) {
+    FE.renderPreviewToolbar(toolbarHost, state.portraitW ? state.portraitW / 10 : null);
+  }
   /* 先清空编译产物：提前返回的分支若留着上一次的结果，
    * renderMeta 的键数统计与后续消费 state.compiled 的逻辑会读到过期数据。 */
   state.compiled = null;
@@ -4186,6 +4230,14 @@ function renderPreview() {
       units: symUnits,
       heightK: FE.PREVIEW_HEIGHT_K
     });
+    /* 符号面板上方**照样有工具栏**（用户口径：实机打开符号面板时工具栏不会消失）。
+     * renderSymbolPreview 内部会 clearEl(host)，所以画完要把工具栏节点插回首位并重画一次，
+     * 用同一个 unit —— 这样两页签的工具栏宽度/高度/位置完全一致，切换时键盘面板不跳动。
+     * 面板高度是 units × unit × HK，和布局预览的区段总高同一口径，所以总高度也一致。 */
+    if (toolbarHost) {
+      if (host.firstChild !== toolbarHost) host.insertBefore(toolbarHost, host.firstChild || null);
+      if (FE.renderPreviewToolbar) FE.renderPreviewToolbar(toolbarHost, state.portraitW / 10);
+    }
     state.compiled = null;
     if (symRes) {
       renderSymbolPreviewMeta(symRes);
@@ -4230,6 +4282,9 @@ function renderPreview() {
     state.portraitW = W / 2;
   }
   var unit = state.portraitW / 10;
+  /* unit 定稿后重画工具栏：chip 的行高/圆角/间距/字号全部由 unit 换算（FE.kbDp），
+   * 与按键同一把尺子 —— 否则窗口变形时工具栏与键盘会大小脱节。 */
+  if (FE.renderPreviewToolbar && toolbarHost) FE.renderPreviewToolbar(toolbarHost, unit);
   /* 一次性编译：引用解析与手势摘要在编译期完成，渲染只读结果 */
   var compiled = FE.compileLayout(state.profile, state.layoutName, {
     split: !textEditorMode && state.splitMode, status: state.status
@@ -7255,6 +7310,10 @@ FE.getRowKeys = function (section, ri) { return getRowKeys(section, ri); };
  * 覆盖（与键盘预览同款语义，8 位色同样经 foxyColorToCss 转 CSS）。纯导出，不改逻辑。 */
 FE.applyKeyColors = applyKeyColors;
 FE.foxyColorToCss = foxyColorToCss;
+/* 工具栏图标导入（toolbar-preview.js）与字体导入（font-preview.js）都要按文件读文本，
+ * 这两处导出避免各自再造一个 FileReader 封装。 */
+FE.readFileText = readFileText;
+FE.autosaveDraft = autosave;
 
 function placementContainer(loc) {
   /* 只读解析：不做数组行 → 对象行的转换，避免打开对话框时改动结构 */
@@ -7390,6 +7449,12 @@ function boot() {
         else if (d2.keyBorderEnabled === true) state.keyBorderEnabled = true;
         if (d2.keyStrokeEnabled === true) state.keyStrokeEnabled = true;
         else if (d2.keyStrokeEnabled === false) state.keyStrokeEnabled = false;
+        /* 工具栏预览三键（纯预览设置）：开关/两态用 === true/false 还原，
+         * 导入的图标是普通对象（清洗过的 SVG 标记），直接吃回来。 */
+        if (d2.previewToolbar === false) state.previewToolbar = false;
+        else if (d2.previewToolbar === true) state.previewToolbar = true;
+        state.previewToolbarExpanded = d2.previewToolbarExpanded === true;
+        if (FE.isPlainObject(d2.toolbarIcons)) state.toolbarIcons = d2.toolbarIcons;
       }
     }
   } catch (e2) { /* 忽略 */ }

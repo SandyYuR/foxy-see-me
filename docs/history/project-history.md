@@ -299,6 +299,34 @@ jscolor 的颜色值和 CSS/JSON 顺序不同。项目保留它的字节序约�
 
 符号预览替换同一个 `#preview-kb` 容器，而不是在键盘预览上叠一层。左右列各自滚动并设置 `min-height: 0`；类别切换后要恢复左列 scrollTop，恢复动作必须发生在内容填充和节点挂载之后。早设 scrollTop 的实现曾在自制 DOM 桩里通过、在真实浏览器里失效。
 
+### 5.6 工具栏预览、符号字体与图标选择器
+
+这三项来自同一个用户诉求：网页编辑器要和实机显示对得上，作者才能判断一套主题到底好不好看。
+
+**键盘上方工具栏**（`js/toolbar-preview.js`）画在 `#preview-toolbar`，而 `#preview-toolbar` **嵌在 `#preview-kb` 内部**、是键盘面板最上面那一行——最初把它做成 `#preview-kb` 的兄弟节点，立刻显出两个假差异：条比键盘窄、底色对不上（`os.java` 里工具栏容器和键面是同一块 `setBackgroundColor(a.e())`）。所以它不自带宽度、圆角和底条，`renderPreview` 在 `clearEl(host)` 之后要把它挂回首个子节点（工具栏节点用一个模块级引用 `toolbarHostRef` 兜住）。**符号面板页也要挂回**：早期符号分支渲染完就 `return`、不重挂，工具栏在符号页消失，与实机不符（实机打开符号面板时工具栏照样在）。现在符号分支在 `FE.renderSymbolPreview` 之后 `host.insertBefore(toolbarHost, host.firstChild)` 再调一次 `FE.renderPreviewToolbar(toolbarHost, state.portraitW/10)`；符号面板高度按 `units × unit × HK` 与布局预览同口径，所以两页签的键盘面板**高度一致、切换不跳变**。尺寸常量照 `os.java` / `w20.java` / `mf.java` 还原：容器行高 40dp、chip 最小 40dp 见方、圆角 12dp、chip 间距 3dp、字号 18sp、内边距水平 10dp / 垂直 2dp。dp 换算一律走 `FE.kbDp(dp, unit)`，和键盘共用同一个 `unit = portraitW / 10`，所以工具栏与键盘同宽（614px，分体/横屏 1228px）。
+
+配色按 `c30.java` 的字段映射还原：容器底 = `keyBorderEnabled ? altKeyboardColor : candidateBarColor`，chip 默认底 `candidateBackgroundColor`、按下 `candidatePressedColor`，未选中图标/文字 `toolTextColor`，选中（展开容器打开）`accentColor`，返回 chip 文字 `candidateTextColor`。
+
+主工具栏（`main`）和展开工具栏（`expanded`）是**两种状态**，切换时整行重排，不能把两份同时渲染。展开入口是**主态第一行末尾的一个 chip**（`__more__`），不再另起一行写「展开/收起」文字提示。行 `flex-wrap: nowrap`：7 个 40dp 按钮在竖屏 360dp 里放得下，预览里一换行就会让人误判「实机也折成两行」。
+
+后来用户要求「展开键搞小一点、换成向右的箭头、展开后同一个位置变成向左的收起键、展开态不要变成两行、工具栏高度不变」，于是控制键独立成 `.kbt-ctrl`：**28dp 方、圆角 12dp、图标 16dp、`position:absolute` 钉在行尾**（`right:0; top:50%; translateY(-50%)`），行用 `padding-right = ctrlDp + gapDp` 给它让位。两种状态挂的都是同一位置的同一枚按钮，只有 `CTRL_SVG` 的箭头方向反过来（`__more__` 朝右、`__back__` 朝左），所以切换时位置一像素不动，也就不需要 `.kbt-back-row` 那种第二行结构了。早期按 `w20.java:335-357` 做成「返回键浮在 chip 行上方一行」是照实机结构还原，但它与用户「保持工具栏预览高度不变」的诉求冲突，以用户口径为准。
+
+（历史）曾按 `w20.java:335-357` 把展开态的 `__back__` 做成**独占 chip 行上方一行**：`removeAllViews` 之后先把 chip 滚动区以 `topMargin = c(b.a + 8)`（40dp + 8dp = 48dp）加进 FrameLayout，再把「<」以 `LayoutParams(40dp, 40dp, top|start)` + `topMargin 4dp` + `marginStart 4dp` 叠上去 —— 返回键浮在左上角。这是照实机结构还原，但会撑出第二行、工具栏变高，与用户「展开态不要变成两行、工具栏预览高度不变」冲突，现已被行尾控制键方案取代（见下一段）。
+
+主题包的工具栏 svg 靠**显式文件名映射表**（`FE.toolbarIconMatch`）配对，不许按中文名模糊匹配：水彩包里有「分体 / 分体激活」「单手 / 单手激活」这类成对文件，两态颜色完全相同，只有路径细节不同。文件名以「激活」结尾的进 `activeIcon`。匹配不到内置按钮的图标（水彩包里的「删除/数字/星球/月亮/编辑」）如实报告「实机工具栏不会出现」，不静默丢弃也不算错误。
+
+`keyboard_tools` 曾经回落成纯文字 chip，结论是错的：`r71.java` 的 `f0()` 给它 `R.drawable.ic_tool_theme`（复用主题图标）、显示名取 `R.string.tool_theme`＝「主题」。现在 `BUILTIN.keyboard_tools = BUILTIN.theme`，chip 的 `title` 点明「实机显示名是主题」。
+
+图标要不要被主题色染色照 `hk0.w` 的等价实现 `FE.iconTintable` 判定：所有 `fill` / `stroke` 都是 `currentColor` / `none` / 关键字才染色，出现任何具名色或 hex/rgb 就原样渲染。水彩包的 19 个 svg 全自带实色，所以它们保持原色；内置矢量（纯黑/纯白灰阶）走染色。chip 的 `title` 会标注「主题自带实色」还是「内置矢量」，让作者看清来源。
+
+**激活态 ≠ 展开态**。chip 用不用 `activeIcon` 只看 id 在不在激活集合里（`w20.java:279` 的 `z2 = os.k.contains(str)`）。`os.k` 全反编译只有三处写入：`ox.java:882-884` 与 `w20.java:363-365` 的 `teVar.n("size", oxVar.n0.n)` / `n("one_hand", oxVar.o0.j)` / `n("split_keyboard", oxVar.x)` —— 即**只有尺寸菜单打开、单手开、分体开这三种会激活**，`schema` / `deploy` / `settings` / `clipboard` / `keyboard_tools` / `rime_switches` / `hide_keyboard` / `theme` / `voice` 永不激活。早期实现把 `expanded` 直接当 active 传给每个 chip，展开了就全取 `activeIcon`；而主题作者把「*激活.svg」画成「图标 + 一道粗斜杠」（水彩包 尺寸激活 / 单手激活 / 分体激活 就是），于是展开态看起来像 3 个禁用占位。现在由 `FE.toolbarActiveSet()` 按预览真实状态给：只有 `state.splitMode` 会点亮 `split_keyboard`（尺寸菜单 / 单手在预览里没建模，恒 false）。
+
+**符号字体**（`js/font-preview.js`）只影响预览，不写入任何 Foxy 文件。字体通过 `--kb-preview-font` 挂到 `.kb-label`、`.kb-hint`、`.kb-badge-lp` 三处：App 端主标签走 `rv.KEY_MAIN`、提示走 `rv.KEY_ALT`，是两个独立字体槽；编辑器只有一个导入入口，所以两个槽一起挂。这一条是实测出来的：水彩布局 46 个键里 33 个带 icon（实机走 ImageView 不出字），唯一的键面文字是空格键的「朙月拼音」，而它的汉字全在滑动提示位——只挂 `.kb-label` 时导入字体肉眼几乎无变化，正是用户说的「预览与实机有出入」。
+
+覆盖度按当前布局**实际用到的字符**比对（跳过带 icon 的键，收 `label` / `shiftedLabel` / 四个方向的 `hints[d].text`；注意提示挂在 `hints[d]` 而不是 `hints.dir[d]`，且只能取 `text` 不能取 `display`——`display` 是动作名不是画在键上的字）。缺字如实列出并说明实机会回退系统字体，解析失败也不能阻断渲染。CSS 里 `--kb-preview-font` 只写一个 family 名，**不能追加 `, inherit`**：`inherit` 是整体关键字，混进列表会让整条 `font-family` 失效。
+
+**图标选择器**（`FE.buildIconPicker`）取代了原来的原生 `<select>`：内联 `svg:` 载荷作为 option 文本会把下拉撑成横向巨块。现在是紧凑触发器（缩略图 + 名称 + 来源）+ 内联 `.picker-list` 弹层，每项左侧有 22px 真实图标预览。弹层是普通 div 不是 dialog——对话框内再套 dialog 在移动端会失焦。内联载荷的完整代码收在触发器下方的可折叠详情里，不必靠猜。
+
 ## 6. 文件流与高级编辑功能
 
 ### 6.1 示例打包
@@ -427,9 +455,9 @@ node test/test-ui.js
 
 当前 AGENT 开头记录的基线是：
 
-- core：739 通过，0 失败；
-- UI：1472 通过，0 失败；
-- 颜色解析：`node test/test-color-source.js`，96 通过；
+- core：799 通过，0 失败；
+- UI：1590 通过，0 失败；
+- 颜色解析：`node test/test-color-source.js`，111 通过；
 - 真实文件：`node test/check-real-files.js`，46 个示例，0 个错误。
 
 如果改过 `examples/`，先运行：
@@ -470,7 +498,9 @@ node tools/check-agent-sync.js
 → 626 core + 1363 UI（此前入口文档记录的阶段）
 → 629 core + 1394 UI（文档重组时的实测）
 → 715 core + 1461 UI（对齐新版 skill 后的基线）
-→ 739 core + 1472 UI（2026-10-21 四修饰键后的当前基线）
+→ 739 core + 1472 UI（2026-10-21 四修饰键后的基线）
+→ 798 core + 1577 UI（2026-10-22 工具栏预览、符号字体预览、图标选择器与符号面板选中色）
+→ 799 core + 1590 UI（2026-10-22 工具栏并入键盘面板、展开态返回行、keyboard_tools 图标）
 ```
 
 另有一段旧的 AGENT 末尾仍写着：core 531、UI 1062、示例 20（16 布局 + 4 popup）。它是文档未同步时留下的历史基线，不能覆盖文件顶部和标准工作流中的当前数字。重组文档时保留这条说明，是为了让以后看到旧提交或旧截图的人知道数字差异来自文档漂移，而不是测试随机变化。

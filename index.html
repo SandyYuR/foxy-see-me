@@ -114,7 +114,11 @@
         </div>
       </div>
       <div class="preview-stage">
-        <div id="preview-kb" class="kb kb-light"></div>
+        <!-- 键盘上方的工具栏（App 的 os.java：候选栏与键面之间的那一条）。
+             **嵌在 #preview-kb 里**、是键盘面板的最上面一行 —— 实机看它和键面同底色、
+             同宽度，单独拎出来当兄弟节点会多出一条「比键盘窄/底色不同」的假差异。
+             内容由 toolbar-preview.js 渲染；纯预览，不写进任何 Foxy 文件。 -->
+        <div id="preview-kb" class="kb kb-light"><div id="preview-toolbar" class="kbt" hidden></div></div>
       </div>
       <div class="preview-legend">
         角标说明：<span class="lg-lp">右上蓝色 = 长按提示</span>（longPress.label，如 ⌫、⇪）·
@@ -371,16 +375,21 @@
         <div class="status dim">注意：<code>light</code> / <code>dark</code> 是两套<strong>配色槽位</strong>，与预览右上角的深浅开关不是一回事。
           <code>key_border_enabled</code> / <code>key_stroke_enabled</code> / <code>show_swipe_hints*</code>
           都是 App 的<strong>全局设置</strong>（不在主题 JSON 里），已移到预览键盘的滑杆行上。</div>
-        <div class="status dim">建模边界：预览键盘<strong>只画键面</strong>，不含 App 的候选栏 / 工具栏。
-          因此 <code>candidateBarColor</code>、<code>accentColor</code>（工具栏选中态）等字段在预览里看不到效果
-          —— 它们只影响候选栏与工具栏，不是没生效。</div>
+        <div class="status dim">建模边界：预览<strong>画键盘 + 键盘上方的工具栏</strong>，不含 App 的候选栏。
+          工具栏按 <code>os.java</code> / <code>w20.java</code> / <code>mf.java</code> 的常量还原
+          （行高 40dp、圆角 12dp、chip 间距 3dp、字号 18sp、内边距 10dp×2dp）：
+          容器底色 = <code>keyBorderEnabled</code> ? <code>altKeyboardColor</code> : <code>candidateBarColor</code>，
+          chip 底色 = <code>candidateBackgroundColor</code>，未选中图标/文字 = <code>toolTextColor</code>，
+          激活态（尺寸菜单 / 单手 / 分体打开）= <code>accentColor</code>——注意「展开更多按钮」不等于「激活」。
+          符号面板页也照样有这条工具栏（实机打开符号面板时工具栏不消失）。候选栏配色
+          （<code>candidateTextColor</code> / <code>candidateCommentColor</code> 等）仍只在符号面板页可见。</div>
       </details>
       <details class="card" open>
         <summary>主题校验</summary>
         <div id="th-validation" class="status"></div>
       </details>
       <details class="card" open>
-        <summary>槽位全局配色（26 个字段）</summary>
+        <summary>槽位全局配色（28 个字段）</summary>
         <div id="th-colors"></div>
       </details>
       <details class="card" open>
@@ -395,6 +404,36 @@
         </div>
         <textarea id="th-json" class="json-editor" spellcheck="false"></textarea>
         <div id="th-json-status" class="status"></div>
+      </details>
+      <details class="card" open>
+        <summary>工具栏图标与符号字体（仅影响预览，不写入任何 Foxy 文件）</summary>
+        <div class="status dim">这两样在 App 里都<strong>不属于主题 JSON</strong>：工具栏按钮来自
+          <code>frontend/toolbar.json</code>，字体来自 <code>frontend/fonts/</code> 下的文件 +
+          SharedPreferences。网页预览没有这些通道，所以在这里临时接管。
+          <br>图标按<strong>文件名</strong>精确配到按钮（方案 / 部署 / 设置 / 剪贴板 / 语音 / 收起 /
+          主题 / 尺寸 / 单手 / 分体），文件名以「激活」结尾的作为该按钮的展开态图标。
+          <br>图标自带实色（hex / rgb() / 具名色）就原样渲染；纯 <code>currentColor</code> 或黑白
+          单色才跟随 <code>toolTextColor</code> / <code>accentColor</code> —— 与 App 的
+          <code>hk0.w()</code> 判定一致。</div>
+        <div class="toolbar">
+          <button id="pt-toolbar-icons-pick" class="mini-button">导入工具栏图标（多个 SVG）</button>
+          <input id="pt-toolbar-icons-file" type="file" accept=".svg,image/svg+xml" multiple hidden>
+          <button id="pt-toolbar-reset" class="mini-button">清除导入的图标</button>
+        </div>
+        <div id="pt-toolbar-status" class="status"></div>
+        <div class="form-row form-inline">
+          <label class="check"><input type="checkbox" id="pt-toolbar" checked> 在预览里显示工具栏</label>
+          <label class="check"><input type="checkbox" id="pt-toolbar-expanded"> 展开态（main → expanded，行尾箭头反向）</label>
+        </div>
+        <div class="toolbar">
+          <button id="pt-font-pick" class="mini-button">导入符号字体（.otf / .ttf）</button>
+          <input id="pt-font-file" type="file" accept=".otf,.ttf,.ttc,.otc" hidden>
+          <button id="pt-font-clear" class="mini-button">移除预览字体</button>
+        </div>
+        <div id="pt-font-status" class="status"></div>
+        <div class="status dim">字体只作用于<strong>预览</strong>：键面文字与符号面板会按字体真实字形渲染。
+          实机缺字时会回退系统字体，所以导入后这里会列出「当前布局用到、但该字体没有字形」的字符，
+          那些字在真机上不会长成字体里的样子。字体二进制无法存进浏览器草稿，刷新后需要重新导入。</div>
       </details>
     </section>
 
@@ -495,6 +534,8 @@
   <script src="./js/color-source.js"></script>
   <script src="./js/symbol-editor.js"></script>
   <script src="./js/symbol-preview.js"></script>
+  <script src="./js/font-preview.js"></script>
+  <script src="./js/toolbar-preview.js"></script>
   <!-- app.js 先启动，主题/颜色模块后加载；模块齐备后补一次轻量预览，保证草稿首屏主题色完整。 -->
   <script>if (window.FE && FE.renderPreviewOnly) FE.renderPreviewOnly();</script>
 </body>

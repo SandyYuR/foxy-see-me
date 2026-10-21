@@ -548,6 +548,63 @@ html.site-light .st-split { color: #2e8b57; }
 .kb-light { background: var(--kb-bg, #cfd2d7); box-shadow: var(--kb-inset, inset 0 0 0 1px #b9bdc4); }
 .kb-section { display: flex; flex-direction: column; }
 
+/* ---------------- 键盘上方的工具栏预览（toolbar-preview.js） ----------------
+ * App 端：os.java（FrameLayout 容器 + ScrollView + flex 行）、w20.java（chip 构建）、
+ * mf.java（尺寸常量）。
+ * ⚠️ 它是 **#preview-kb 的子节点**，即键盘面板内部最上面那一行（实机里工具栏和键面
+ * 同一块底色、同一个宽度）。所以这里**不再自带宽高、圆角、底色**——父级 .kb 已经给了；
+ * 再叠一层就会出现「条比键盘窄/底色不一致」的假差异。
+ * 具体尺寸（40dp 行高、12dp 圆角、3dp 间距、18sp 字号）由 toolbar-preview.js
+ * 按 unit 换算后写内联样式，因为它们随预览宽度缩放，写死在 CSS 里会与按键脱节。 */
+.kbt {
+  width: 100%;
+  box-sizing: border-box;
+  user-select: none;
+}
+.kbt[hidden] { display: none; }
+/* chip 行：实机是 FlexboxLayout(wrap=WRAP)，但 7 个 40dp 按钮在竖屏 360dp 也放得下。
+ * 预览强制单行 —— 一换行就会让人误判「实机也折成两行」。
+ * 对齐按 os.java:56 的 setJustifyContent(4)=space_around（attrs.xml 枚举 4 即 space_around：
+ * 每项两侧各占「剩余空间/项数的一半」，首尾也留半格），因此不是 space-between（首尾贴边）。
+ * 间距受 chipGap 3dp 约束（w20.java:314 setMargins），但主态预览比实机多一个「展开」chip，
+ * 8×40dp 叠 2×3dp 净距会超出键盘宽度 → 行内只给 3dp gap 作紧凑近似（见 toolbar-preview.js）。 */
+.kbt-row {
+  width: 100%;
+  display: flex;
+  justify-content: space-around;
+  overflow: hidden;
+}
+/* 展开态**没有**独立的返回行：实机里「<」确实是浮在 chip 行上方的独立子节点
+ * （w20.java:343-357），但网页预览按用户要求把它做成行尾同一枚按钮 ——
+ * 主态朝右（展开）、展开态朝左（收起），位置不动、不新增第二行，
+ * 保证工具栏高度在两种状态之间完全一致。 */
+/* chip：不带主题时给一层中性底，导入主题后由行内 style 覆盖 */
+.kbt-chip {
+  box-sizing: border-box;
+  background: rgba(127, 127, 127, 0.12);
+  color: inherit;
+  overflow: hidden;
+  white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.kbt-chip .kb-icon-wrap,
+.kbt-icon { flex: 0 0 auto; pointer-events: none; max-width: 100%; }
+.kbt-label {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  line-height: 1.2;
+}
+/* 预览专用的展开/收起 chip：比普通 chip 小一圈，但仍是同底色的圆角方块，
+ * 绝对定位贴在 .kbt-row 的行尾（行内预留了同宽 padding-right），
+ * 所以主态/展开态**同一像素位置**、只有箭头方向反过来。 */
+.kbt-ctrl { user-select: none; }
+.kbt-ctrl:hover { filter: brightness(1.12); }
+
 /* ---------------- text_editor 专用预览 ----------------
  * Foxy 的 text_editor 不是一行普通键盘：ly0 充满原键盘容器，顶部是 ky0 光标触控板，
  * 底部才是布局文件提供的一行按键。触控板自身四周还有 8dp 内缩，提示文字由 App 固定绘制。 */
@@ -663,6 +720,11 @@ html.site-light .st-split { color: #2e8b57; }
   font-weight: 500; pointer-events: none; text-align: center;
   display: block; max-width: 96%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* 符号字体预览（font-preview.js）：导入 .otf 后把 family 挂到 --kb-preview-font，
+   * 键面文字就按字体的真实字形渲染。未导入时变量为空 → font-family 声明整体无效，
+   * 继续继承 body 的字体栈，外观零变化。
+   * ⚠️ 不要全局改 body：符号面板网格/弹出菜单/工具栏文字各有自己的字体语义。 */
+  font-family: var(--kb-preview-font, inherit);
 }
 .kb-icon-wrap { pointer-events: none; display: inline-flex; }
 .kb-icon { width: 100%; height: 100%; }
@@ -676,6 +738,11 @@ html.site-light .st-split { color: #2e8b57; }
 .kb-hint {
   position: absolute; pointer-events: none; color: #aeb4bd; line-height: 1;
   max-width: 92%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* 符号字体预览同样作用于手势提示：App 端提示是独立的 KEY_ALT 字体槽
+   * （y70.java:136 setFontRole(rv.KEY_ALT)，主标签是 KEY_MAIN，见 :68）。
+   * 编辑器只有一个字体导入入口，两个槽一起挂 —— 否则像水彩这布局（汉字全在
+   * 提示里、键面只有字母）导入图标字体后预览完全看不出变化，正是要补的缺口。 */
+  font-family: var(--kb-preview-font, inherit);
 }
 .kb-light .kb-hint { color: #63676f; }
 .kb-hint-up { top: 3px; left: 50%; transform: translateX(-50%); }
@@ -685,6 +752,7 @@ html.site-light .st-split { color: #2e8b57; }
 .kb-badge-lp {
   position: absolute; top: 2px; right: 3px; pointer-events: none;
   color: #8fd0ff; line-height: 1;
+  font-family: var(--kb-preview-font, inherit);
 }
 .kb-badge-hold { color: #ffd28f; }
 .kb-light .kb-badge-lp { color: #1f6fb8; }
@@ -1348,6 +1416,38 @@ dialog.editor-dialog::backdrop { background: rgba(5, 6, 8, 0.6); backdrop-filter
 .picker-item code { min-width: 150px; }
 .picker-label { flex: 1; font-weight: 600; }
 .picker-kind { font-size: 11px; color: var(--text-dim); }
+
+/* 图标选择器（FE.buildIconPicker）：触发器宽度只由容器决定，
+ * 内联 SVG 载荷绝不允许撑开控件；图形在 .icon-pick-thumb 里按 22px 渲染。 */
+.icon-pick { position: relative; display: flex; flex-direction: column; min-width: 0; width: 100%; }
+.icon-pick-trigger {
+  display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%;
+  background: #17191d; color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 8px; font-size: 13px; line-height: 1.5;
+  cursor: pointer; text-align: left;
+}
+.icon-pick-trigger:hover { border-color: #3a4050; }
+.icon-pick-thumb { width: 22px; height: 22px; flex: 0 0 22px; align-items: center; justify-content: center; }
+.icon-pick-none { color: var(--text-dim); line-height: 1; }
+.icon-pick-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon-pick-caret { flex: 0 0 auto; color: var(--text-dim); font-size: 11px; }
+.icon-pick-pop { margin-top: 4px; }
+.icon-pick-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+/* .picker-item code 默认 min-width:150px，会把「内联 SVG 代码」顶出容器 */
+.icon-pick-main .icon-pick-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon-pick-main .icon-pick-src {
+  min-width: 0; font-size: 11px; color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.icon-pick .picker-kind { flex: 0 0 auto; max-width: 40%; text-align: right; }
+.icon-pick-empty { padding: 6px 12px; font-size: 12px; color: var(--text-dim); }
+.icon-pick-code { margin-top: 4px; }
+.icon-pick-code > summary { font-size: 12px; color: var(--text-dim); cursor: pointer; }
+.icon-pick-pre {
+  margin: 4px 0 0; padding: 6px 8px; background: #17191d; border: 1px solid var(--border);
+  border-radius: 6px; font-size: 11.5px; line-height: 1.45;
+  white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow: auto;
+}
 
 .gesture-area { border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 8px 0; background: var(--card-inner); }
 .action-editor { border: 1px dashed var(--border); border-radius: 8px; padding: 8px; background: #1d2025; }

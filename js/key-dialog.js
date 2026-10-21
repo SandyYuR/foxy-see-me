@@ -716,6 +716,151 @@ FE.openKeyPicker = function (opts) {
 };
 
 /* ================================================================
+ * 图标选择器：紧凑触发器 + 内联展开的可滚动列表（每项真实预览）
+ *
+ * 为什么不用原生 <select>：内联 SVG 载荷（svg:<svg …>）会作为 option 的
+ * value 与可见文本进 DOM，而原生 select 的宽度由最长 option 决定 —— 一旦
+ * 按键用了内联图标，下拉框就被撑成一大块横向长条；而且原生 option 画不出
+ * 图形，作者只能盯着代码猜。这里触发器宽度只由容器决定（文字一律截断），
+ * 列表走 .picker-list 自己滚动，每项左侧用 .kb-icon-wrap 渲染真实图形。
+ *
+ * opts:
+ *   get()        当前值；undefined = 继承（不写 icon 字段），null = 清除
+ *   set(v)       写回草稿（undefined / null / 字符串）
+ *   inherited()  继承时的实际生效值（只用于显示）
+ *   scope        { profile }，供 FE.iconSvgOf 解析 icons 映射
+ * ================================================================ */
+FE.buildIconPicker = function (opts) {
+  opts = opts || {};
+  var scope = opts.scope || { profile: state.profile };
+  var wrap = h('div', { class: 'icon-pick' });
+  var trigger = h('button', { type: 'button', class: 'icon-pick-trigger' });
+  var pop = h('div', { class: 'icon-pick-pop picker-list', hidden: true });
+  var codeBox = h('div', { class: 'icon-pick-codebox' });
+  wrap.appendChild(trigger);
+  wrap.appendChild(pop);
+  wrap.appendChild(codeBox);
+
+  function inheritedValue() {
+    var v = typeof opts.inherited === 'function' ? opts.inherited() : opts.inherited;
+    return (typeof v === 'string' && v) ? v : null;
+  }
+  /* 22px 预览方块：能解析出图形就渲染图形，否则留一个占位点保持行高一致 */
+  function thumbOf(value) {
+    var box = h('span', { class: 'kb-icon-wrap icon-pick-thumb' });
+    var svg = (typeof value === 'string' && value) ? FE.iconSvgOf(value, scope) : null;
+    if (svg) box.innerHTML = svg;
+    else box.appendChild(h('span', { class: 'icon-pick-none' }, '·'));
+    return box;
+  }
+  /* 内联载荷在列表里只留一行摘录：原文可能几千字符，绝不能撑开控件 */
+  function srcExcerpt(s) {
+    var t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    return t.length > 140 ? t.slice(0, 140) + '…' : t;
+  }
+
+  function makeItem(value, nameText, kind, srcText) {
+    var cur = opts.get();
+    var active = (value === undefined) ? (cur === undefined) : (cur === value);
+    var item = h('div', { class: 'picker-item' + (active ? ' active' : ''), title: srcText || nameText });
+    item.appendChild(thumbOf(value === undefined ? inheritedValue() : value));
+    var main = h('div', { class: 'icon-pick-main' });
+    main.appendChild(h('code', { class: 'icon-pick-name' }, nameText));
+    if (srcText) main.appendChild(h('code', { class: 'icon-pick-src' }, srcText));
+    item.appendChild(main);
+    item.appendChild(h('span', { class: 'picker-kind' }, kind));
+    item.addEventListener('click', function () {
+      opts.set(value);
+      pop.hidden = true;
+      renderTrigger();
+    });
+    return item;
+  }
+
+  function buildList() {
+    clearEl(pop);
+    var cur = opts.get();
+    var inh = inheritedValue();
+    var names = FE.iconNames(scope);
+    pop.appendChild(h('div', { class: 'picker-group' }, '继承 / 清除'));
+    pop.appendChild(makeItem(undefined, '继承' + (inh ? '（' + inh + '）' : '（当前无生效图标）'),
+      '不写 icon 字段，跟随引用链'));
+    pop.appendChild(makeItem(null, '清除（null）', '显式屏蔽继承'));
+    pop.appendChild(h('div', { class: 'picker-group' }, '内置'));
+    FE.ICONS.forEach(function (t) {
+      pop.appendChild(makeItem(t, t, '内置矢量'));
+    });
+    pop.appendChild(h('div', { class: 'picker-group' }, '自定义（icons 映射）'));
+    if (names.length) {
+      names.forEach(function (t) {
+        pop.appendChild(makeItem(t, t, '自定义图标'));
+      });
+    } else {
+      pop.appendChild(h('div', { class: 'picker-empty' }, '（暂无自定义图标：先在「自定义图标」卡片里新建，保存后即可选）'));
+    }
+    /* 当前值不在任何一组时要补一项，免得打开对话框就把它悄悄改掉 */
+    if (typeof cur === 'string' && cur) {
+      if (FE.isInlineIcon(cur)) {
+        var renderable = !!FE.iconMarkupFromPayload(cur);
+        pop.appendChild(h('div', { class: 'picker-group' }, '当前值（内联载荷）'));
+        pop.appendChild(makeItem(cur, '内联 SVG（' + cur.slice(0, cur.indexOf(':') + 1) + '…）',
+          renderable ? '可渲染' : '载荷无法渲染', srcExcerpt(cur)));
+      } else if (FE.ICONS.indexOf(cur) < 0 && names.indexOf(cur) < 0) {
+        pop.appendChild(h('div', { class: 'picker-group' }, '当前值（未匹配）'));
+        pop.appendChild(makeItem(cur, cur, '不在 icons 映射里（键盘上不画）'));
+      }
+    }
+  }
+
+  function renderTrigger() {
+    clearEl(trigger);
+    clearEl(codeBox);
+    var cur = opts.get();
+    var inh = inheritedValue();
+    var display = cur;
+    var nameText;
+    if (cur === undefined) {
+      nameText = '继承' + (inh ? '（' + inh + '）' : '');
+      display = inh;
+    } else if (cur === null) {
+      nameText = '清除（无图标）';
+      display = null;
+    } else {
+      nameText = FE.isInlineIcon(cur) ? '内联 SVG' : String(cur);
+    }
+    trigger.appendChild(thumbOf(display));
+    trigger.appendChild(h('span', { class: 'icon-pick-label' }, nameText));
+    trigger.appendChild(h('span', { class: 'icon-pick-caret' }, '▾'));
+    trigger.setAttribute('title', cur === undefined ? ('继承' + (inh ? '：' + inh : ''))
+      : (cur === null ? '清除（null）' : String(cur)));
+    /* 内联载荷：折叠展示完整代码，作者要能读到代码而不只是看图形 */
+    if (typeof cur === 'string' && FE.isInlineIcon(cur)) {
+      var det = h('details', { class: 'icon-pick-code' });
+      det.appendChild(h('summary', null, '当前内联 SVG 代码（' + cur.length + ' 字符）'));
+      var pre = h('pre', { class: 'icon-pick-pre' });
+      pre.textContent = cur;
+      det.appendChild(pre);
+      codeBox.appendChild(det);
+    }
+  }
+
+  trigger.addEventListener('click', function () {
+    if (!pop.hidden) { pop.hidden = true; return; }
+    /* 同一对话框里只允许一个图标列表展开，避免两个列表叠着 */
+    var host = wrap.parentNode;
+    if (host && typeof host.querySelectorAll === 'function') {
+      var others = host.querySelectorAll('.icon-pick-pop');
+      for (var i = 0; i < others.length; i++) { if (others[i] !== pop) others[i].hidden = true; }
+    }
+    buildList();
+    pop.hidden = false;
+  });
+
+  renderTrigger();
+  return wrap;
+};
+
+/* ================================================================
  * 动作编辑器（嵌入组件）—— 所有「需要一个动作」的地方共用这一个组件：
  * 按键手势、动作定义列表、宏的每一个步骤。
  *
@@ -1841,36 +1986,20 @@ FE.openKeyDialog = function (opts) {
       else draft.keyType = ktSel.value;
     });
     /* 图标：内置四个 + profile.icons 里自定义的名字 + 内联 svg:/xml: 载荷。
-     * 自定义图标不在 FE.ICONS 里，所以下拉按「内置 / 自定义映射 / 内联载荷」分组，
-     * 并且当前值不在任何一组时也补一项，免得打开对话框就把它悄悄改掉。 */
-    var iconSel = h('select', { class: 'mini-select' });
-    iconSel.appendChild(h('option', { value: '', selected: draft.icon == null }, '继承' + (effRaw('icon') ? '（' + effRaw('icon') + '）' : '')));
-    iconSel.appendChild(h('option', { value: '__null__', selected: draft.icon === null }, '清除（null）'));
-    var iconNames = FE.iconNames({ profile: state.profile });
-    var builtinGroup = h('optgroup', { label: '内置' });
-    FE.ICONS.forEach(function (t) { builtinGroup.appendChild(h('option', { value: t, selected: draft.icon === t }, t)); });
-    iconSel.appendChild(builtinGroup);
-    if (iconNames.length) {
-      var customGroup = h('optgroup', { label: '自定义（icons 映射）' });
-      iconNames.forEach(function (t) { customGroup.appendChild(h('option', { value: t, selected: draft.icon === t }, t)); });
-      iconSel.appendChild(customGroup);
-    }
-    var curIcon = draft.icon;
-    if (typeof curIcon === 'string' && curIcon !== '' && FE.ICONS.indexOf(curIcon) < 0 &&
-        iconNames.indexOf(curIcon) < 0 && !FE.isInlineIcon(curIcon)) {
-      iconSel.appendChild(h('option', { value: curIcon, selected: true }, '当前值（' + curIcon + '）'));
-    }
-    if (FE.isInlineIcon(curIcon)) {
-      iconSel.appendChild(h('option', { value: curIcon, selected: true }, '当前值（内联 ' + curIcon.slice(0, curIcon.indexOf(':') + 1) + '…）'));
-    }
-    iconSel.addEventListener('change', function () {
-      if (iconSel.value === '') delete draft.icon;
-      else if (iconSel.value === '__null__') draft.icon = null;
-      else draft.icon = iconSel.value;
+     * 用自定义选择器而不是原生 <select>：内联载荷当成 option 文本会把下拉撑成
+     * 一大块横向长条，而且 option 画不出图形。见 FE.buildIconPicker。 */
+    var iconPick = FE.buildIconPicker({
+      get: function () { return draft.icon; },
+      set: function (v) {
+        if (v === undefined) delete draft.icon;
+        else draft.icon = v;
+      },
+      inherited: function () { return effRaw('icon'); },
+      scope: { profile: state.profile }
     });
     b.appendChild(h('div', { class: 'form-grid-2' },
       h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '键类型'), ktSel),
-      h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '图标'), iconSel)));
+      h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '图标'), iconPick)));
 
     var effWeight = effRaw('weight');
     var weightInp = h('input', { type: 'number', step: 'any', min: '0', class: 'mini-input', value: typeof draft.weight === 'number' ? String(draft.weight) : '', placeholder: '留空继承' + (effWeight != null ? '(' + effWeight + ')' : '(1)') });

@@ -67,6 +67,8 @@ load('theme-editor.js');
 load('color-source.js');
 load('symbol-editor.js');
 load('symbol-preview.js');
+load('font-preview.js');
+load('toolbar-preview.js');
 
 const FE = global.FE;
 const $ = (id) => documentStub.getElementById(id);
@@ -3994,7 +3996,7 @@ await sleep(350);
     void plain;
   }
 
-  console.log('== 主题页：渲染 26 色 + 3 类 keyTypes 表单 ==');
+  console.log('== 主题页：渲染 28 色 + 3 类 keyTypes 表单 ==');
   {
     tabs.find(t => t.dataset.tab === 'tab-theme')._fire('click');
     ok($('tab-theme').classList.contains('active'), '切到主题页');
@@ -4004,12 +4006,12 @@ await sleep(350);
     ok(FE.state.themeProfile != null, '内置默认模板已载入');
     FE.renderThemeTab();
 
-    eq(q('#th-colors .color-input').length, 26, '槽位全局配色渲染出 26 个颜色输入框');
+    eq(q('#th-colors .color-input').length, 28, '槽位全局配色渲染出 28 个颜色输入框');
     /* 字段名以权威顺序出现 */
     const labels = q('#th-colors .th-field-label code').map(c => c.textContent);
-    eq(labels.length, 26, '26 个字段标签');
+    eq(labels.length, 28, '28 个字段标签');
     eq(labels[0], 'keyboardColor', '首个字段是 keyboardColor');
-    eq(labels[25], 'accentColor', '末个字段是 accentColor');
+    eq(labels[27], 'accentColor', '末个字段是 accentColor');
     ok(labels.includes('keyHintTextBottomColor'), '含四方向提示色字段');
 
     /* keyTypes：3 类分组，各自 10 个字段（内置默认只给 FUNCTION/ACTION，
@@ -4099,10 +4101,10 @@ await sleep(350);
       eq(FE.state.themeFileName, tpJson.name + '.json',
         '导出文件名跟随主题 name（App 端就是这么定位文件的）');
 
-      /* ⑤ 载入后 26 个色框都有取色器实例（否则色块预览又不显示，是上一轮修过的坑） */
+      /* ⑤ 载入后 28 个色框都有取色器实例（否则色块预览又不显示，是上一轮修过的坑） */
       FE.renderThemeTab();
       const withPicker = q('#th-colors .color-input').filter(i => !!i.jscolor).length;
-      eq(withPicker, 26, '★ 载入预置主题后 26 个色框都有取色器实例（色块预览可见）');
+      eq(withPicker, 28, '★ 载入预置主题后 28 个色框都有取色器实例（色块预览可见）');
     } finally {
       FE.state.themeProfile = savedThemeProfile;
       FE.state.themeFileName = savedThemeFile;
@@ -5258,15 +5260,61 @@ console.log('== 自定义图标（icons）列表与编辑 ==');
   ok(!!FE.state.profile.icons['foxy.star'], '改名后写入新图标名');
   ok(FE.state.profile.icons['foxy.heart'] === undefined, '旧图标名同时移除');
 
-  /* 键对话框的图标下拉能选到 icons 映射里的自定义名 */
+  /* 键对话框的图标选择器：不再是原生 <select>（内联载荷会把下拉撑成一大块），
+   * 改成紧凑触发器 + 内联展开列表，每项左侧渲染真实图形。 */
   documentStub._openDialogs.length = 0;
   FE.openKeyDialog({ mode: 'definition', name: 'ic.k' });
   const kdIcon = documentStub._openDialogs[0];
-  const iconSel = kdIcon.querySelectorAll('select').filter(s =>
-    s.querySelectorAll('option').some(o => o.getAttribute('value') === 'foxy.star'))[0];
-  ok(!!iconSel, '图标下拉含 icons 映射里的自定义名');
-  ok(iconSel.querySelectorAll('optgroup').some(g => String(g.getAttribute('label')).indexOf('自定义') === 0),
+  ok(!kdIcon.querySelectorAll('select').some(s =>
+    s.querySelectorAll('option').some(o => o.getAttribute('value') === 'foxy.heart')),
+    '图标不再是原生 select（不会随载荷长度变形）');
+  const iconTrigger = kdIcon.querySelectorAll('.icon-pick-trigger')[0];
+  ok(!!iconTrigger, '键对话框里有紧凑的图标触发器');
+  ok(iconTrigger.querySelectorAll('.icon-pick-thumb')[0].children.some(c => c.className === 'icon-pick-none'),
+    '当前名 foxy.heart 已随改名失效 → 缩略块显示占位点而不是报错');
+  ok(iconTrigger.querySelectorAll('.icon-pick-label')[0].textContent === 'foxy.heart',
+    '触发器显示当前图标名（实际 ' + iconTrigger.querySelectorAll('.icon-pick-label')[0].textContent + '）');
+  const iconPop = kdIcon.querySelectorAll('.icon-pick-pop')[0];
+  ok(iconPop.hidden, '列表默认收起');
+  iconTrigger.click();
+  ok(!iconPop.hidden, '点触发器展开列表');
+  ok(iconPop.querySelectorAll('.picker-group').some(g => String(g.textContent).indexOf('自定义') === 0),
     '自定义名归在「自定义（icons 映射）」分组');
+  const starItem = iconPop.querySelectorAll('.picker-item').filter(it => {
+    const nm = it.querySelectorAll('.icon-pick-name')[0];
+    return nm && nm.textContent === 'foxy.star';
+  })[0];
+  ok(!!starItem, '列表含 icons 映射里的自定义名');
+  eq(starItem.querySelectorAll('.icon-pick-thumb')[0].innerHTML.indexOf('<svg'), 0, '列表项内联预览图标图形');
+  starItem.click();
+  ok(iconPop.hidden, '选中后列表收起');
+  eq(iconTrigger.querySelectorAll('.icon-pick-label')[0].textContent, 'foxy.star', '选中后触发器回填新图标名');
+  eq(iconTrigger.querySelectorAll('.icon-pick-thumb')[0].innerHTML.indexOf('<svg'), 0,
+    '选中后缩略块渲染该图标的真实图形');
+
+  /* 内联载荷：触发器只显示「内联 SVG」，列表项只留一行摘录，完整代码折叠在下方。
+   * 用独立的临时键，避免影响后面的「旧图标名不渲染」回归。 */
+  documentStub._openDialogs.length = 0;
+  const LONG_SVG = 'svg:<svg viewBox="0 0 24 24"><path d="M1 1"/>' + new Array(60).join('<path d="M2 2"/>') + '</svg>';
+  FE.state.profile.keys['ic.inline'] = { label: 'X', icon: LONG_SVG };
+  FE.openKeyDialog({ mode: 'definition', name: 'ic.inline' });
+  const kdInline = documentStub._openDialogs[0];
+  const inlineTrigger = kdInline.querySelectorAll('.icon-pick-trigger')[0];
+  eq(inlineTrigger.querySelectorAll('.icon-pick-label')[0].textContent, '内联 SVG', '内联载荷触发器只显示「内联 SVG」');
+  ok(inlineTrigger.textContent.indexOf('<path') < 0, '触发器里不出现载荷原文（否则会被撑爆）');
+  const inlineCode = kdInline.querySelectorAll('.icon-pick-pre')[0];
+  ok(!!inlineCode, '内联载荷提供折叠的完整代码');
+  eq(inlineCode.textContent, LONG_SVG, '折叠区展示完整载荷原文');
+  inlineTrigger.click();
+  const inlinePop = kdInline.querySelectorAll('.icon-pick-pop')[0];
+  const inlineSrc = inlinePop.querySelectorAll('.icon-pick-src')[0];
+  ok(!!inlineSrc, '内联载荷项显示载荷摘录');
+  ok(inlineSrc.textContent.length <= 141, '摘录被截断到 141 字以内（实际 ' + inlineSrc.textContent.length + '）');
+  ok(inlineSrc.textContent.endsWith('…'), '截断处有省略号');
+  ok(kdInline.querySelectorAll('.picker-kind').some(k => k.textContent === '可渲染'), '内联载荷标记「可渲染」');
+  kdInline.close();
+  delete FE.state.profile.keys['ic.inline'];
+  documentStub._openDialogs.length = 0;
   kdIcon.close();
   documentStub._openDialogs.length = 0;
 
@@ -5335,6 +5383,336 @@ console.log('== 自定义图标（icons）列表与编辑 ==');
   ok(FE.state.status.modifiers.SHIFT === false, '取消 Shift 同步清掉 modifiers.SHIFT');
   FE.renderAll();
 }
+
+console.log('== 键盘上方工具栏预览 ==');
+{
+  const savedTheme = FE.state.themeProfile;
+  const savedExpanded = FE.state.previewToolbarExpanded;
+  const savedShow = FE.state.previewToolbar;
+  const savedIcons = FE.state.toolbarIcons;
+
+  FE.state.previewToolbar = true;
+  FE.state.previewToolbarExpanded = false;
+  FE.state.toolbarIcons = null;
+  FE.state.themeProfile = FE.normalizeThemeProfile({
+    type: 'foxy.keyboard-theme', name: 'toolbar-probe',
+    light: {
+      altKeyboardColor: '#FFDDEEFF', candidateBarColor: '#FFAABBCC',
+      candidateBackgroundColor: '#FF778899', toolTextColor: '#FF112233',
+      accentColor: '#FF445566', candidateTextColor: '#FF010203'
+    }
+  });
+  FE.state.themeSlot = 'light';
+  FE.renderPreviewOnly();
+
+  const host = $('preview-toolbar');
+  ok(!!host, '预览区有工具栏容器 #preview-toolbar');
+  eq(host.hidden, false, '默认显示工具栏');
+  /* 一体化：工具栏是 #preview-kb 的子节点（键盘面板最上面一行），
+   * 不再单独成条 —— 单独成条会多出一条「比键盘窄/底色不一致」的假差异。 */
+  eq(host.parentNode && host.parentNode.id, 'preview-kb', '#preview-toolbar 嵌在 #preview-kb 内');
+  eq(q('.kbt-bar', host).length, 0, '不再有独立的 .kbt-bar 底条（实机 os.java 不加圆角底条）');
+  eq(host.style.background, 'transparent', '工具栏不画自己的底色，直接用键盘面板底色');
+  const row = q('.kbt-row', host)[0];
+  ok(!!row, '工具栏有 chip 行 .kbt-row');
+  eq(row.style.display, 'flex', 'chip 行是 flex');
+  eq(row.style.flexWrap, 'nowrap', '主态强制单行（实机 7 个按钮不会折成两行）');
+  const mainChips = q('.kbt-chip', host);
+  eq(mainChips.length, 8, '主工具栏 7 个按钮 + 末位 1 个展开 chip');
+  ok(mainChips.some(function (c) { return c.getAttribute('data-toolbar-btn') === 'schema'; }), '主工具栏含「方案」按钮');
+  ok(!mainChips.some(function (c) { return c.getAttribute('data-toolbar-btn') === '__back__'; }), '主工具栏没有返回 chip');
+  eq(mainChips[mainChips.length - 1].getAttribute('data-toolbar-btn'), '__more__',
+    '展开 chip 落在第一行最后一个位置（不另起一行）');
+  const chipH = mainChips[0].style.height;
+  ok(/px$/.test(String(chipH)), 'chip 高度按 unit 换算成 px');
+  /* 40dp 在 unit=38 → 40*38/36 ≈ 42.2px */
+  ok(Math.abs(parseFloat(chipH) - 42.2) < 0.6, 'chip 高度 = 40dp（unit=38 时约 42.2px）');
+  ok(/^[\d.]+px$/.test(String(mainChips[0].style.borderRadius)), '圆角按 dp 换算成 px');
+  ok(Math.abs(parseFloat(mainChips[0].style.borderRadius) - FE.kbDp(12, 38)) < 0.01, '圆角 = 12dp');
+
+  /* 图标按钮的缩略框 + keyboard_tools 的图标（实机复用 ic_tool_theme，不是纯文字） */
+  const byId = function (id) {
+    return q('.kbt-chip', host).filter(function (c) { return c.getAttribute('data-toolbar-btn') === id; })[0];
+  };
+  ok(!!byId('settings').querySelectorAll('.kbt-icon')[0], '有图标按钮渲染 .kbt-icon 缩略框');
+  ok(String(byId('settings').querySelectorAll('.kbt-icon')[0].innerHTML).indexOf('<svg') === 0, '内置矢量真的画成了 svg');
+  ok(!!byId('keyboard_tools').querySelectorAll('.kbt-icon')[0],
+    'keyboard_tools 有图标（r71.f0 的 iconRes = ic_tool_theme，实机复用主题图标）');
+  eq(byId('keyboard_tools').querySelectorAll('.kbt-label').length, 0, 'keyboard_tools 不再回落纯文字 chip');
+  ok(String(byId('keyboard_tools').title).indexOf('主题') >= 0,
+    'keyboard_tools 的提示点明实机显示名是「主题」');
+  ok(String(byId('settings').style.color).indexOf('#112233') === 0, '单色图标套 toolTextColor');
+  ok(String(byId('keyboard_tools').style.color).indexOf('#112233') === 0, 'keyboard_tools 图标同样套 toolTextColor');
+
+  /* 展开态：**仍是同一行、总高度不变**（用户口径：不要展开成两行），
+   * 只是前面几格换成 expanded 那一组，行尾那枚控制 chip 原地变成朝左的收起键。 */
+  const mainRowCount = q('.kbt-row', host).length;
+  FE.state.previewToolbarExpanded = true;
+  FE.renderPreviewOnly();
+  const expChips = q('.kbt-chip', host);
+  eq(q('.kbt-row', host).length, 1, '展开态依旧只有一行（不新增第二行）');
+  eq(q('.kbt-row', host).length, mainRowCount, '展开前后行数一致，工具栏高度不变');
+  eq(q('.kbt-back-row', host).length, 0, '不再有独立的返回行 .kbt-back-row');
+  eq(expChips.length, 5, '展开态 4 个按钮 + 行尾 1 个收起 chip');
+  eq(expChips[expChips.length - 1].getAttribute('data-toolbar-btn'), '__back__',
+    '收起 chip 在行尾（与主态展开 chip 同一位置）');
+  eq(q('.kbt-row', host)[0].querySelectorAll('.kbt-chip').length, 5,
+    '5 个 chip 全在同一行里（收起键不另起一行）');
+  /* 收起 chip 与普通 chip 同一套外观：currentColor 描边，颜色走 toolTextColor */
+  ok(String(expChips[expChips.length - 1].style.color).indexOf('#112233') === 0,
+    '收起 chip 用 toolTextColor（与普通 chip 同级）');
+  eq(q('.kbt-ctrl', host).length, 1, '展开态只有一个控制 chip（收起），没有多的展开键');
+  eq(q('.kbt-label', host).length, 0, '展开态没有纯文字按钮（4 个都有内置矢量）');
+  /* 激活色只给「真的处于激活态」的按钮（w20.java:279 z2 = os.k.contains(id)）。
+   * os.k 全仓只有三处写入：ox.java:882-884 / w20.java:363-365 的 size / one_hand /
+   * split_keyboard —— 其余按钮永不激活。所以展开态里 theme / size / one_hand 必须
+   * 用未激活色 toolTextColor，只有真开了分体才让 split_keyboard 转 accentColor。 */
+  const expById = function (id) {
+    return q('.kbt-chip', host).filter(function (c) { return c.getAttribute('data-toolbar-btn') === id; })[0];
+  };
+  ok(String(expById('theme').style.color).indexOf('#112233') === 0,
+    '展开态里 theme 用未激活色（os.k 从未加入 theme）');
+  ok(String(expById('size').style.color).indexOf('#112233') === 0,
+    '展开态里 size 用未激活色（尺寸菜单没打开）');
+  ok(String(expById('one_hand').style.color).indexOf('#112233') === 0,
+    '展开态里 one_hand 用未激活色（单手模式没开）');
+  ok(String(expById('split_keyboard').style.color).indexOf('#112233') === 0,
+    '分体未开时 split_keyboard 也是未激活色');
+  const savedSplit = FE.state.splitMode;
+  FE.state.splitMode = true;
+  FE.renderPreviewOnly();
+  ok(String(q('.kbt-chip', $('preview-toolbar')).filter(function (c) {
+    return c.getAttribute('data-toolbar-btn') === 'split_keyboard';
+  })[0].style.color).indexOf('#445566') === 0, '分体开关打开后 split_keyboard 才转 accentColor');
+  FE.state.splitMode = savedSplit;
+  FE.renderPreviewOnly();
+  eq(host.textContent.indexOf('收起'), -1, '不再有「收起」文字提示（控制 chip 只用图标）');
+  eq(q('.kbt-toggle', host).length, 0, '不再有独立一行的展开/收起提示');
+
+  /* 点展开 chip → 切换到展开态；点返回 chip → 回到主工具栏 */
+  FE.state.previewToolbarExpanded = false;
+  FE.renderPreviewOnly();
+  /* DOM 桩不支持属性选择器，按 data-toolbar-btn 过滤（与上面的 byId 同一写法） */
+  const more = q('.kbt-chip', host).filter(function (c) {
+    return c.getAttribute('data-toolbar-btn') === '__more__';
+  })[0];
+  ok(!!more, '主工具栏第一行末位有展开 chip');
+  ok(!!more.querySelectorAll('.kbt-icon')[0], '展开 chip 用 svg 图标而不是小字');
+  /* 缩小版（用户要求「搞小一点」），但仍是圆角方块、看得出可点 */
+  ok(parseFloat(more.style.width) < parseFloat(mainChips[0].style.width),
+    '展开 chip 比普通 chip 小一圈');
+  eq(more.style.width, more.style.height, '展开 chip 仍是正方形（有分量感的方块，不是扁挂件）');
+  ok(parseFloat(more.style.width) >= FE.kbDp(24, 38) - 0.01, '展开 chip 不退化成一枚小图标（≥24dp）');
+  eq(more.style.position, 'absolute', '展开 chip 绝对定位，锁定行尾同一位置');
+  more._fire('click');
+  eq(FE.state.previewToolbarExpanded, true, '点展开 chip 切到展开态');
+  eq(q('.kbt-chip', host).length, 5, '展开态已重渲染');
+  const backChipEl = q('.kbt-chip', host).filter(function (c) {
+    return c.getAttribute('data-toolbar-btn') === '__back__';
+  })[0];
+  ok(!!backChipEl, '展开态出现收起 chip');
+  eq(backChipEl.style.position, 'absolute', '收起 chip 同样绝对定位（与展开 chip 同一位置）');
+  eq(backChipEl.style.width, more.style.width, '收起 chip 与展开 chip 同尺寸（同一枚按钮）');
+  eq(backChipEl.style.right, more.style.right, '收起 chip 与展开 chip 右端对齐（位置不动）');
+  backChipEl._fire('click');
+  eq(FE.state.previewToolbarExpanded, false, '点收起 chip 回到主工具栏');
+  eq(q('.kbt-chip', host).length, 8, '主工具栏已恢复（7 + 展开 chip）');
+
+  /* 关闭开关 → 整条工具栏隐藏（纯预览开关，不写主题 JSON） */
+  $('pt-toolbar').checked = false; $('pt-toolbar')._fire('change');
+  eq(FE.state.previewToolbar, false, '关闭开关写入 state.previewToolbar');
+  eq($('preview-toolbar').hidden, true, '关闭后工具栏隐藏');
+  $('pt-toolbar').checked = true; $('pt-toolbar')._fire('change');
+  eq($('preview-toolbar').hidden, false, '重新打开后工具栏显示');
+
+  /* 符号面板页**照样有工具栏**（实机打开符号面板时工具栏不会消失） */
+  const savedTab = FE.state.activeTab;
+  FE.state.activeTab = 'tab-symbols';
+  FE.renderPreviewToolbar($('preview-toolbar'), 38);
+  eq($('preview-toolbar').hidden, false, '符号面板页仍然显示工具栏');
+  eq(q('.kbt-row', $('preview-toolbar')).length, 1, '符号面板页工具栏同样是单行');
+  FE.state.activeTab = savedTab;
+
+  /* ---- 主题工具栏图标：成对状态、自带实色不染色 ---- */
+  const REAL_COLOR = 'svg:<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#3a5470" d="M2 2h20v20H2z"/></svg>';
+  const MONO = 'svg:<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M2 2h20v20H2z"/></svg>';
+  const rep = FE.importToolbarIcons([
+    { name: '设置.svg', text: REAL_COLOR.replace('svg:', '') },
+    { name: '设置激活.svg', text: MONO.replace('svg:', '') },
+    { name: '删除.svg', text: REAL_COLOR.replace('svg:', '') }
+  ]);
+  eq(rep.ok, ['settings'], '图标准确映射到 settings');
+  eq(rep.unmatched, ['删除.svg'], '删除.svg 不在内置按钮表 → 未匹配（不报错）');
+  eq(FE.state.previewToolbarExpanded, false, '导入图标不改变展开态');
+  FE.renderPreviewOnly();
+  const setChip = q('.kbt-chip', $('preview-toolbar')).filter(function (c) {
+    return c.getAttribute('data-toolbar-btn') === 'settings';
+  })[0];
+  ok(!!setChip, '重新渲染后仍有「设置」chip');
+  ok(String(setChip.querySelectorAll('.kbt-icon')[0].innerHTML).indexOf('3a5470') >= 0, '主题图标原样渲染（自带实色不被替换）');
+  eq(setChip.style.color, undefined, '自带实色图标不加主题文字色');
+  ok(String(setChip.title).indexOf('自带实色') >= 0, '提示标注「自带实色」让作者看清来源');
+
+  /* 成对图标的两种态各取各的（activeIcon / icon），不能混 */
+  const pair = FE.toolbarIconOf('settings', false);
+  const pairOn = FE.toolbarIconOf('settings', true);
+  ok(!!pair && !!pairOn, '两种态都能取到图标');
+  ok(pair.markup !== pairOn.markup, '未激活 / 激活取的是不同图标（成对文件不能混用）');
+  ok(pair.markup.indexOf('3a5470') >= 0 && pairOn.markup.indexOf('currentColor') >= 0,
+    '未激活用实色 icon、激活用单色 activeIcon');
+  ok(!FE.iconTintable(pair.markup) && FE.iconTintable(pairOn.markup), '两态的染色判定各自独立');
+
+  FE.clearToolbarIcons();
+  FE.renderPreviewOnly();
+  const clearedChip = q('.kbt-chip', $('preview-toolbar')).filter(function (c) {
+    return c.getAttribute('data-toolbar-btn') === 'settings';
+  })[0];
+  ok(String(clearedChip.style.color).indexOf('#112233') === 0, '清除后回到内置矢量（可染色）');
+  eq(FE.toolbarIconCount(), 0, '清除后导入计数归零');
+
+  /* 图标文件导入走 file input（多选 .svg） */
+  const iconInput = $('pt-toolbar-icons-file');
+  ok(!!iconInput, '有工具栏图标文件输入框');
+  iconInput.files = [{ name: '工具栏图标/设置.svg', __content: MONO.replace('svg:', '') }];
+  iconInput._fire('change');
+  await sleep(10);
+  eq(FE.toolbarIconCount(), 1, '通过按钮导入的图标进了 state.toolbarIcons');
+  ok(String($('pt-toolbar-status').textContent).indexOf('已导入 1 个按钮图标') >= 0, '状态行报告导入结果');
+  $('pt-toolbar-reset')._fire('click');
+  eq(FE.toolbarIconCount(), 0, '「清除」按钮清空导入图标');
+
+  FE.state.themeProfile = savedTheme;
+  FE.state.previewToolbarExpanded = savedExpanded;
+  FE.state.previewToolbar = savedShow;
+  FE.state.toolbarIcons = savedIcons;
+  FE.renderPreviewOnly();
+}
+
+console.log('== 符号字体导入与覆盖度提示 ==');
+{
+  const savedFontFamily = FE.state.previewFontFamily;
+  const savedFontName = FE.state.previewFontName;
+  const savedCoverage = FE.state.previewFontCoverage;
+  FE.clearSymbolFont();
+  eq(FE.symbolFontStatusText(), '', '未导入字体时状态行为空');
+
+  /* 合成最小 sfnt：cmap format4 覆盖 A-E 与「全」 */
+  function buildFont(pairs) {
+    const segs = pairs.map(function (p) { return [p[0], p[1], (p[2] - p[0]) & 0xffff]; });
+    segs.push([0xffff, 0xffff, 0]);
+    const segX2 = segs.length * 2;
+    const subLen = 14 + segX2 * 4 + 2;
+    const cmapLen = 4 + 8 + subLen;
+    const buf = Buffer.alloc(12 + 16 + cmapLen, 0);
+    buf.writeUInt32BE(0x00010000, 0);
+    buf.writeUInt16BE(1, 4);
+    buf.writeUInt32BE(12, 12);
+    buf.write('cmap', 12, 'latin1');
+    buf.writeUInt32BE(12 + 16, 20);
+    buf.writeUInt32BE(cmapLen, 24);
+    const c = 12 + 16;
+    buf.writeUInt16BE(0, c);
+    buf.writeUInt16BE(1, c + 2);
+    buf.writeUInt16BE(3, c + 4); buf.writeUInt16BE(1, c + 6); buf.writeUInt32BE(12, c + 8);
+    const s = c + 12;
+    buf.writeUInt16BE(4, s);
+    buf.writeUInt16BE(subLen, s + 2);
+    buf.writeUInt16BE(0, s + 4);
+    buf.writeUInt16BE(segX2, s + 6);
+    let o = s + 14;
+    segs.forEach(function (g) { buf.writeUInt16BE(g[1], o); o += 2; });
+    o += 2;
+    segs.forEach(function (g) { buf.writeUInt16BE(g[0], o); o += 2; });
+    segs.forEach(function (g) { buf.writeUInt16BE(g[2], o); o += 2; });
+    segs.forEach(function () { buf.writeUInt16BE(0, o); o += 2; });
+    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length);
+  }
+  const bytes = buildFont([[0x41, 0x45, 0x10], [0x5168, 0x5168, 0x20]]);
+
+  const res = await FE.importSymbolFontFile({ name: '字体图标.otf', arrayBuffer: function () { return Promise.resolve(bytes); } });
+  ok(res.ok, '导入字体成功');
+  ok(/^foxy-preview-\d+-/.test(res.family), 'font-family 名带前缀（避免撞系统字体）');
+  eq(res.coverage ? res.coverage.size : -1, 6, '覆盖度解析出 6 个码位');
+  eq(FE.state.previewFontFamily, res.family, 'family 记进 state 供状态行/清理使用');
+  eq(FE.state.previewFontName, '字体图标.otf', '记住来源文件名');
+  ok(String(res.message).indexOf('覆盖 6 个码位') >= 0, '提示语报告覆盖码位数');
+  ok(String(res.message).indexOf('实机会回退系统字体') >= 0 || String(res.message).indexOf('没有需要字形') >= 0,
+    '提示语说明实机缺字时的行为');
+  const stText = FE.symbolFontStatusText();
+  ok(stText.indexOf('当前预览字体') === 0, '状态行以「当前预览字体」开头');
+  ok(stText.indexOf('字体图标.otf') >= 0, '状态行显示来源文件名');
+
+  /* 覆盖度按当前布局实算：字体只有 A-E 与「全」，默认布局里必然有缺字 */
+  const report = FE.fontCoverageReport(FE.state.previewFontCoverage);
+  ok(report.chars.length > 0, '当前布局能算出用到的字符集');
+  eq(report.covered.length + report.missing.length, report.chars.length, '覆盖 + 缺失 = 字符总数');
+
+  /* 无法解析 cmap 也照常导入（预览按字体自身字形渲染，提示实机会回退） */
+  const bad = await FE.importSymbolFontFile({ name: '坏字体.otf', arrayBuffer: function () { return Promise.resolve(new ArrayBuffer(8)); } });
+  ok(bad.ok, '无法解析的字体也返回 ok（不阻断预览）');
+  eq(bad.coverage, null, '解析失败时覆盖度为 null');
+  ok(String(bad.message).indexOf('无法解析') >= 0, '提示语明说无法解析覆盖度');
+
+  /* 读不到二进制（FileReader 无 readAsArrayBuffer 且无 arrayBuffer()）也不崩 */
+  const none = await FE.importSymbolFontFile({ name: '空.ttf' });
+  ok(none.ok === true || none.ok === false, '无二进制来源时不抛异常');
+
+  FE.clearSymbolFont();
+  eq(FE.state.previewFontFamily, null, '清除后 family 归 null');
+  eq(FE.symbolFontStatusText(), '', '清除后状态行清空');
+
+  /* 通过按钮导入（file input + FileReader.readAsText 不参与，走 arrayBuffer） */
+  const fontInput = $('pt-font-file');
+  ok(!!fontInput, '有字体文件输入框');
+  fontInput.files = [{ name: '字体图标.otf', arrayBuffer: function () { return Promise.resolve(bytes); } }];
+  fontInput._fire('change');
+  await sleep(20);
+  ok(!!FE.state.previewFontFamily, '通过按钮导入后 family 已记录');
+  ok(String($('pt-font-status').textContent).indexOf('覆盖 6 个码位') >= 0, '字体状态行报告覆盖度');
+  $('pt-font-clear')._fire('click');
+  eq(FE.state.previewFontFamily, null, '「移除预览字体」按钮生效');
+
+  FE.state.previewFontFamily = savedFontFamily;
+  FE.state.previewFontName = savedFontName;
+  FE.state.previewFontCoverage = savedCoverage;
+  FE.renderPreviewOnly();
+}
+
+console.log('== 工具栏/字体：样式与页面结构 ==');
+{
+  const cssSrc = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+  const htmlSrc = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  /* 一体化后工具栏不再自带宽度/底条：父级 .kb 已经限宽并给了底色 */
+  ok(!/\.kbt-wide\s*\{/.test(cssSrc), '.kbt-wide 已删除（工具栏不再单独限宽）');
+  ok(!/\.kbt-bar\s*\{/.test(cssSrc), '.kbt-bar 已删除（不再有独立圆角底条）');
+  ok(!/\.kbt-back-row\s*\{/.test(cssSrc), '.kbt-back-row 已删除（展开态不新增第二行）');
+  /* 行尾控制 chip：缩小 + 绝对定位在行尾同一像素位置，只有箭头反向 */
+  const tbSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'toolbar-preview.js'), 'utf8');
+  ok(/position\s*=\s*'absolute'/.test(tbSrc), '控制 chip 绝对定位钉在行尾（位置固定不随内容移动）');
+  ok(/\.kbt\s*\{[^}]*width:\s*100%/.test(cssSrc), '.kbt 撑满父级（#preview-kb）宽度');
+  ok(/\.kbt-row\s*\{[^}]*display:\s*flex/.test(cssSrc), '.kbt-row 是 flex 行');
+  ok(/\.kbt-chip\s*\{[^}]*overflow:\s*hidden/.test(cssSrc), '.kbt-chip 不随内容撑破');
+  ok(/\.kbt-label\s*\{[^}]*text-overflow:\s*ellipsis/.test(cssSrc), '.kbt-label 文字超长省略');
+  /* 字体预览消费点：键面主标签 + 手势提示 + 长按徽标（App 端是两个字体槽，编辑器只有一个入口） */
+  ok(/\.kb-label\s*\{[^}]*font-family:\s*var\(--kb-preview-font/.test(cssSrc), '.kb-label 消费 --kb-preview-font');
+  ok(/\.kb-hint\s*\{[^}]*font-family:\s*var\(--kb-preview-font/.test(cssSrc), '.kb-hint 消费 --kb-preview-font（水彩布局的汉字都在提示位）');
+  ok(/\.kb-badge-lp\s*\{[^}]*font-family:\s*var\(--kb-preview-font/.test(cssSrc), '.kb-badge-lp 消费 --kb-preview-font');
+  /* 页面结构：工具栏嵌在 #preview-kb 内部（键盘面板最上面一行）；脚本顺序在主模块之后 */
+  const tbAt = htmlSrc.indexOf('id="preview-toolbar"');
+  const kbAt = htmlSrc.indexOf('id="preview-kb"');
+  ok(tbAt > 0 && kbAt > 0 && kbAt < tbAt, '#preview-toolbar 嵌在 #preview-kb 标签内部（不再单独成条）');
+  ok(htmlSrc.indexOf('id="pt-toolbar-icons-file"') > 0, '主题页有工具栏图标导入入口');
+  ok(htmlSrc.indexOf('id="pt-font-file"') > 0, '主题页有字体文件导入入口');
+  const sysym = htmlSrc.indexOf('js/symbol-preview.js');
+  const fontAt = htmlSrc.indexOf('js/font-preview.js');
+  const tbJsAt = htmlSrc.indexOf('js/toolbar-preview.js');
+  ok(fontAt > sysym && tbJsAt > fontAt, 'font-preview.js / toolbar-preview.js 在 symbol-preview.js 之后加载');
+  ok(htmlSrc.indexOf('键盘上方的工具栏') >= 0, '主题页说明已改为「画键盘 + 键盘上方的工具栏」');
+  ok(htmlSrc.indexOf('展开更多按钮') >= 0 || htmlSrc.indexOf('不等于「激活」') >= 0,
+    '主题页说明已澄清「展开更多按钮 ≠ 激活」');
+  ok(htmlSrc.indexOf('不含 App 的候选栏 / 工具栏') < 0, '过期说明「不含候选栏/工具栏」已删除');
+}
+
 }   /* 结束 await sleep(350) 后的主体块 */
 
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');

@@ -289,5 +289,56 @@ withTheme(makeTheme(), 'light', () => {
   });
 });
 
+/* ---------------- 符号面板选中分组的新字段（回退链） ---------------- */
+console.log('\n== 符号面板选中分组：symbolTabHighlight* 的回退链 ==');
+withTheme(makeTheme({ light: { toolTextColor: '#FF10FF10', candidateHighlightColor: '#FF20FF20' } }), 'light', () => {
+  /* 未给新字段 → 分别回退 toolTextColor / candidateHighlightColor（旧主题外观不变） */
+  const a = FE.resolveThemeField('symbolTabHighlightTextColor', {});
+  eq(a.value, '#FF10FF10', '选中分组文字未设置时回退 toolTextColor');
+  eq(a.detail, 'toolTextColor', '回退时 detail 报告真正取色的字段名');
+  const b = FE.resolveThemeField('symbolTabHighlightColor', {});
+  eq(b.value, '#FF20FF20', '选中分组背景未设置时回退 candidateHighlightColor');
+  eq(b.detail, 'candidateHighlightColor', '背景回退的 detail 同样指向原字段');
+
+  /* 单独设置后必须生效，且不反过来影响它们回退到的工具栏字段 */
+  FE.state.themeProfile.light.symbolTabHighlightTextColor = '#FF00AAFF';
+  FE.state.themeProfile.light.symbolTabHighlightColor = '#FF00FFAA';
+  const c = FE.resolveThemeField('symbolTabHighlightTextColor', {});
+  eq(c.value, '#FF00AAFF', '单独设置后优先用自己的值');
+  eq(c.detail, 'symbolTabHighlightTextColor', '单独设置时 detail 就是它自己');
+  eq(FE.resolveThemeField('toolTextColor', {}).value, '#FF10FF10',
+    '工具栏文字/图标色不受新字段影响（两者彻底解耦）');
+  eq(FE.resolveThemeField('candidateHighlightColor', {}).value, '#FF20FF20',
+    '候选高亮色也不受新背景字段影响');
+});
+
+/* 回退表的插入不能打乱既有的角色级回落（方向提示色走 resolveRole 那一层） */
+withTheme(makeTheme({ light: { toolTextColor: '#FF10FF10', candidateHighlightColor: '#FF20FF20' } }), 'light', () => {
+  const t = FE.resolveRole('hintTop', { keyType: 'LETTER' }, {});
+  eq(t.value, '#FF700000', '方向提示色自己有值时照旧');
+  delete FE.state.themeProfile.light.keyHintTextTopColor;
+  const t2 = FE.resolveRole('hintTop', { keyType: 'LETTER' }, {});
+  eq(t2.value, '#FF666666', '缺失时仍回退 keyHintTextColor（角色级回落没被新表扰乱）');
+});
+
+/* 未导入主题时也走同一条回退链（内置默认槽位也没有新字段） */
+console.log('\n== 符号面板选中分组：未导入主题时的内置默认 ==');
+(function () {
+  const saved = FE.state.themeProfile;
+  try {
+    FE.state.themeProfile = null;
+    const a = FE.resolveThemeField('symbolTabHighlightTextColor', { includeBuiltin: true });
+    ok(a.value != null, '未导入主题也能取到选中分组文字色（内置默认兜底）');
+    eq(a.detail, 'toolTextColor', '内置默认下同样回退到 toolTextColor');
+    eq(a.source, FE.COLOR_SOURCES.BUILTIN, '来源标记为内置默认');
+    const b = FE.resolveThemeField('symbolTabHighlightColor', { includeBuiltin: true });
+    ok(b.value != null, '未导入主题也能取到选中分组背景色');
+    eq(b.detail, 'candidateHighlightColor', '内置默认下同样回退到 candidateHighlightColor');
+  } finally {
+    FE.state.themeProfile = saved;
+  }
+})();
+
+
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
 process.exit(failed ? 1 : 0);

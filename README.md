@@ -38,7 +38,9 @@ Android/data/com.fxliang.foxy/files/foxy/frontend/layouts/
 - 动作与宏编辑：使用图形化动作控件，保留不能安全转换的原始 JSON。
 - 引用索引与使用数：查看定义被哪些键、动作和宏引用，并点击定位。
 - 多文件布局包：合并布局、`definitions.json` 和 popup，导出时恢复未改动的共享定义。
-- 主题文件编辑：支持 `foxy.keyboard-theme` 文件与预览颜色优先级。
+- 主题文件编辑：支持 `foxy.keyboard-theme` 文件与预览颜色优先级；新增 `symbolTabHighlightTextColor` / `symbolTabHighlightColor`（未设置时分别回退 `toolTextColor` / `candidateHighlightColor`）。
+- 键盘上方工具栏预览：按 `os.java` / `w20.java` / `mf.java` 还原主/展开两种组合、chip 尺寸与配色；可导入主题自带的工具栏 svg（按文件名显式配对成对图标），自带实色的图标原样渲染、单色图标跟随 `toolTextColor` / `accentColor`。
+- 符号字体预览：导入 `.otf` / `.ttf` 后挂到键面和手势提示上，并按字体 cmap 报告当前布局的缺字（实机会回退系统字体）；字体与工具栏图标**只影响预览，不写入任何 Foxy 文件**。
 - 符号面板编辑：支持符号、emoji、颜文字数据及多行预览。
 - 宽松 JSON 导入：检查并修复注释、尾逗号等可识别问题，导出仍保持严格 JSON。
 - 响应式界面：提供手机竖屏布局、触摸拖动、浮动撤销/重做/回顶按钮。

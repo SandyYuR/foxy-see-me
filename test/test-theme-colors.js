@@ -5,7 +5,7 @@
  * 且**回归价值高、改动频繁**，与 test-ui.js 的巨型断言集分开更好定位。
  *
  * 覆盖：
- *   ① 主题页每个颜色行都同时显示英文字段名与中文提示（26 全局色 + keyTypes 10 字段）；
+ *   ① 主题页每个颜色行都同时显示英文字段名与中文提示（28 全局色 + keyTypes 10 字段）；
  *   ② FE.argbToPickerHex / FE.pickerHexToArgb 的 6/8 位往返；
  *   ③ **关键回归**：输入框里是 8 位 ARGB（#AARRGGBB）时，取色面板拿到的必须是
  *      「经 FE.argbToPickerHex 换算后的 picker-hex」，而不是把 ARGB 当成
@@ -157,7 +157,7 @@ console.log('\n== 主题页颜色行：英文名 + 中文提示并列可见 ==')
   FE.renderThemeTab();
 
   const rows = q('#th-colors .form-row.form-inline');
-  eq(rows.length, 26, '槽位全局配色渲染 26 行');
+  eq(rows.length, 28, '槽位全局配色渲染 28 行');
   const names = [];
   rows.forEach(function (row) {
     const code = row.querySelectorAll('code')[0];
@@ -177,14 +177,14 @@ console.log('\n== 主题页颜色行：英文名 + 中文提示并列可见 ==')
       name + '：title 保留完整说明');
   });
   /* 字段名集合与权威顺序一致（英文必须原样，不能本地化改名） */
-  eq(names.length, 26, '26 个字段名');
+  eq(names.length, 28, '28 个字段名');
   ok(names.indexOf('keyboardColor') === 0, '首个字段 keyboardColor');
-  ok(names.indexOf('accentColor') === 25, '末个字段 accentColor');
+  ok(names.indexOf('accentColor') === 27, '末个字段 accentColor');
   ok(names.indexOf('keyHintTextBottomColor') >= 0, '含四方向提示色字段');
 
   /* 中文提示必须各不相同（照抄同一句就等于没有说明） */
   const docs = q('#th-colors .th-field-doc').map(function (d) { return String(d.textContent).trim(); });
-  eq(new Set(docs).size, 26, '26 个中文提示互不重复');
+  eq(new Set(docs).size, 28, '28 个中文提示互不重复');
 
   /* keyTypes 的 10 个字段同样要有中文（内置默认给了 FUNCTION / ACTION） */
   const ktRows = q('#th-keytypes .form-row.form-inline');
@@ -337,10 +337,10 @@ console.log('\n== ★回归：主题页色框必须全都有取色器实例（�
   /* ① 刚渲染完：两个区块的**所有**色框都要有实例（不能等用户点击） */
   const colorInputs = q('#th-colors .color-input');
   const ktInputs = q('#th-keytypes .color-input');
-  ok(colorInputs.length === 26, '（前置）#th-colors 有 26 个色框（实际 ' + colorInputs.length + '）');
+  ok(colorInputs.length === 28, '（前置）#th-colors 有 28 个色框（实际 ' + colorInputs.length + '）');
   ok(ktInputs.length >= 20, '（前置）#th-keytypes 至少 20 个色框（实际 ' + ktInputs.length + '）');
   const missing = colorInputs.filter(function (i) { return !i.jscolor; });
-  eq(missing.length, 0, '★ 刚渲染完：26 个全局色框**全部**已有实例（缺 ' + missing.length + ' 个）');
+  eq(missing.length, 0, '★ 刚渲染完：28 个全局色框**全部**已有实例（缺 ' + missing.length + ' 个）');
   const ktMissing = ktInputs.filter(function (i) { return !i.jscolor; });
   eq(ktMissing.length, 0, '★ 刚渲染完：keyTypes 色框**全部**已有实例（缺 ' + ktMissing.length + ' 个）');
 
@@ -368,7 +368,7 @@ console.log('\n== ★回归：主题页色框必须全都有取色器实例（�
   one.value = '#FF445566';
   one._fire('change');
   const after = q('#th-colors .color-input');
-  eq(after.length, 26, '选色后仍渲染 26 个色框');
+  eq(after.length, 28, '选色后仍渲染 28 个色框');
   const afterMissing = after.filter(function (i) { return !i.jscolor; });
   eq(afterMissing.length, 0, '★ 选完色重建表单后**仍然**全部有实例（缺 ' + afterMissing.length + ' 个）');
   eq(q('#th-keytypes .color-input').filter(function (i) { return !i.jscolor; }).length, 0,
@@ -378,7 +378,7 @@ console.log('\n== ★回归：主题页色框必须全都有取色器实例（�
   FE.activateTab('tab-layout');
   FE.activateTab('tab-theme');
   eq(q('#th-colors .color-input').filter(function (i) { return !i.jscolor; }).length, 0,
-    '★ 切页往返后 26 个色框仍有实例');
+    '★ 切页往返后 28 个色框仍有实例');
 
   /* ⑥ 重复渲染：表单会**重建**（新元素），新元素必须同样带上实例；
    *    且不能对同一元素重复安装（真实 jscolor 对同元素重复 new 会抛错，桩也照抄了）。 */
@@ -390,7 +390,7 @@ console.log('\n== ★回归：主题页色框必须全都有取色器实例（�
   ok(!!newNode.jscolor, '★ 重渲染后的新输入框也有实例');
   ok(newNode.jscolor !== oldInst, '实例随元素重建（旧实例已随旧元素丢弃）');
   eq(q('#th-colors .color-input').filter(function (i) { return !i.jscolor; }).length, 0,
-    '重渲染后 26 个色框全部有实例');
+    '重渲染后 28 个色框全部有实例');
   /* 同一元素上重复补装必须是空操作（幂等），不能把已有的实例冲掉 */
   const same = q('#th-colors .color-input')[0];
   const sameInst = same.jscolor;
@@ -399,13 +399,13 @@ console.log('\n== ★回归：主题页色框必须全都有取色器实例（�
 }
 
 /* ================================================================
- * ⑦ ★回归：26 个颜色行的排版必须**完全一致**（标签独占整行）
+ * ⑦ ★回归：28 个颜色行的排版必须**完全一致**（标签独占整行）
  *
  * 现象（用户实机截图指出）：`accentColor` 那一行的色值框跑到与标签**同一行**，
  * 「清除」按钮被挤到下一行；其余 25 行都是「标签一行、框 + 按钮一行」。
  *
  * 成因：`.th-color-grid .mini-label { flex: 1 1 auto }` —— 标签按**内容宽度**
- * 参与 flex 计算。26 个字段标签长短悬殊（`candidateBarColor` 的中文注释长，
+ * 参与 flex 计算。28 个字段标签长短悬殊（`candidateBarColor` 的中文注释长，
  * `accentColor` 只有「强调色」三个字），**只有最短的那个**省出的空间刚好容得下
  * `.color-input`(150px)，于是它不换行、其余 25 个换行 → 那一行看起来与众不同。
  *
@@ -414,9 +414,9 @@ console.log('\n== ★回归：主题页色框必须全都有取色器实例（�
  *
  * ⚠️ DOM 桩没有布局引擎（量不到换行），所以这条只能查 CSS 源码 ——
  * 与 test-ui.js 查 `::-webkit-scrollbar` 规则同一做法。
- * 实机复核：headless Edge 截图，26 行签名（inpX|btnX|rowH）一致。
+ * 实机复核：headless Edge 截图，28 行签名（inpX|btnX|rowH）一致。
  * ================================================================ */
-console.log('\n== ★回归：26 个颜色行排版一致（标签独占整行）==');
+console.log('\n== ★回归：28 个颜色行排版一致（标签独占整行）==');
 {
   const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
   const m = css.match(/\.th-color-grid\s+\.mini-label\s*\{([^}]*)\}/);
@@ -429,12 +429,12 @@ console.log('\n== ★回归：26 个颜色行排版一致（标签独占整行�
   /* 行本身必须允许 wrap，100% 的 basis 才表现为「独占一行后换行」 */
   const row = css.match(/\.th-color-grid\s+\.form-row\.form-inline\s*\{([^}]*)\}/);
   ok(!!row, '（前置）存在 .th-color-grid 行规则');
-  /* 26 行共用同一 class，不存在「给某一行特调」的覆盖 */
+  /* 28 行共用同一 class，不存在「给某一行特调」的覆盖 */
   FE.loadThemeProfileText(FE.serializeThemeProfile(FE.themeNewProfile()));
   FE.state.themeSlot = 'light';
   FE.renderThemeTab();
   const labels = q('#th-colors .th-field-label');
-  eq(labels.length, 26, '26 行的标签都挂 .th-field-label（同一条规则一视同仁）');
+  eq(labels.length, 28, '28 行的标签都挂 .th-field-label（同一条规则一视同仁）');
   const accRows = labels.filter(function (l) {
     const c = l.querySelectorAll('code')[0];
     return c && String(c.textContent) === 'accentColor';
@@ -444,7 +444,7 @@ console.log('\n== ★回归：26 个颜色行排版一致（标签独占整行�
   const sigs = q('#th-colors .form-row.form-inline').map(function (r) {
     return r.children.map(function (c) { return c.tagName; }).join('+');
   });
-  eq(new Set(sigs).size, 1, '★ 26 行的子元素序列完全一致（唯一签名: ' + sigs[0] + '）');
+  eq(new Set(sigs).size, 1, '★ 28 行的子元素序列完全一致（唯一签名: ' + sigs[0] + '）');
 }
 
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');

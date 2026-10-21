@@ -36,7 +36,7 @@ node test/test-core.js
 node test/test-ui.js
 ```
 
-当前基线是 core 739、UI 1472，两个套件都必须 0 失败。按改动范围追加：
+当前基线是 core 799、UI 1590，两个套件都必须 0 失败。按改动范围追加：
 
 ```bash
 node test/test-color-source.js   # 改过 color-source.js 或颜色链路
@@ -44,7 +44,7 @@ node test/check-real-files.js    # 改过示例、解析、导出或格式对齐
 node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 ```
 
-颜色测试当前基线为 96；真实文件体检当前覆盖 46 个文件且必须 0 错。涉及拖动、取色、对话框关闭、滚动恢复、真实触摸或视口溢出时，测试桩通过不够，还要在真实浏览器中补验。
+颜色测试当前基线为 111；真实文件体检当前覆盖 46 个文件且必须 0 错。涉及拖动、取色、对话框关闭、滚动恢复、真实触摸或视口溢出时，测试桩通过不够，还要在真实浏览器中补验。
 
 ## 4. 数据与架构不变量
 
@@ -109,6 +109,14 @@ node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 - 主题颜色优先级为：布局状态色 > 布局每键 `colors` > 主题 `keyTypes` > 主题全局色。
 - 预览工具栏的边框、描边、滑动提示开关只影响预览，不写入主题 JSON；关闭阴影时显式写 `none`。
 - 预览第一行的 Shift / Ctrl / Alt / Meta 是修饰键模拟开关（`#pt-shift` / `#pt-ctrl` / `#pt-alt` / `#pt-meta`），只影响当前声明了同名 `modifier` 的键；新增开关要同步 `test/dom-stub.js` 的状态组桩。
+- `candidateBarColor` 按 `key_border_enabled` 决定是「候选栏/工具栏容器底色」还是「同键盘底色」；`accentColor` 是工具栏选中态。
+- 符号面板选中分组的文字/背景分别走 `symbolTabHighlightTextColor` / `symbolTabHighlightColor`，未设置时按 `FE.THEME_FIELD_FALLBACK` 回退 `toolTextColor` / `candidateHighlightColor`（不是 `THEME_ROLE_FIELD`，那是布局角色映射）。
+- 键盘上方工具栏预览由 `js/toolbar-preview.js` 画在 `#preview-toolbar`，而 `#preview-toolbar` **嵌在 `#preview-kb` 内部**、是键盘面板最上面那一行（实机同底色同宽度，单独成条会假造出宽度/底色差异）。它不自带宽度、圆角和底条；`renderPreview` 里 `clearEl(host)` 之后必须把它挂回首个子节点，**符号面板页同样要挂回并重画一次**（实机打开符号面板时工具栏不会消失，`app.js` 符号分支 `host.insertBefore(toolbarHost, host.firstChild)` + 再调一次 `FE.renderPreviewToolbar`，两页签用同一个 unit → 切换不跳变）。两个组合 `flex-wrap:nowrap` 单行呈现、不叠两份、**展开前后工具栏高度不变**：主态 / 展开态末尾都是**同一枚绝对定位在行尾的控制 chip**（`.kbt-ctrl`，28dp 方、圆角 12dp、图标 16dp），主态朝右箭头＝展开、展开态朝左箭头＝收起，切换时位置一像素不动；行由 `padding-right = ctrlDp + gapDp` 让位；**没有独立一行的文字提示，也没有第二行返回行**。`keyboard_tools` 有图标（实机 `r71.f0` 复用 `ic_tool_theme`，显示名取 `tool_theme`=「主题」），不是纯文字 chip。尺寸常量来自 `os.java` / `w20.java` / `mf.java`，dp 换算一律走 `FE.kbDp`。
+- 工具栏按钮与主题图标用**显式文件名映射表**（`FE.toolbarIconMatch`）配对，不许按中文名模糊匹配——水彩包里有「分体 / 分体激活」这类成对图标，模糊匹配会把两态混成一张。
+- 工具栏 chip 用不用激活图标只看 `FE.toolbarActiveSet()`（等价 `w20.java:279` 的 `os.k.contains(id)`）：全反编译里 `os.k` 只有 `size` / `one_hand` / `split_keyboard` 三处写入，其余按钮永不激活；**「展开态」不等于「全部激活」**——把 `expanded` 当 active 传下去会让主题的「*激活.svg」（水彩包画成「图标 + 一道粗斜杠」）全变成看似的禁用占位。
+- 图标要不要被主题色染色由 `FE.iconTintable` 判定（等价 `hk0.w`）：全 svg 的 `fill` / `stroke` 都是 `currentColor` / `none` 才染色，出现任何实色就原样渲染。
+- 符号字体预览由 `js/font-preview.js` 接管：`--kb-preview-font` 挂在 `.kb-label` / `.kb-hint` / `.kb-badge-lp` 上（App 端 KEY_MAIN 与 KEY_ALT 是两个槽，编辑器只有一个导入入口）。覆盖度按当前布局**实际用到的字符**比对并如实报告缺失（实机回退系统字体）；解析失败不能阻断渲染。
+- 工具栏图标、字体、工具栏显隐/展开都只是预览状态（`state.previewToolbar` / `state.toolbarIcons` / `state.previewFont*`），**不写入任何 Foxy 文件**；autosave 只存图标文本与开关，不存字体二进制。
 - 符号事实来源是 `state.symbolProfiles[kind]`；snapshot、restore、autosave、boot 都处理复数槽位。
 - 符号预览替换同一个 `#preview-kb`，左右列滚动容器设置 `min-height: 0`；内容挂载后再恢复类别 scrollTop。
 - 搜索/新建工具条覆盖 keys、actions、macros、popup、symbol；重建列表时保持滚动位置。

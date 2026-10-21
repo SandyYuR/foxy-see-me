@@ -11,7 +11,7 @@
  *   ① 布局 colors.states[状态][角色]         (m00.k → m30.k)
  *   ② 布局 colors[角色]                      (m30)
  *   ③ 主题 keyTypes[键类型][角色]             (u40)
- *   ④ 主题 26 色全局默认                       (m00 字段)
+ *   ④ 主题 28 色全局默认                       (m00 字段)
  *   方向提示色另有 keyTypes.hint / 全局 hint 的**逐层**回落（见 resolveRole）。
  *
  * ⚠️ 未导入主题时 `resolveKeyColors` 返回的角色值为 null 或仅来自布局
@@ -28,7 +28,7 @@ if (FE.resolveKeyColors) return;
 FE.COLOR_ROLES = ['text', 'background', 'pressed', 'border', 'shadow',
   'hint', 'hintTop', 'hintBottom', 'hintLeft', 'hintRight'];
 
-/* 角色 → 主题 26 色里的全局默认字段（④） */
+/* 角色 → 主题 28 色里的全局默认字段（④） */
 FE.THEME_ROLE_FIELD = {
   text: 'keyTextColor',
   background: 'keyBackgroundColor',
@@ -58,6 +58,19 @@ FE.KEYTYPE_ROLE_FIELD = {
   hintRight: 'hintRight'
 };
 
+/* 主题字段的「同义词回退」表：字段本身没给值时，先按这张表再查一次，**再**才走
+ * 内置默认。与 FE.THEME_ROLE_FIELD 的区别：
+ *   · THEME_ROLE_FIELD 是「布局角色 → 主题字段」的映射（① ② ③ 用的），
+ *   · 本表是「主题字段 → 主题字段」的回退链（只服务非按键元素：符号面板等）。
+ * 语义依据（App 侧拆分出的新字段）：
+ *   symbolTabHighlightTextColor 缺省回退 toolTextColor（选中分组文字）
+ *   symbolTabHighlightColor     缺省回退 candidateHighlightColor（选中分组背景）
+ * 旧主题没有这两个字段 → 外观与拆分前完全一致。 */
+FE.THEME_FIELD_FALLBACK = {
+  symbolTabHighlightTextColor: 'toolTextColor',
+  symbolTabHighlightColor: 'candidateHighlightColor'
+};
+
 /* 方向角色是否有「基础提示色」这一层回落；值 = 基础角色名 */
 FE.HINT_BASE_OF = {
   hintTop: 'hint', hintBottom: 'hint', hintLeft: 'hint', hintRight: 'hint'
@@ -74,7 +87,7 @@ FE.COLOR_SOURCES = {
   LAYOUT_KEY: 'layout.key',         /* ② 布局按键 colors */
   THEME_KEYTYPE: 'theme.keyType',   /* ③ 主题 keyTypes[键类型] */
   THEME_KEYTYPE_HINT: 'theme.keyTypeHint', /* ③b 主题 keyTypes[键类型].hint（方向专用） */
-  THEME_GLOBAL: 'theme.global',     /* ④ 主题 26 色全局 */
+  THEME_GLOBAL: 'theme.global',     /* ④ 主题 28 色全局 */
   THEME_GLOBAL_HINT: 'theme.globalHint', /* ④b 主题全局 keyHintTextColor（方向专用） */
   BUILTIN: 'builtin'                /* 未导入主题时的 App 内置默认 */
 };
@@ -321,22 +334,43 @@ FE.resolveKeyColors = function (eff, opts) {
 
 /* ---------------- 容器 / 非按键元素（对照 §3） ---------------- */
 
-/* 解析主题 26 色里的任意字段（容器、候选栏、气泡、预编辑等）。
+/* 解析主题 28 色里的任意字段（容器、候选栏、气泡、预编辑等）。
+ * 回退顺序：本字段 → THEME_FIELD_FALLBACK 的同义字段 → THEME_ROLE_FIELD 的角色别名
+ * → 内置默认槽位（同样逐个按上面三条走一遍）。
+ * detail 回报**真正给出颜色的那个字段名**，界面才能说清「当前是继承谁」。
  * 返回 { value, source, detail }。 */
 FE.resolveThemeField = function (field, opts) {
   opts = opts || {};
   var slot = themeSlot(opts.slot);
-  var v = slot ? normColor(slot[field]) : null;
-  if (v != null) return { value: v, source: FE.COLOR_SOURCES.THEME_GLOBAL, detail: field };
-  var hd = FE.THEME_ROLE_FIELD[field];
-  if (hd && slot) {
-    var hv = normColor(slot[hd]);
-    if (hv != null) return { value: hv, source: FE.COLOR_SOURCES.THEME_GLOBAL, detail: hd };
+  var alias = FE.THEME_FIELD_FALLBACK[field] || null;
+  if (slot) {
+    var v = normColor(slot[field]);
+    if (v != null) return { value: v, source: FE.COLOR_SOURCES.THEME_GLOBAL, detail: field };
+    if (alias) {
+      var av = normColor(slot[alias]);
+      if (av != null) return { value: av, source: FE.COLOR_SOURCES.THEME_GLOBAL, detail: alias };
+    }
+    var hd = FE.THEME_ROLE_FIELD[field];
+    if (hd) {
+      var hv = normColor(slot[hd]);
+      if (hv != null) return { value: hv, source: FE.COLOR_SOURCES.THEME_GLOBAL, detail: hd };
+    }
   }
   if (opts.includeBuiltin) {
     var bs = builtinSlot(opts.slot);
-    var bv = bs ? normColor(bs[field]) : null;
-    if (bv != null) return { value: bv, source: FE.COLOR_SOURCES.BUILTIN, detail: field };
+    if (bs) {
+      var bv = normColor(bs[field]);
+      if (bv != null) return { value: bv, source: FE.COLOR_SOURCES.BUILTIN, detail: field };
+      if (alias) {
+        var bav = normColor(bs[alias]);
+        if (bav != null) return { value: bav, source: FE.COLOR_SOURCES.BUILTIN, detail: alias };
+      }
+      var bhd = FE.THEME_ROLE_FIELD[field];
+      if (bhd) {
+        var bhv = normColor(bs[bhd]);
+        if (bhv != null) return { value: bhv, source: FE.COLOR_SOURCES.BUILTIN, detail: bhd };
+      }
+    }
   }
   return { value: null, source: null, detail: field };
 };

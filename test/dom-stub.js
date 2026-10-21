@@ -510,7 +510,11 @@ function buildSkeleton() {
         el('option', { value: 'light' }, '浅色'),
         el('option', { value: 'dark' }, '深色')))
   );
-  const pStage = el('div', { class: 'preview-stage' }, el('div', { id: 'preview-kb', class: 'kb kb-dark' }));
+  /* #preview-toolbar 嵌在 #preview-kb **内部**（键盘面板最上面一行，toolbar-preview.js 填充）。
+   * 与实机一致：工具栏和键面同一块底色、同一个宽度，单独成条会假造出宽度/底色差异。 */
+  const pStage = el('div', { class: 'preview-stage' },
+    el('div', { id: 'preview-kb', class: 'kb kb-dark' },
+      el('div', { id: 'preview-toolbar', class: 'kbt', hidden: 'hidden' })));
   const pLegend = el('div', { class: 'preview-legend' },
     '角标说明：右上蓝色 = 长按提示 · 右上橙色 = 按住提示 · 底中 ⌄ = 长按弹出菜单 · 红色虚线框 = 引用无法解析 · 黄色框 = 选中按键');
   previewPanel.append(pToolbar, pStage, pLegend, el('div', { id: 'preview-meta', class: 'status' }));
@@ -691,7 +695,7 @@ function buildSkeleton() {
       el('summary', null, '主题校验'),
       el('div', { id: 'th-validation', class: 'status' })),
     el('details', { class: 'card', open: 'open' },
-      el('summary', null, '槽位全局配色（26 个字段）'),
+      el('summary', null, '槽位全局配色（28 个字段）'),
       el('div', { id: 'th-colors' })),
     el('details', { class: 'card', open: 'open' },
       el('summary', null, '键类型配色 keyTypes（LETTER / FUNCTION / ACTION）'),
@@ -702,7 +706,22 @@ function buildSkeleton() {
         el('button', { id: 'th-json-apply' }),
         el('button', { id: 'th-json-format' })),
       el('textarea', { id: 'th-json', class: 'json-editor' }),
-      el('div', { id: 'th-json-status', class: 'status' })));
+      el('div', { id: 'th-json-status', class: 'status' })),
+    /* 工具栏图标与符号字体（仅预览，toolbar-preview.js / font-preview.js 接线） */
+    el('details', { class: 'card', open: 'open' },
+      el('summary', null, '工具栏图标与符号字体（仅影响预览，不写入任何 Foxy 文件）'),
+      el('div', { class: 'toolbar' },
+        el('button', { id: 'pt-toolbar-icons-pick' }),
+        el('input', { id: 'pt-toolbar-icons-file', type: 'file', multiple: 'multiple' }),
+        el('button', { id: 'pt-toolbar-reset' })),
+      el('div', { id: 'pt-toolbar-status', class: 'status' }),
+      el('label', null, el('input', { id: 'pt-toolbar', type: 'checkbox', checked: 'checked' })),
+      el('label', null, el('input', { id: 'pt-toolbar-expanded', type: 'checkbox' })),
+      el('div', { class: 'toolbar' },
+        el('button', { id: 'pt-font-pick' }),
+        el('input', { id: 'pt-font-file', type: 'file' }),
+        el('button', { id: 'pt-font-clear' })),
+      el('div', { id: 'pt-font-status', class: 'status' })));
 
   /* 符号面板（symbol-editor.js 负责内容；这里只保证容器存在）。
    * 卡片顺序：符号面板文件 → 面板选项 → 分组与条目 → 符号面板 JSON（最下） */

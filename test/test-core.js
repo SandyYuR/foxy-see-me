@@ -29,6 +29,8 @@ load('theme-editor.js');
 load('color-source.js');
 load('symbol-editor.js');
 load('symbol-preview.js');
+load('font-preview.js');
+load('toolbar-preview.js');
 
 const FE = global.FE;
 let passed = 0, failed = 0;
@@ -1431,14 +1433,16 @@ eq(FE.stableJson(undefined), FE.stableJson(undefined), '裸 undefined 可比较'
 
 /* ================================================================
  * 主题文件（foxy.keyboard-theme）
- * 字段面按基线 §1.2：26 色 + keyTypes 3 类 × 10 字段。
+ * 字段面按基线 §1.2：28 色 + keyTypes 3 类 × 10 字段（26 色 + App 新拆出的两个 symbolTabHighlight*）。
  * 历史假设错在两处：keyTypes 不是 2 类（漏 LETTER）、每类不是 4 字段
  * （漏 border/shadow/hintUp/Down/Left/Right）—— 漏了就会被静默丢弃。
  * ================================================================ */
 console.log('== 主题：字段面与默认值 ==');
-eq(FE.THEME_COLOR_FIELDS.length, 26, '槽位颜色字段 26 个');
+eq(FE.THEME_COLOR_FIELDS.length, 28, '槽位颜色字段 28 个');
 eq(FE.THEME_COLOR_FIELDS[0], 'keyboardColor', '字段首位是 keyboardColor');
-eq(FE.THEME_COLOR_FIELDS[25], 'accentColor', '字段末位是 accentColor');
+eq(FE.THEME_COLOR_FIELDS[25], 'symbolTabHighlightTextColor', 'symbolTabHighlightTextColor 排在 voiceWaveColor 之后');
+eq(FE.THEME_COLOR_FIELDS[26], 'symbolTabHighlightColor', 'symbolTabHighlightColor 与之相邻');
+eq(FE.THEME_COLOR_FIELDS[27], 'accentColor', '字段末位是 accentColor');
 eq(FE.THEME_KEY_TYPE_NAMES, ['LETTER', 'FUNCTION', 'ACTION'], 'keyTypes 三类含 LETTER');
 eq(FE.THEME_KEYTYPE_FIELDS.length, 10, '每类 keyType 10 个字段');
 eq(FE.THEME_KEYTYPE_FIELDS, ['text', 'background', 'pressed', 'border', 'shadow',
@@ -1639,7 +1643,7 @@ console.log('== 主题：预览取值与优先级 ==');
     eq(FE.resolveRole('background', { keyType: 'LETTER' }, {}).value, null,
       '未传 includeBuiltin 时解析链仍为 null（编辑面明确区分内置与用户主题）');
 
-    /* 导入一份：全局 26 色 + FUNCTION 覆盖 + 方向提示色空（继承） */
+    /* 导入一份：全局 28 色 + FUNCTION 覆盖 + 方向提示色空（继承） */
     FE.state.themeProfile = FE.normalizeThemeProfile({
       type: 'foxy.keyboard-theme', name: 't',
       light: {
@@ -1664,14 +1668,14 @@ console.log('== 主题：预览取值与优先级 ==');
     /* keyTypes 的 hint 未给 → 方向提示仍回落全局 hint */
     eq(fn.hintUp, '#FF555555', 'keyTypes 不给 hint 时方向提示仍回落全局');
 
-    /* ⭐ 分组**整体缺失**时保留**内置分组**，而不是回落全局 26 色。
+    /* ⭐ 分组**整体缺失**时保留**内置分组**，而不是回落全局 28 色。
      * 依据 App `uk.java:121-137`：每个键类型分组整组重建 u40，再 putAll 到
      * "内置默认 keyTypes"的副本上 —— 没写的分组仍是内置分组。
      * 所以只定义了 FUNCTION 的主题里，ACTION 键在手机上是**内置蓝**
      * （light 槽 #FF4285F4），不是全局 keyBackgroundColor。
      * ⚠️ 旧断言期望 #FF111111（回落全局）——那是错的，已按 App 语义更正。 */
     eq(FE.themeKeyColors('ACTION').background, '#FF4285F4',
-      '★ 未定义的 ACTION 分组回落到**内置分组**（不是全局 26 色）');
+      '★ 未定义的 ACTION 分组回落到**内置分组**（不是全局 28 色）');
     /* 对照：分组**存在但字段缺**才回落全局（uk.java:121 的 u40 字段为 null → §1.4 回落链）。
      * 上面 fn.pressed 已断过这条（FUNCTION 给了 text/background 但没给 pressed → 全局）。 */
     eq(fn.hintUp, '#FF555555', '分组存在但 hint 缺 → 该字段回落全局 hint');
@@ -1990,6 +1994,175 @@ console.log('== 对齐新版 skill：icons / drag / 条件组合 ==');
 /* 注：主题文档进入撤销栈 / 草稿的行为属 app.js 的 **UI 段**
  * （core 环境里 FE.mutate / FE.snapshotState 不存在），
  * 相关断言放在 test-ui.js 的「主题页」区块。 */
+
+/* ---------------- 工具栏预览（toolbar-preview.js，纯逻辑） ---------------- */
+console.log('== 工具栏预览 ==');
+{
+  /* 默认工具栏组合照 App vj0.k：main 7 项、expanded 4 项 */
+  eq(FE.TOOLBAR_DEFAULT.main.length, 7, '默认主工具栏 7 个按钮');
+  eq(FE.TOOLBAR_DEFAULT.expanded.length, 4, '默认展开工具栏 4 个按钮');
+  eq(FE.TOOLBAR_DEFAULT.main[0], 'schema', '主工具栏第一项是方案');
+  eq(FE.TOOLBAR_DEFAULT.expanded[0], 'theme', '展开工具栏第一项是主题');
+  ok(Object.keys(FE.TOOLBAR_BUTTONS).length >= 12, '内置按钮表至少 12 项');
+  eq(FE.TOOLBAR_BUTTONS.clipboard.label, '剪贴板', '剪贴板中文名');
+  eq(FE.TOOLBAR_BUTTONS.hide_keyboard.label, '收起键盘', '收起键盘中文名');
+
+  /* 文件名 → 按钮 id：必须精确匹配，成对图标靠「激活」后缀区分 */
+  eq(FE.toolbarIconMatch('设置.svg'), { id: 'settings', active: false }, '设置.svg → settings');
+  eq(FE.toolbarIconMatch('分体激活.svg'), { id: 'split_keyboard', active: true }, '分体激活 → split_keyboard 激活态');
+  eq(FE.toolbarIconMatch('语音激活2.svg'), { id: 'voice', active: true }, '语音激活2 → voice 激活态');
+  eq(FE.toolbarIconMatch('剪切板.svg'), { id: 'clipboard', active: false }, '剪切板（异体字）也能命中');
+  eq(FE.toolbarIconMatch('删除.svg'), null, '删除不在内置按钮表 → null');
+  eq(FE.toolbarIconMatch('星球.svg'), null, '星球不在内置按钮表 → null');
+  /* 成对图标不能混为一谈：激活态必须落到 activeIcon 而不是覆盖 icon */
+  eq(FE.toolbarIconMatch('分体.svg').active, false, '分体.svg 是非激活态');
+  eq(FE.toolbarIconMatch('尺寸激活.svg').id, 'size', '尺寸激活 → size');
+
+  /* 内置矢量：keyboard_tools 复用主题图标（r71.f0 的 iconRes = R.drawable.ic_tool_theme） */
+  ok(!!FE.TOOLBAR_BUILTIN_SVG.settings, '内置 settings 矢量存在');
+  ok(!!FE.TOOLBAR_BUILTIN_SVG.split_keyboard, '内置 split_keyboard 矢量存在');
+  ok(!!FE.TOOLBAR_BUILTIN_SVG.keyboard_tools, 'keyboard_tools 有内置图标（不是纯文字 chip）');
+  eq(FE.TOOLBAR_BUILTIN_SVG.keyboard_tools, FE.TOOLBAR_BUILTIN_SVG.theme,
+    'keyboard_tools 的图标与 theme 相同（实机复用 ic_tool_theme）');
+  ok(FE.TOOLBAR_BUILTIN_SVG.settings.indexOf('currentColor') >= 0, '内置矢量用 currentColor 跟随主题色');
+  eq(FE.TOOLBAR_BUILTIN_SVG.settings.indexOf('<svg'), 0, '内置矢量是完整 svg 标记');
+
+  /* 尺寸常量（mf.java：40dp 行高、18sp 文字、12dp 圆角、3dp 间距、10/2dp 内边距） */
+  eq(FE.TOOLBAR_SPEC.rowHeightDp, 40, '工具栏行高 40dp');
+  eq(FE.TOOLBAR_SPEC.cornerDp, 12, '工具栏圆角 12dp');
+  eq(FE.TOOLBAR_SPEC.gapDp, 3, 'chip 间距 3dp');
+  eq(FE.TOOLBAR_SPEC.fontSp, 18, '纯文字 chip 字号 18sp');
+  eq(FE.TOOLBAR_SPEC.padXDp, 10, 'chip 水平内边距 10dp');
+  eq(FE.TOOLBAR_SPEC.padYDp, 2, 'chip 垂直内边距 2dp');
+}
+
+/* 染色判定（hk0.w 等价）：自带实色 → 原样渲染；单色 → 可染色 */
+console.log('== 工具栏图标染色判定（hk0.w 等价） ==');
+{
+  const doc = (inner) => 'svg:<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">' + inner + '</svg>';
+  /* 纯 currentColor / none / 无颜色 → 可染色（true） */
+  ok(FE.iconTintable(doc('<path fill="currentColor" d="M0 0h24v24H0z"/>')), 'currentColor → 可染色');
+  ok(FE.iconTintable(doc('<path fill="none" stroke="currentColor" d="M0 0h24v24H0z"/>')), 'none + currentColor 描边 → 可染色');
+  ok(FE.iconTintable(doc('<path d="M0 0h24v24H0z"/>')), '不含颜色属性 → 可染色');
+  ok(FE.iconTintable(':'), '非 svg 载荷 → 按可染色处理（不崩）');
+  ok(FE.iconTintable(doc('<rect fill="transparent" width="2" height="2"/>')), 'transparent → 可染色');
+  ok(FE.iconTintable(doc('<path style="" fill="url(#g)" d="M0 0"/>')), 'url(#gradient) → 可染色（不当作实色）');
+  /* 具名色 / hex / rgb → 自带实色（false，颜色原样） */
+  ok(!FE.iconTintable(doc('<path fill="#3a5470" d="M0 0h24v24H0z"/>')), '6 位 hex → 自带实色');
+  ok(!FE.iconTintable(doc('<path fill="#f80" d="M0 0h24v24H0z"/>')), '3 位 hex → 自带实色');
+  ok(!FE.iconTintable(doc('<path fill="#FF000080" d="M0 0h24v24H0z"/>')), '8 位 hex（带 alpha）→ 自带实色');
+  ok(!FE.iconTintable(doc('<path fill="rgb(1,2,3)" d="M0 0h24v24H0z"/>')), 'rgb() → 自带实色');
+  ok(!FE.iconTintable(doc('<path stroke="tomato" d="M0 0h24v24H0z"/>')), '具名色 stroke → 自带实色');
+  /* 只要有一处实色就不能染色（混色图标按原样渲染最保险） */
+  ok(!FE.iconTintable(doc('<path fill="currentColor" d="M0 0"/><path fill="#fff" d="M1 1h2"/>')), '混有实色 → 整体按自带实色');
+}
+
+/* 导入工具栏图标：精确映射到 id，成对图标分别落 icon / activeIcon */
+console.log('== 导入工具栏图标 ==');
+{
+  const svgOn = 'svg:<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M0 0h24v24H0z"/></svg>';
+  FE.state.toolbarIcons = null;
+  const rep = FE.importToolbarIcons([
+    { name: '工具栏图标/设置.svg', text: svgOn },
+    { name: '工具栏图标/设置激活.svg', text: svgOn },
+    { name: '工具栏图标/删除.svg', text: svgOn },
+    { name: '工具栏图标/坏.svg', text: 'not a svg at all' }
+  ]);
+  eq(rep.ok, ['settings'], '只有「设置」命中内置按钮');
+  eq(rep.unmatched.sort(), ['删除.svg', '坏.svg'], '删除/坏 归到未匹配（不报错）');
+  ok(!!FE.state.toolbarIcons.settings.icon, '设置.svg 存进 icon');
+  ok(!!FE.state.toolbarIcons.settings.activeIcon, '设置激活.svg 存进 activeIcon（两态分开）');
+  eq(FE.toolbarIconCount(), 1, '已导入按钮数按 id 计');
+  /* 成对图标取用 */
+  eq(FE.toolbarIconOf('settings', false).from, 'theme', '非激活态取主题自带图标');
+  eq(FE.toolbarIconOf('settings', true).from, 'theme', '激活态取主题自带 activeIcon');
+  eq(FE.toolbarIconOf('theme', false).from, 'builtin', '未导入的按钮回落内置矢量');
+  eq(FE.toolbarIconOf('theme', true).from, 'builtin', '未导入按钮的激活态也回落内置矢量');
+  FE.clearToolbarIcons();
+  eq(FE.toolbarIconCount(), 0, '清除后图标数为 0');
+  eq(FE.toolbarIconOf('settings', false).from, 'builtin', '清除后回到内置矢量');
+}
+
+/* ---------------- 符号字体覆盖度（font-preview.js，纯逻辑） ---------------- */
+console.log('== 符号字体覆盖度 ==');
+{
+  /* 合成最小 sfnt：1 张 cmap 表 + 1 个 format 4 子表，覆盖 A-E 与「全」 */
+  function buildFont(pairs) {
+    const segs = pairs.map(function (p) { return [p[0], p[1], (p[2] - p[0]) & 0xffff]; });
+    segs.push([0xffff, 0xffff, 0]);
+    const n = segs.length, segX2 = n * 2;
+    const subLen = 14 + segX2 * 4 + 2;
+    const cmapLen = 4 + 8 + subLen;
+    const buf = Buffer.alloc(12 + 16 + cmapLen, 0);
+    buf.writeUInt32BE(0x00010000, 0);
+    buf.writeUInt16BE(1, 4);
+    buf.writeUInt32BE(12, 12);
+    buf.write('cmap', 12, 'latin1');
+    buf.writeUInt32BE(12 + 16, 20);
+    buf.writeUInt32BE(cmapLen, 24);
+    const c = 12 + 16;
+    buf.writeUInt16BE(0, c);
+    buf.writeUInt16BE(1, c + 2);
+    buf.writeUInt16BE(3, c + 4); buf.writeUInt16BE(1, c + 6); buf.writeUInt32BE(12, c + 8);
+    const s = c + 12;
+    buf.writeUInt16BE(4, s);
+    buf.writeUInt16BE(subLen, s + 2);
+    buf.writeUInt16BE(0, s + 4);
+    buf.writeUInt16BE(segX2, s + 6);
+    let o = s + 14;
+    segs.forEach(function (g) { buf.writeUInt16BE(g[1], o); o += 2; });
+    o += 2;
+    segs.forEach(function (g) { buf.writeUInt16BE(g[0], o); o += 2; });
+    segs.forEach(function (g) { buf.writeUInt16BE(g[2], o); o += 2; });
+    segs.forEach(function () { buf.writeUInt16BE(0, o); o += 2; });
+    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length);
+  }
+  const cov = FE.parseFontCoverage(buildFont([[0x41, 0x45, 0x10], [0x5168, 0x5168, 0x20]]));
+  ok(cov instanceof Set, 'parseFontCoverage 返回 Set');
+  eq(cov ? cov.size : -1, 6, 'format4 解析出 6 个码位');
+  ok(cov.has(0x41) && cov.has(0x45) && cov.has(0x5168), '码位范围与单点都正确');
+  eq(FE.parseFontCoverage(new ArrayBuffer(4)), null, '过短的 buffer → null（不崩）');
+  eq(FE.parseFontCoverage(null), null, 'null → null（不崩）');
+  let threw = false;
+  try { FE.parseFontCoverage(buildFont([[0x41, 0x41, 1]]).slice(0, 40)); }
+  catch (e) { threw = true; }
+  ok(!threw, '截断的字体不抛错（解析失败返回 null）');
+
+  /* 布局用到的字符：只算「实机会出字」的键与手势提示 */
+  const svgOn = 'svg:<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M0 0h24v24H0z"/></svg>';
+  const savedProfile = FE.state.profile, savedLayout = FE.state.layoutName,
+        savedCompiled = FE.state.compiled, savedStatus = FE.state.status;
+  FE.state.status = FE.NEUTRAL_STATUS || { composing: false, ascii_mode: false, disabled: false, shift: false };
+  FE.state.compiled = null;
+  FE.state.layoutName = 'default';
+  FE.state.profile = FE.normalizeProfile({
+    keys: {},
+    layouts: { default: { sections: [{ type: 'rows', rows: [[
+      { label: 'A', swipe: { up: { label: '全' } } },
+      { label: 'B', icon: svgOn }
+    ]]}]}}
+  });
+  const used = FE.layoutUsedChars();
+  eq(used, ['A', '全'], '只收无图标键的文字 + 手势提示文本（图标键跳过）');
+  const rep2 = FE.fontCoverageReport(cov);
+  eq(rep2.chars, ['A', '全'], '覆盖度报告复用同一字符集');
+  eq(rep2.covered, ['A', '全'], 'A 与「全」都被合成字体覆盖');
+  eq(rep2.missing, [], '无缺字');
+  const rep3 = FE.fontCoverageReport(null);
+  eq(rep3.ok, false, '无覆盖度时 ok=false');
+  eq(rep3.missing, ['A', '全'], '无覆盖度时全部算缺失（提示实机会回退系统字体）');
+
+  /* 全图标布局：没有需要字形的文字 */
+  FE.state.compiled = null;
+  FE.state.profile = FE.normalizeProfile({
+    keys: {},
+    layouts: { default: { sections: [{ type: 'rows', rows: [[{ label: 'x', icon: svgOn }, { label: 'y', icon: svgOn }]] }] } }
+  });
+  eq(FE.layoutUsedChars(), [], '全图标布局没有需要字形的文字');
+
+  FE.state.profile = savedProfile; FE.state.layoutName = savedLayout;
+  FE.state.compiled = savedCompiled; FE.state.status = savedStatus;
+}
 
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
 process.exit(failed ? 1 : 0);

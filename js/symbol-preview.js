@@ -235,9 +235,11 @@ FE.renderSymbolPreview = function (host, opts) {
   var bgPanel = panelBgCss();
   var bgCell = themeCss('keyBackgroundColor');
   var fgCell = themeCss('candidateTextColor');
-  var bgCellSel = themeCss('candidateHighlightColor');
+  /* 选中分组的字色/底色已从工具栏配色里拆出（见 color-source.js 的 FE.THEME_FIELD_FALLBACK）：
+   * 未导入新字段的旧主题仍回落 toolTextColor / candidateHighlightColor，外观不变。 */
+  var bgCellSel = themeCss('symbolTabHighlightColor');
   var fgGroup = themeCss('keyHintTextColor');
-  var fgGroupSel = themeCss('toolTextColor');
+  var fgGroupSel = themeCss('symbolTabHighlightTextColor');
   var strokeCss = cellStrokeEnabled() ? themeCss('keyBorderColor') : null;
 
   /* ---- 盒子：与布局预览同尺寸（用户要求） ---- */
@@ -297,7 +299,8 @@ FE.renderSymbolPreview = function (host, opts) {
     el.style.textAlign = 'center';
     el.style.cursor = 'pointer';
     /* 未选中：字 keyHintTextColor、底**透明**（ly.java:320-321）
-     * 已选中：字 toolTextColor、底 candidateHighlightColor */
+     * 已选中：字 symbolTabHighlightTextColor（回退 toolTextColor）
+     *         底 symbolTabHighlightColor（回退 candidateHighlightColor） */
     if (on && fgGroupSel) el.style.color = fgGroupSel;
     else if (!on && fgGroup) el.style.color = fgGroup;
     if (on && bgCellSel) el.style.background = bgCellSel;

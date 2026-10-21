@@ -1,0 +1,547 @@
+/* 小狐狸 see me — Foxy 键盘布局可视化编辑器
+ * toolbar-preview.js — 键盘上方工具栏预览（键面上方那一行 chip）
+ *
+ * 目标：主题作者导入一套工具栏图标（19 个 svg 那种）后，能在网页里看到：
+ *   - 工具栏**长什么样**（尺寸/圆角/间距/底色/文字色，全部按 App 的 os/w20/mf 常量）；
+ *   - 图标**成对状态**（未展开用 icon，展开用 activeIcon + accentColor）；
+ *   - 哪些图标自带实色（原样渲染）、哪些是单色可染色（跟随 toolTextColor/accentColor）。
+ *
+ * 权威依据（foxy_re 反编译）：
+ *   - 容器底色 os.java:76 setBackgroundColor(a.e())；e() = key_border_enabled ? altKeyboardColor : candidateBarColor
+ *   - chip 默认底 a.p = candidateBackgroundColor、按下 a.q = candidatePressedColor（os.java:e()）
+ *   - 未激活色 a.w = toolTextColor、激活色 a.D = accentColor、返回 chip 字色 a.n = candidateTextColor
+ *   - 尺寸常量 mf.java：行高 40dp、字号 18sp、内边距 10dp×2dp、chip 间距 3dp、圆角 12dp
+ *   - 上色规则 hk0.w(String)：图标里出现任意具名色/hex/rgb() 就不染色（自带实色），否则套 colorFilter
+ *   - 按钮表 at0.X(boolean)：schema/deploy/settings/clipboard/voice/hide_keyboard/keyboard_tools/
+ *     rime_switches/theme/size/one_hand/split_keyboard；中文名见 values-zh-rCN/strings.xml:508-518
+ *   - 默认两态列表 vj0.k：main 7 项 / expanded 4 项
+ *
+ * ⚠️ 本模块只影响**预览**：不改主题 JSON、不改布局 JSON（与「按键边框/描边」开关同一策略）。
+ * ⚠️ 图标匹配**必须按文件名精确查表**：主题包里「分体 / 分体激活」两个文件颜色完全一样、
+ *    只差路径细节，任何模糊匹配都会把两态混成一个。
+ */
+(function () {
+  'use strict';
+  var FE = (window.FE = window.FE || {});
+  if (FE.renderPreviewToolbar) return;
+
+  /* ---------------- 按钮表（App 内置 11 个 + 只有文字的几个） ---------------- */
+  FE.TOOLBAR_BUTTONS = {
+    schema: { label: '方案' },
+    deploy: { label: '部署' },
+    settings: { label: '设置' },
+    clipboard: { label: '剪贴板' },
+    voice: { label: '语音' },
+    hide_keyboard: { label: '收起键盘' },
+    keyboard_tools: { label: '键盘工具' },
+    rime_switches: { label: '输入法开关' },
+    theme: { label: '主题' },
+    size: { label: '尺寸' },
+    one_hand: { label: '单手' },
+    split_keyboard: { label: '分体键盘' }
+  };
+
+  /* 默认两态列表（vj0.java:300-301 的 k(Context)）。
+   * 注意 main 里没有「收起」，expanded 只有 4 项 —— 照抄，不要按直觉补。 */
+  FE.TOOLBAR_DEFAULT = {
+    main: ['schema', 'deploy', 'settings', 'clipboard', 'keyboard_tools', 'rime_switches', 'hide_keyboard'],
+    expanded: ['theme', 'size', 'one_hand', 'split_keyboard']
+  };
+
+  /* 文件名（去掉扩展名）→ 按钮 id。**精确表，不做模糊匹配**。
+   * 这是主题作者给 svg 起的中文名（水彩包 19 个 / 蓝狐狸包 15 个的并集）。 */
+  FE.TOOLBAR_ICON_NAMES = {
+    '方案': 'schema',
+    '部署': 'deploy',
+    '设置': 'settings',
+    '剪切板': 'clipboard',
+    '剪贴板': 'clipboard',
+    '语音': 'voice',
+    '语音激活2': 'voice',
+    '收起': 'hide_keyboard',
+    '键盘工具': 'keyboard_tools',
+    '开关': 'rime_switches',
+    '主题': 'theme',
+    '主题2': 'theme',
+    '尺寸': 'size',
+    '单手': 'one_hand',
+    '分体': 'split_keyboard'
+  };
+
+  /* 文件名 → { id, active }。规则：
+   *   1. 去掉扩展名、去首尾空白；
+   *   2. 以「激活」结尾（或等于「语音激活2」这类）→ active = true，剩下的名字再查表；
+   *   3. 查不到的返回 null（调用方据此提示「不会出现在内置工具栏上」）。 */
+  FE.toolbarIconMatch = function (fileName) {
+    var s = String(fileName == null ? '' : fileName).trim();
+    if (!s) return null;
+    s = s.replace(/\.[^./\\]+$/, '').trim();
+    var active = false;
+    if (/激活2?$/.test(s)) {
+      active = true;
+      s = s.replace(/激活2?$/, '').trim();
+      if (!s) s = '语音';   /* 「语音激活2」剥完是「语音」；只剩「激活」时也无从判断，交给查表失败 */
+    }
+    if (!Object.prototype.hasOwnProperty.call(FE.TOOLBAR_ICON_NAMES, s)) return null;
+    return { id: FE.TOOLBAR_ICON_NAMES[s], active: active };
+  };
+
+  /* ---------------- hk0.w 等价：图标是否可被染色 ---------------- */
+  var COLOR_KEYWORDS = {
+    none: 1, transparent: 1, currentcolor: 1, inherit: 1, unset: 1, initial: 1,
+    'context-fill': 1, 'context-stroke': 1
+  };
+  var NAMED_COLORS = {
+    aqua: 1, azure: 1, beige: 1, blue: 1, brown: 1, chartreuse: 1, coral: 1, crimson: 1,
+    cyan: 1, fuchsia: 1, gold: 1, green: 1, indigo: 1, khaki: 1, lime: 1, magenta: 1,
+    maroon: 1, navy: 1, olive: 1, orange: 1, orchid: 1, pink: 1, plum: 1, purple: 1,
+    red: 1, salmon: 1, tan: 1, teal: 1, tomato: 1, turquoise: 1, violet: 1, yellow: 1,
+    black: 1, white: 1, gray: 1, grey: 1, silver: 1, dimgray: 1, dimgrey: 1
+  };
+
+  /* true = 单色图标（App 会套 setColorFilter，预览就用 toolTextColor / accentColor）；
+   * false = 自带实色（原样渲染）。
+   * 与 hk0.w 一致：非 svg 载荷、空值、解析不了的一律当「可染色」（App 那边也返回 true）。 */
+  FE.iconTintable = function (payload) {
+    var s = String(payload == null ? '' : payload).trim();
+    var low = s.toLowerCase();
+    if (low.indexOf('svg:') === 0) s = s.slice(4).trim();
+    else if (low.indexOf('xml:') === 0) s = s.slice(4).trim();
+    if (!s) return true;
+    s = s.replace(/^\uFEFF+/, '');
+    /* 去掉开头的 xml 声明 / DOCTYPE / 注释，再取根标签名 */
+    var guard = 0;
+    while (guard++ < 20) {
+      var t = s.replace(/^\s+/, '');
+      if (/^<\?/.test(t)) { s = t.replace(/^<\?[^>]*>/, ''); continue; }
+      if (/^<!doctype/i.test(t)) { s = t.replace(/^<![^>]*>/i, ''); continue; }
+      if (/^<!--/.test(t)) { s = t.replace(/^<!--[\s\S]*?-->/, ''); continue; }
+      s = t;
+      break;
+    }
+    if (s.charAt(0) !== '<') return true;
+    var root = (s.match(/^<\s*([A-Za-z0-9:_-]+)/) || [])[1] || '';
+    if (root.toLowerCase() !== 'svg') return true;
+    s = s.replace(/<!--[\s\S]*?-->/g, '');
+    var tagRe = /<([^<>]*)>/g, m;
+    while ((m = tagRe.exec(s))) {
+      var body = m[1];
+      if (!body || /^[\/!?]/.test(body.replace(/^\s+/, ''))) continue;
+      var attrRe = /([A-Za-z0-9:_-]+)\s*=\s*("[^"]*"|'[^']*')/g, am;
+      while ((am = attrRe.exec(body))) {
+        var name = am[1].toLowerCase();
+        if (name.indexOf(':') >= 0) name = name.split(':').pop();
+        if (name !== 'fill' && name !== 'stroke') continue;
+        var val = am[2].replace(/^["']|["']$/g, '').trim().toLowerCase();
+        if (!val) continue;
+        if (COLOR_KEYWORDS[val]) continue;
+        if (val.indexOf('url(') === 0) continue;
+        if (val.charAt(0) === '#') {
+          var hex = val.slice(1);
+          if (hex.length === 3 || hex.length === 4 || hex.length === 6 || hex.length === 8) {
+            if (/^[0-9a-f]+$/.test(hex)) return false;
+          }
+          continue;
+        }
+        if (/^rgba?\(/.test(val)) return false;
+        if (NAMED_COLORS[val]) return false;
+      }
+    }
+    return true;
+  };
+
+  /* ---------------- 内置矢量（App 的 ic_tool_*.xml，24dp / viewport 24） ----------------
+   * 源文件全是纯黑/纯白灰阶（hk0.w 判「可染色」），这里统一换成 currentColor，
+   * 于是跟随 toolTextColor / accentColor，与实机一致。 */
+  function V(inner) { return '<svg viewBox="0 0 24 24" class="kb-icon">' + inner + '</svg>'; }
+  var BUILTIN = {
+    schema: V('<path fill="currentColor" d="M11.99,2C6.47,2 2,6.48 2,12s4.47,10 9.99,10C17.52,22 22,17.52 22,12S17.52,2 11.99,2zM18.92,8h-2.95c-0.32,-1.25 -0.78,-2.45 -1.38,-3.56 1.84,0.63 3.37,1.91 4.33,3.56zM12,4.04c0.83,1.2 1.48,2.53 1.91,3.96h-3.82c0.43,-1.43 1.08,-2.76 1.91,-3.96zM4.26,14C4.1,13.36 4,12.69 4,12s0.1,-1.36 0.26,-2h3.38c-0.08,0.66 -0.14,1.32 -0.14,2 0,0.68 0.06,1.34 0.14,2L4.26,14zM5.08,16h2.95c0.32,1.25 0.78,2.45 1.38,3.56 -1.84,-0.63 -3.37,-1.9 -4.33,-3.56zM8.03,8L5.08,8c0.96,-1.66 2.49,-2.93 4.33,-3.56C8.81,5.55 8.35,6.75 8.03,8zM12,19.96c-0.83,-1.2 -1.48,-2.53 -1.91,-3.96h3.82c-0.43,1.43 -1.08,2.76 -1.91,3.96zM14.34,14L9.66,14c-0.09,-0.66 -0.16,-1.32 -0.16,-2 0,-0.68 0.07,-1.35 0.16,-2h4.68c0.09,0.65 0.16,1.32 0.16,2 0,0.68 -0.07,1.34 -0.16,2zM14.59,19.56c0.6,-1.11 1.06,-2.31 1.38,-3.56h2.95c-0.96,1.65 -2.49,2.93 -4.33,3.56zM16.36,14c0.08,-0.66 0.14,-1.32 0.14,-2 0,-0.68 -0.06,-1.34 -0.14,-2h3.38c0.16,0.64 0.26,1.31 0.26,2s-0.1,1.36 -0.26,2h-3.38z"/>'),
+    deploy: V('<path fill="currentColor" d="M17.65,6.35C16.2,4.9 14.21,4 12,4c-4.42,0 -7.99,3.58 -7.99,8s3.57,8 7.99,8c3.73,0 6.84,-2.55 7.73,-6h-2.08c-0.82,2.33 -3.04,4 -5.65,4 -3.31,0 -6,-2.69 -6,-6s2.69,-6 6,-6c1.66,0 3.14,0.69 4.22,1.78L13,11h7V4l-2.35,2.35z"/>'),
+    settings: V('<path fill="currentColor" d="M19.14,12.94c0.04,-0.3 0.06,-0.61 0.06,-0.94c0,-0.32 -0.02,-0.64 -0.07,-0.94l2.03,-1.58c0.18,-0.14 0.23,-0.41 0.12,-0.61l-1.92,-3.32c-0.12,-0.22 -0.37,-0.29 -0.59,-0.22l-2.39,0.96c-0.5,-0.38 -1.03,-0.7 -1.62,-0.94L14.4,2.81c-0.04,-0.24 -0.24,-0.41 -0.48,-0.41h-3.84c-0.24,0 -0.43,0.17 -0.47,0.41L9.25,5.35C8.66,5.59 8.12,5.92 7.63,6.29L5.24,5.33c-0.22,-0.08 -0.47,0 -0.59,0.22L2.74,8.87C2.62,9.08 2.66,9.34 2.86,9.48l2.03,1.58C4.84,11.36 4.8,11.69 4.8,12s0.02,0.64 0.07,0.94l-2.03,1.58c-0.18,0.14 -0.23,0.41 -0.12,0.61l1.92,3.32c0.12,0.22 0.37,0.29 0.59,0.22l2.39,-0.96c0.5,0.38 1.03,0.7 1.62,0.94l0.36,2.54c0.05,0.24 0.24,0.41 0.48,0.41h3.84c0.24,0 0.44,-0.17 0.47,-0.41l0.36,-2.54c0.59,-0.24 1.13,-0.56 1.62,-0.94l2.39,0.96c0.22,0.08 0.47,0 0.59,-0.22l1.92,-3.32c0.12,-0.22 0.07,-0.47 -0.12,-0.61L19.14,12.94zM12,15.6c-1.98,0 -3.6,-1.62 -3.6,-3.6s1.62,-3.6 3.6,-3.6s3.6,1.62 3.6,3.6S13.98,15.6 12,15.6z"/>'),
+    clipboard: V('<g transform="translate(12 12) scale(0.95) translate(-12 -12)"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M11,14H16.5M7,14H7.5M7,10.5H7.5M7,17.5H7.5M11,10.5H16.5M11,17.5H16.5"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M8,3.5C8,2.672 8.672,2 9.5,2H14.5C15.328,2 16,2.672 16,3.5V4.5C16,5.328 15.328,6 14.5,6H9.5C8.672,6 8,5.328 8,4.5ZM21,16C21,18.829 21,20.243 20.121,21.122C19.243,22 17.828,22 15,22H9C6.172,22 4.757,22 3.879,21.122C3,20.243 3,18.829 3,16V13M16,4C18.175,4.014 19.353,4.111 20.121,4.879C21,5.758 21,7.172 21,10V12M8,4C5.825,4.014 4.647,4.111 3.879,4.879C3.11,5.647 3.014,6.825 3,9"/></g>'),
+    voice: V('<path fill="currentColor" d="M12,14c1.66,0 2.99,-1.34 2.99,-3L15,5c0,-1.66 -1.34,-3 -3,-3S9,3.34 9,5v6c0,1.66 1.34,3 3,3zM17.3,11c0,3 -2.54,5.1 -5.3,5.1S6.7,14 6.7,11L5,11c0,3.41 2.72,6.23 6,6.72L11,21h2v-3.28c3.28,-0.48 6,-3.3 6,-6.72h-1.7z"/>'),
+    hide_keyboard: V('<path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4,3h16a2,2 0,0 1,2 2v7a2,2 0,0 1,-2 2H4a2,2 0,0 1,-2 -2V5a2,2 0,0 1,2 -2zM5,6.5h2M9,6.5h2M13,6.5h2M17,6.5h2M5,10.5h2M9,10.5h2M13,10.5h2M17,10.5h2"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M8,18l4,4 4,-4"/>'),
+    theme: V('<path fill="currentColor" d="M12,2C6.49,2 2,6.49 2,12s4.49,10 10,10c1.38,0 2.5,-1.12 2.5,-2.5 0,-0.61 -0.23,-1.2 -0.64,-1.67 -0.08,-0.1 -0.13,-0.21 -0.13,-0.33 0,-0.28 0.22,-0.5 0.5,-0.5H16c3.31,0 6,-2.69 6,-6C22,5.92 17.51,2 12,2zM6.5,13c-0.83,0 -1.5,-0.67 -1.5,-1.5S5.67,10 6.5,10s1.5,0.67 1.5,1.5S7.33,13 6.5,13zM9.5,9C8.67,9 8,8.33 8,7.5S8.67,6 9.5,6s1.5,0.67 1.5,1.5S10.33,9 9.5,9zM14.5,9c-0.83,0 -1.5,-0.67 -1.5,-1.5S13.67,6 14.5,6s1.5,0.67 1.5,1.5S15.33,9 14.5,9zM17.5,13c-0.83,0 -1.5,-0.67 -1.5,-1.5s0.67,-1.5 1.5,-1.5 1.5,0.67 1.5,1.5S18.33,13 17.5,13z"/>'),
+    size: V('<path fill="currentColor" d="M20,3L4,3c-1.1,0 -1.99,0.9 -1.99,2L2,15c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2L22,5c0,-1.1 -0.9,-2 -2,-2zM11,6h2v2h-2L11,6zM11,9h2v2h-2v-2zM8,6h2v2L8,8L8,6zM8,9h2v2L8,11v-2zM7,11L5,11v-2h2v2zM7,8L5,8L5,6h2v2zM16,15L8,15v-2h8v2zM16,11h-2v-2h2v2zM16,8h-2L14,6h2v2zM19,11h-2v-2h2v2zM19,8h-2L17,6h2v2z"/><path fill="currentColor" d="M4,20h16v2H4z"/>'),
+    one_hand: V('<path fill="currentColor" fill-rule="evenodd" d="M3,3.5h18c1.52,0 2.75,1.23 2.75,2.75v11.5c0,1.52 -1.23,2.75 -2.75,2.75h-18c-1.52,0 -2.75,-1.23 -2.75,-2.75v-11.5c0,-1.52 1.23,-2.75 2.75,-2.75zM3.5,5.25h17c0.69,0 1.25,0.56 1.25,1.25v11c0,0.69 -0.56,1.25 -1.25,1.25h-17c-0.69,0 -1.25,-0.56 -1.25,-1.25v-11c0,-0.69 0.56,-1.25 1.25,-1.25z"/><path fill="currentColor" d="M12,7h2.25v2.75H12zM15.25,7h2.25v2.75h-2.25zM18.5,7h2.25v2.75H18.5zM12,10.75h2.25v2.75H12zM15.25,10.75h2.25v2.75h-2.25zM18.5,10.75h2.25v2.75H18.5zM12,14.5h8.75v2.25H12z"/><path fill="currentColor" d="M5.39,7.8L9.59,12 5.39,16.2 4.4,15.21 7.61,12 4.4,8.79z"/>'),
+    split_keyboard: V('<path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M2,5.5h8v13H2zM14,5.5h8v13h-8z"/><path fill="currentColor" d="M3.5,7.5h1.5v1.5h-1.5zM6.5,7.5h1.5v1.5h-1.5zM3.5,10.5h1.5v1.5h-1.5zM6.5,10.5h1.5v1.5h-1.5zM3.5,13.5h5v1.5h-5zM15.5,7.5h1.5v1.5h-1.5zM18.5,7.5h1.5v1.5h-1.5zM15.5,10.5h1.5v1.5h-1.5zM18.5,10.5h1.5v1.5h-1.5zM15.5,13.5h5v1.5h-5z"/><path fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" d="M12,6.5v2M12,11v2M12,15.5v2"/>'),
+    rime_switches: V('<path fill="currentColor" d="M3,17v2h6v-2H3zM3,5v2h10V5H3zM13,19h8v-2h-8v2zM7,9v2H3v2h4v2h2V9H7zM21,13v-2h-8v2h8zM17,9h2V7h2V5h-2V3h-2v2h-2v2h2v2z"/>')
+  };
+  /* keyboard_tools **有**内置图标：r71.java:645-648 f0() 的 iconRes 是 R.drawable.ic_tool_theme，
+   * 显示名取的也是 R.string.tool_theme（「主题」）—— 即它复用主题图标，不是纯文字 chip。
+   * （旧版这里写「无图标」，与反编译不符，导致预览里它掉进 TextView 分支只剩文字。） */
+  BUILTIN.keyboard_tools = BUILTIN.theme;
+  FE.TOOLBAR_BUILTIN_SVG = BUILTIN;
+
+  /* 预览专用控制 chip 的矢量（App 里这两个动作没有图标：展开/收起由动作触发、
+   * 返回是展开容器自带的「<」文字）。这里统一用矢量，才能跟随 toolTextColor 上色。
+   * 方向按用户口径：主态朝**右**（"还有一组可以展开"），展开后同一枚变成朝**左**（收起）。 */
+  var CTRL_SVG = {
+    __more__: V('<path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M9,5.5l6.5,6.5 -6.5,6.5"/>'),
+    __back__: V('<path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M15,5.5l-6.5,6.5 6.5,6.5"/>')
+  };
+  FE.TOOLBAR_CONTROL_SVG = CTRL_SVG;
+
+  /* ---------------- 预览渲染 ---------------- */
+  var SPEC = {
+    rowHeightDp: 40, iconDp: 22, gapDp: 3, cornerDp: 12,
+    fontSp: 18, padXDp: 10, padYDp: 2,
+    /* 预览专用展开/收起键：比普通 chip 小一圈（用户要求「搞小一点」），
+     * 但仍然是有底色的圆角方块、看得出可点（不是旁边的小字挂件）。
+     * 行高由普通 chip 的 40dp 决定，所以缩小它**不会**改变工具栏高度。 */
+    ctrlDp: 28, ctrlIconDp: 16
+  };
+  FE.TOOLBAR_SPEC = SPEC;
+
+  function st() { return FE.state || {}; }
+  function dp(v, unit) { return FE.kbDp(v, unit); }
+  function css(field) {
+    var r = FE.resolveThemeField(field, { includeBuiltin: true });
+    return r && r.value != null ? FE.colorToCss(r.value) : null;
+  }
+  function barBg() {
+    if (typeof FE.resolveCandidateBarColor !== 'function') return null;
+    var r = FE.resolveCandidateBarColor(st().keyBorderEnabled !== false, { includeBuiltin: true });
+    return r && r.value != null ? FE.colorToCss(r.value) : null;
+  }
+
+  /* 当前预览要用的图标定义：state.toolbarIcons[id] = { icon, activeIcon } */
+  function iconOf(id, active) {
+    var bag = (st().toolbarIcons || {})[id];
+    if (bag) {
+      if (active && bag.activeIcon) return { markup: bag.activeIcon, from: 'theme' };
+      if (bag.icon) return { markup: bag.icon, from: 'theme' };
+      if (bag.activeIcon) return { markup: bag.activeIcon, from: 'theme' };
+    }
+    if (BUILTIN[id]) return { markup: BUILTIN[id], from: 'builtin' };
+    return null;
+  }
+  FE.toolbarIconOf = iconOf;
+
+  /* 一个 chip 的外壳：尺寸/圆角/底色与 App 的 w20.java 一致（40dp 方、圆角 12dp、
+   * 底 candidateBackgroundColor）。图标 chip 与文字 chip 共用它，只在内层分叉。 */
+  function chipShell(id, unit) {
+    var el = FE.h('div', { class: 'kbt-chip', 'data-toolbar-btn': id });
+    el.style.height = dp(SPEC.rowHeightDp, unit) + 'px';
+    el.style.width = dp(SPEC.rowHeightDp, unit) + 'px';
+    el.style.borderRadius = dp(SPEC.cornerDp, unit) + 'px';
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.justifyContent = 'center';
+    el.style.boxSizing = 'border-box';
+    var bg = css('candidateBackgroundColor');
+    if (bg) el.style.background = bg;
+    return el;
+  }
+
+  /* 往 chip 里放图标：22dp 方缩略框，图标颜色跟着 chip 的 color（currentColor）走。 */
+  function putIcon(el, markup, unit) {
+    var box = FE.h('span', { class: 'kb-icon-wrap kbt-icon' });
+    box.style.width = dp(SPEC.iconDp, unit) + 'px';
+    box.style.height = dp(SPEC.iconDp, unit) + 'px';
+    box.innerHTML = markup;
+    el.appendChild(box);
+  }
+
+  function chip(id, active, unit) {
+    var def = FE.TOOLBAR_BUTTONS[id] || { label: id };
+    var pick = iconOf(id, active);
+    var fg = active ? css('accentColor') : css('toolTextColor');
+    var el = chipShell(id, unit);
+    if (pick) {
+      var tintable = FE.iconTintable(pick.markup);
+      if (tintable && fg) el.style.color = fg;
+      /* 实机显示名与编辑器标签不一致的按钮，title 里点明（作者看提示就知道对应关系）。 */
+      var realLabel = (id === 'keyboard_tools') ? '主题' : def.label;
+      el.title = realLabel + '（' +
+        (pick.from === 'theme'
+          ? (tintable ? '主题图标 · 单色，跟随主题文字色' : '主题图标 · 自带实色，原样渲染')
+          : '内置矢量 · 跟随主题文字色') + '）';
+      putIcon(el, pick.markup, unit);
+    } else {
+      /* 无图标 → 纯文字 chip（w20.java 的 TextView 分支：18sp、内边距 10dp×2dp）。
+       * 宽度改由 flex 撑开（App 端是 wrap_content），所以撤掉 shell 的定宽。 */
+      el.style.width = 'auto';
+      el.style.padding = dp(SPEC.padYDp, unit) + 'px ' + dp(SPEC.padXDp, unit) + 'px';
+      el.style.fontSize = dp(SPEC.fontSp, unit) + 'px';
+      el.style.lineHeight = '1.2';
+      if (fg) el.style.color = fg;
+      el.title = def.label + '（无图标，实机显示文字）';
+      el.appendChild(FE.h('span', { class: 'kbt-label' }, def.label));
+    }
+    return el;
+  }
+
+  /* 按钮是否处于「激活」态 —— w20.java:279 的 `z2 = os.k.contains(id)`。
+   *
+   * ⚠️ os.k（激活集合）在整个反编译里只有三处写入：
+   *     ox.java:882-884 与 w20.java:363-365 → n("size", …n)、n("one_hand", …j)、n("split_keyboard", …x)
+   *   也就是**只有**尺寸菜单打开 / 单手模式开 / 分体模式开这三个按钮会进集合；
+   *   schema / deploy / settings / clipboard / keyboard_tools / rime_switches /
+   *   hide_keyboard / theme / voice 永远不会激活，永远用未激活图标。
+   *
+   * ⇒ 「展开态 ⇒ 所有按钮都用激活图标」是错的：主题作者把「*激活.svg」画成
+   *   「图标 + 一道斜杠」（水彩包 尺寸激活/单手激活/分体激活 即如此），
+   *   只有当对应模式真打开时才该出现那道斜杠；否则看起来就像「禁用占位」。
+   *   这里按预览真实状态给：预览只有「分体」有开关，尺寸菜单/单手没建模 → 恒 false。 */
+  function activeSet() {
+    var s = st();
+    var set = {};
+    if (s.splitMode) set.split_keyboard = true;
+    return set;
+  }
+  FE.toolbarActiveSet = activeSet;
+
+  /* 预览专用控制 chip（`__back__` 收起 / `__more__` 展开）。
+   * App 里这两个动作分别由 `collapse_toolbar` / `expand_toolbar` 触发，工具栏本身没有
+   * 这两格；预览补一个可点的入口，才能看到主题给的那组「剩余图标」。
+   *
+   * 尺寸：比普通 chip 小一圈（28dp 见方 / 16dp 图标，SPEC.ctrlDp），但仍是**有底色的
+   * 圆角方块**、箭头跟随 toolTextColor —— 看得出可点，不至于退化成旁边的小字挂件。
+   * 位置：绝对定位贴在这一行的右端（`.kbt-row` 预留同宽的 padding-right），
+   * 所以主态/展开态无论前面有几个图标，它都落在**同一个像素位置**（用户要求）。 */
+  function ctrlChip(id, unit, title, onClick) {
+    var el = FE.h('div', { class: 'kbt-chip kbt-ctrl', 'data-toolbar-btn': id });
+    el.style.height = dp(SPEC.ctrlDp, unit) + 'px';
+    el.style.width = dp(SPEC.ctrlDp, unit) + 'px';
+    el.style.borderRadius = dp(SPEC.cornerDp, unit) + 'px';
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.justifyContent = 'center';
+    el.style.boxSizing = 'border-box';
+    /* 与普通 chip 同一套底色（candidateBackgroundColor）：实机工具栏里的格子同源。 */
+    var bg = css('candidateBackgroundColor');
+    if (bg) el.style.background = bg;
+    el.style.color = css('toolTextColor') || '';
+    el.style.cursor = 'pointer';
+    el.style.position = 'absolute';
+    el.style.right = '0';
+    el.style.top = '50%';
+    el.style.transform = 'translateY(-50%)';
+    el.title = title;
+    var box = FE.h('span', { class: 'kb-icon-wrap kbt-icon' });
+    box.style.width = dp(SPEC.ctrlIconDp, unit) + 'px';
+    box.style.height = dp(SPEC.ctrlIconDp, unit) + 'px';
+    box.innerHTML = CTRL_SVG[id];
+    el.appendChild(box);
+    el.addEventListener('click', onClick);
+    return el;
+  }
+
+  function backChip(unit) {
+    return ctrlChip('__back__', unit, '收起工具栏，回到主工具栏（App 的 collapse_toolbar）', function () {
+      FE.state.previewToolbarExpanded = false;
+      if (FE.applyPreviewToolbar) FE.applyPreviewToolbar();
+    });
+  }
+
+  function moreChip(unit) {
+    return ctrlChip('__more__', unit, '展开工具栏，显示另外 ' +
+      ((FE.TOOLBAR_DEFAULT.expanded || []).length) + ' 个按钮（App 的 expand_toolbar）', function () {
+      FE.state.previewToolbarExpanded = true;
+      if (FE.applyPreviewToolbar) FE.applyPreviewToolbar();
+    });
+  }
+
+  /* 渲染入口：host = #preview-toolbar —— **#preview-kb 的子节点**（键盘面板最上面一行）。 */
+  FE.renderPreviewToolbar = function (host, unit) {
+    if (!host) return null;
+    var s = st();
+    FE.clearEl(host);
+    /* 符号面板页也显示工具栏（用户口径：实机打开符号面板时工具栏不会消失）。
+     * 只由「预览选项」里的开关决定显隐，与页签无关 —— 否则切换页签时
+     * 工具栏忽隐忽现，键盘面板高度跟着跳。 */
+    var show = s.previewToolbar !== false;
+    host.hidden = !show;
+    if (!show) return null;
+    var u = (typeof unit === 'number' && unit > 0) ? unit : ((s.portraitW || 380) / 10);
+    /* host 直接铺在键盘面板底色上（os.java:76 setBackgroundColor(a.e()) 是**容器**底色，
+     * 与键盘容器同一套配色解析），所以这里不再自带宽高与圆角，
+     * 也不写底色 —— 否则会多出一条「比键盘窄/底色不同」的假差异。 */
+    host.className = 'kbt';
+    host.style.background = 'transparent';
+
+    var cfg = s.toolbarConfig || FE.TOOLBAR_DEFAULT;
+    var expanded = !!s.previewToolbarExpanded;
+    var ids = (expanded ? cfg.expanded : cfg.main) || [];
+    /* **单行、高度固定**（用户口径）：展开/收起不新增第二行，两种状态都只有这一条 chip 行，
+     * 工具栏总高度前后一致 —— 展开只是把这一行的按钮整体换成 expanded 那一组。
+     * 收起入口不再是独立一行：App 展开态里那个「<」是 FrameLayout 中浮在 chip 行上方的
+     * 独立子节点（w20.java:337-357），网页预览按用户要求把它做成**行尾同一枚按钮**
+     * （主态朝右＝展开、展开态朝左＝收起，位置不动），所以不再需要 .kbt-back-row。 */
+    var row = FE.h('div', { class: 'kbt-row' });
+    row.style.display = 'flex';
+    row.style.flexDirection = 'row';
+    /* 实机是 FlexboxLayout wrap=WRAP，但工具栏只有 7 个 40dp 的按钮，
+     * 竖屏 360dp 宽也放得下；预览里换行只会让人误判「实机也会折成两行」，
+     * 所以主态强制单行，宽度不够时由 chip 收窄（见 style.css 的 .kbt-chip）。 */
+    row.style.flexWrap = 'nowrap';
+    row.style.alignItems = 'center';
+    /* 对齐：os.java:56 setJustifyContent(4)，按 attrs.xml:566-573 的枚举 4 = space_around
+     * （每项两侧各分「剩余空间/项数」的一半，首尾也留半格），所以不是 space-between。 */
+    row.style.justifyContent = 'space-around';
+    /* 间距：实机是每个 chip 自带 chipGap 3dp 四边外边距（w20.java:314-316），相邻净距 6dp。
+     * 但主态预览比实机多一个「展开」chip（实机那格由 os.k 的激活集合表达），8 个 40dp chip
+     * 叠 6dp 净距会超过键盘宽度进而折行；这里用 3dp 行内 gap 作紧凑近似，优先保证单行。 */
+    row.style.gap = dp(SPEC.gapDp, u) + 'px';
+    /* 尾部给控制 chip 留出它自己的格子（28dp + 3dp 间距），
+     * 这样 7 个普通 chip 仍按 space_around 均匀铺开、不会被控制 chip 压住。 */
+    row.style.position = 'relative';
+    row.style.paddingRight = dp(SPEC.ctrlDp + SPEC.gapDp, u) + 'px';
+    row.style.boxSizing = 'border-box';
+    var act = activeSet();
+    ids.forEach(function (id) { row.appendChild(chip(id, !!act[id], u)); });
+    /* 控制 chip：主态 = 展开（→）、展开态 = 收起（←）。**同一枚、同一位置**，
+     * 绝对定位贴行尾，所以两种状态下它一个像素都不会动，只有箭头方向反过来。 */
+    row.appendChild(expanded ? backChip(u) : moreChip(u));
+
+    host.appendChild(row);
+    return { expanded: expanded, ids: ids.slice() };
+  };
+
+  /* 重渲染（只刷新预览，不动数据/撤销栈） */
+  FE.applyPreviewToolbar = function () {
+    if (typeof FE.renderPreviewOnly === 'function') FE.renderPreviewOnly();
+    else if (typeof FE.renderAll === 'function') FE.renderAll();
+    if (typeof FE.autosaveDraft === 'function') FE.autosaveDraft();
+  };
+
+  /* ---------------- 导入图标文件（纯逻辑，UI 在下方 DOM 段） ---------------- */
+  /* entries = [{name, text}]（name 可带目录前缀）。返回 report：
+   *   { ok: [id…], skipped: [{name, reason}], unmatched: [name…] } */
+  FE.importToolbarIcons = function (entries) {
+    var report = { ok: [], skipped: [], unmatched: [], unknown: [] };
+    var bag = FE.state.toolbarIcons && typeof FE.state.toolbarIcons === 'object'
+      ? FE.state.toolbarIcons : (FE.state.toolbarIcons = {});
+    (entries || []).forEach(function (en) {
+      var name = String((en && en.name) || '');
+      var base = name.replace(/^.*[\\/]/, '');
+      var text = en && en.text != null ? String(en.text) : '';
+      var match = FE.toolbarIconMatch(base);
+      if (!match) { report.unmatched.push(base); return; }
+      var markup = typeof FE.iconMarkupFromPayload === 'function'
+        ? FE.iconMarkupFromPayload('svg:' + text.trim()) : null;
+      if (!markup) { report.skipped.push({ name: base, reason: '不是可渲染的 SVG' }); return; }
+      if (!bag[match.id]) bag[match.id] = {};
+      if (match.active) bag[match.id].activeIcon = markup;
+      else bag[match.id].icon = markup;
+      if (report.ok.indexOf(match.id) < 0) report.ok.push(match.id);
+    });
+    if (typeof FE.renderPreviewOnly === 'function') FE.renderPreviewOnly();
+    return report;
+  };
+
+  /* 已导入张数（状态行用） */
+  FE.toolbarIconCount = function () {
+    var bag = FE.state.toolbarIcons || {};
+    var n = 0;
+    Object.keys(bag).forEach(function (id) {
+      if (bag[id] && (bag[id].icon || bag[id].activeIcon)) n++;
+    });
+    return n;
+  };
+  FE.clearToolbarIcons = function () {
+    FE.state.toolbarIcons = {};
+    if (typeof FE.renderPreviewOnly === 'function') FE.renderPreviewOnly();
+  };
+
+  /* ================================================================
+   * UI（仅浏览器）：主题页「工具栏图标与符号字体」卡片里的控件接线
+   * ================================================================ */
+  if (typeof document === 'undefined' || !document.getElementById('pt-toolbar-icons-file')) return;
+
+  var h = FE.h;
+
+  function setStatus(msg, kind) {
+    var el = document.getElementById('pt-toolbar-status');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.className = 'status' + (kind ? ' ' + kind : '');
+  }
+  FE.setPreviewToolbarStatus = setStatus;
+
+  (function wire() {
+    var iconInput = document.getElementById('pt-toolbar-icons-file');
+    var fontInput = document.getElementById('pt-font-file');
+    /* 按钮转发到隐藏的 file input（与主题页其它导入按钮同一手法）。 */
+    var iconPick = document.getElementById('pt-toolbar-icons-pick');
+    if (iconPick && iconInput) {
+      iconPick.addEventListener('click', function () { iconInput.click(); });
+    }
+    var fontPick = document.getElementById('pt-font-pick');
+    if (fontPick && fontInput) {
+      fontPick.addEventListener('click', function () { fontInput.click(); });
+    }
+    var showBox = document.getElementById('pt-toolbar');
+    var expandedBox = document.getElementById('pt-toolbar-expanded');
+    var resetBtn = document.getElementById('pt-toolbar-reset');
+
+    if (showBox) {
+      showBox.checked = FE.state.previewToolbar !== false;
+      showBox.addEventListener('change', function () {
+        FE.state.previewToolbar = !!showBox.checked;
+        FE.applyPreviewToolbar();
+      });
+    }
+    if (expandedBox) {
+      expandedBox.checked = !!FE.state.previewToolbarExpanded;
+      expandedBox.addEventListener('change', function () {
+        FE.state.previewToolbarExpanded = !!expandedBox.checked;
+        FE.applyPreviewToolbar();
+      });
+    }
+    if (iconInput) {
+      iconInput.addEventListener('change', function () {
+        var files = Array.prototype.slice.call(iconInput.files || []);
+        iconInput.value = '';
+        if (!files.length) return;
+        var pending = files.map(function (f) {
+          return FE.readFileText(f).then(function (text) {
+            return { name: f.name || '', text: text || '' };
+          });
+        });
+        Promise.all(pending).then(function (entries) {
+          var rep = FE.importToolbarIcons(entries);
+          if (expandedBox) expandedBox.checked = !!FE.state.previewToolbarExpanded;
+          var bits = ['已导入 ' + rep.ok.length + ' 个按钮图标'];
+          if (rep.unmatched.length) bits.push('未匹配：' + rep.unmatched.join('、'));
+          if (rep.skipped.length) bits.push('跳过：' + rep.skipped.map(function (x) { return x.name; }).join('、'));
+          setStatus(bits.join('；') +
+            (rep.unmatched.length ? '（这些名字不在内置按钮表里，实机工具栏不会出现 —— 需要 toolbar.json 自定义按钮）' : ''), 'ok');
+        });
+      });
+    }
+    if (resetBtn) {
+      resetBtn.addEventListener('click', function () {
+        FE.clearToolbarIcons();
+        if (expandedBox) expandedBox.checked = false;
+        setStatus('已清除导入的工具栏图标，回到内置矢量。', '');
+      });
+    }
+    if (fontInput) {
+      fontInput.addEventListener('change', function () {
+        var file = (fontInput.files || [])[0];
+        fontInput.value = '';
+        if (!file) return;
+        if (typeof FE.importSymbolFontFile !== 'function') {
+          setStatus('字体预览模块未加载。', 'error');
+          return;
+        }
+        FE.importSymbolFontFile(file).then(function (res) {
+          var el = document.getElementById('pt-font-status');
+          if (!el) return;
+          el.textContent = res.message || '';
+          el.className = 'status' + (res.ok ? ' ok' : ' error');
+        });
+      });
+    }
+    var fontClear = document.getElementById('pt-font-clear');
+    if (fontClear) {
+      fontClear.addEventListener('click', function () {
+        if (typeof FE.clearSymbolFont === 'function') FE.clearSymbolFont();
+        var el = document.getElementById('pt-font-status');
+        if (el) { el.textContent = '已移除预览字体（回到系统字体）。'; el.className = 'status'; }
+      });
+    }
+  })();
+})();

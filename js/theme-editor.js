@@ -3,7 +3,7 @@
  *
  * 格式依据（不要照样本子集写）：
  *   主题 JSON 顶层 = type / name / light / dark；
- *   每个槽位（light、dark）= **26 个颜色字段** + `keyTypes`（3 类 × 10 字段）。
+ *   每个槽位（light、dark）= **28 个颜色字段** + `keyTypes`（3 类 × 10 字段）。
  *
  * ⚠️ 两处必须记住的口径：
  *   1) `light` / `dark` 是**两套独立配色槽位**，与预览右上角的深浅开关
@@ -11,7 +11,7 @@
  *      看上去是浅色系，正是因为槽位没有"深色外观"的语义绑定。
  *   2) 预览着色优先级（与直觉相反，**布局每键覆盖高于主题 keyTypes**）：
  *      ① 布局 colors.states.* > ② 布局每键 colors > ③ 主题 keyTypes[键类型]
- *      > ④ 主题 26 色全局默认。本文件只提供 ③④ 的取值；①② 仍由 app.js
+ *      > ④ 主题 28 色全局默认。本文件只提供 ③④ 的取值；①② 仍由 app.js
  *      的 applyKeyColors 负责，它会把主题值当**兜底**垫在下面。
  */
 (function () {
@@ -22,7 +22,11 @@ var FE = (window.FE = window.FE || {});
  * 一、纯逻辑部分（Node 测试可直接使用）
  * ================================================================ */
 
-/* 26 个颜色字段（顺序即导出顺序，取自 App 反编译核对结果，勿改序） */
+/* 28 个颜色字段（顺序即导出顺序，取自 App 反编译核对结果，勿改序）。
+ * 末两个 `symbolTabHighlight*` 是 App 拆分「符号/表情/颜文字面板选中分组」配色后的新字段：
+ * 它们**不参与按键着色**，只用于符号面板左侧分组；缺省时分别回退 toolTextColor /
+ * candidateHighlightColor（见 color-source.js 的 FE.THEME_FIELD_FALLBACK），
+ * 所以旧主题外观完全不变。必须排在 accentColor 之前，保持「accentColor 收尾」的既有口径。 */
 FE.THEME_COLOR_FIELDS = [
   'keyboardColor', 'altKeyboardColor', 'candidateBarColor', 'keyTextColor',
   'keyHintTextColor', 'keyHintTextTopColor', 'keyHintTextBottomColor',
@@ -31,7 +35,8 @@ FE.THEME_COLOR_FIELDS = [
   'candidateCommentColor', 'candidateBackgroundColor', 'candidatePressedColor',
   'candidateHighlightColor', 'toolTextColor', 'preeditTextColor',
   'preeditBackgroundColor', 'popupTextColor', 'popupBackgroundColor',
-  'popupBorderColor', 'voiceWaveColor', 'accentColor'
+  'popupBorderColor', 'voiceWaveColor',
+  'symbolTabHighlightTextColor', 'symbolTabHighlightColor', 'accentColor'
 ];
 
 /* keyTypes 的键名全集（大小写必须与枚举完全一致）。LETTER 常被漏掉，但它是
@@ -289,7 +294,7 @@ FE.validateThemeProfile = function (p) {
      * （`uk.d` 以 `xw0.i()/e()` 为基逐字段合并，见 themeSlotColors）。*/
     var filled = FE.THEME_COLOR_FIELDS.filter(function (f) { return s[f] != null; });
     if (!filled.length) {
-      warn(slot + ' 槽位没有给出任何颜色字段 —— 该槽位的 26 色会全部采用 App 内置默认主题的取值');
+      warn(slot + ' 槽位没有给出任何颜色字段 —— 该槽位的 28 色会全部采用 App 内置默认主题的取值');
     }
     checkColorMap(s, slot, err, warn, false);
     checkKeyTypes(s.keyTypes, slot + '.keyTypes', err, warn);
@@ -352,8 +357,8 @@ function checkKeyTypes(kt, where, err, warn) {
 }
 
 /* ---------------- 序列化 ----------------
- * 固定顺序（type 在前），颜色按 26 字段的权威顺序输出，keyTypes 按
- * LETTER/FUNCTION/ACTION 输出，槽位内的 keyTypes 排在 26 色之后。
+ * 固定顺序（type 在前），颜色按 28 字段的权威顺序输出，keyTypes 按
+ * LETTER/FUNCTION/ACTION 输出，槽位内的 keyTypes 排在 28 色之后。
  * 未知字段一律保留在末尾 —— 那是用户的数据，编辑器不该吃掉。 */
 FE.serializeThemeProfile = function (p) {
   var src = FE.isPlainObject(p) ? p : {};
@@ -369,7 +374,7 @@ FE.serializeThemeProfile = function (p) {
       if (s[f] !== undefined) o[f] = s[f];
     });
     if (s.keyTypes != null) o.keyTypes = orderKeyTypes(s.keyTypes);
-    /* 槽位内 26 色与 keyTypes 之外的字段（含未知字段）原样附后 */
+    /* 槽位内 28 色与 keyTypes 之外的字段（含未知字段）原样附后 */
     Object.keys(s).forEach(function (k) {
       if (k === 'keyTypes' || FE.THEME_COLOR_FIELDS.indexOf(k) >= 0) return;
       o[k] = s[k];
@@ -422,7 +427,7 @@ FE.themeSlotColors = function (slot) {
   var s = p[slot];
   /* ⭐ **逐字段**与内置默认合并（`uk.java:142-149`）——不是"有主题就整块用主题"。
    *
-   * App 的解析是：以内置默认主题为基（`xw0.i()` / `xw0.e()`），对 26 个字段逐个
+   * App 的解析是：以内置默认主题为基（`xw0.i()` / `xw0.e()`），对 28 个字段逐个
    * 判断"JSON 里有没有这个键且非 null"，有就用它、**没有就保留内置默认值**
    * （非法值解析失败也保留内置默认，`uk.java:145-148`）。
    *
@@ -464,7 +469,7 @@ FE.themeSlotColors = function (slot) {
 /* 键类型 → 该按键的**主题兜底基色**（映射见基线 §1.4）。
  * 返回 { text, background, pressed, border, shadow, hint, hintUp, hintDown,
  *        hintLeft, hintRight }，值均为归一化后的 #AARRGGBB 或 null（未给出）。
- * 解析顺序：全局 26 色 → 该槽位的 keyTypes[键类型] 覆盖（keyTypes 更高）。
+ * 解析顺序：全局 28 色 → 该槽位的 keyTypes[键类型] 覆盖（keyTypes 更高）。
  * `keyType` 为 null（未指定）时按 LETTER 处理。 */
 FE.themeKeyColors = function (keyType) {
   var slotObj = FE.themeSlotColors();
@@ -553,6 +558,8 @@ var FIELD_DOC = {
   candidatePressedColor: '候选按下',
   candidateHighlightColor: '候选高亮',
   toolTextColor: '工具栏图标与文字（未选中）',
+  symbolTabHighlightTextColor: '符号面板选中分组文字（空 = 继承 toolTextColor）',
+  symbolTabHighlightColor: '符号面板选中分组背景（空 = 继承 candidateHighlightColor）',
   preeditTextColor: '预编辑文字',
   preeditBackgroundColor: '预编辑背景',
   popupTextColor: '按键弹出浮层文字',
@@ -690,7 +697,7 @@ function colorRow(labelText, titleText, get, set) {
     }
   }, '清除');
   /* 中文提示**可见地**显示在行里（英文名 + 中文提示并列），而不是只塞进 title
-   * 当 tooltip —— 界面只看得见英文名时，26 个字段名根本没法认。
+   * 当 tooltip —— 界面只看得见英文名时，28 个字段名根本没法认。
    *   · 英文（code）是**写进 JSON 的字段名**，必须保留、不能本地化改名；
    *   · 中文（span）是给人看的说明；原 FIELD_DOC 文案里的括号补充留在 title，
    *     行内只取括号前的主干，避免把 .th-color-grid 的 240px 列撑破；
@@ -777,7 +784,7 @@ function renderThemeKeyTypes() {
   var s = slotObj();
   var open = FE.ensureOpenSet('openThemeGroups');
   host.appendChild(h('div', { class: 'th-slot-hint' },
-    '键类型配色优先于该槽位的 26 色全局默认，但**低于**布局里每个按键自己的 colors（基线 §1.5）。'));
+    '键类型配色优先于该槽位的 28 色全局默认，但**低于**布局里每个按键自己的 colors（基线 §1.5）。'));
   FE.THEME_KEY_TYPE_NAMES.forEach(function (group) {
     var grp = FE.isPlainObject(s.keyTypes) ? s.keyTypes[group] : null;
     var block = h('div', { class: 'th-keytype-block' });
@@ -786,7 +793,7 @@ function renderThemeKeyTypes() {
       h('code', null, group),
       h('span', { class: 'th-keytype-missing' },
         grp ? ('已定义 ' + FE.THEME_KEYTYPE_FIELDS.filter(function (f) { return grp[f] != null; }).length + ' / 10 个字段')
-          : '未定义 —— 该类按键回落全局 26 色'));
+          : '未定义 —— 该类按键回落全局 28 色'));
     det.appendChild(summary);
     det.addEventListener('toggle', function () { open[group] = !!det.open; });
     if (!grp) {
@@ -880,7 +887,7 @@ function renderThemeToolbar() {
  * 还没进入 DOM 时执行的，走的是"挂起、等挂载后补装"的分支
  * （key-dialog.js 的 installPendingColorPickers）—— 按键对话框在 buildForm
  * 末尾补了这一下，**主题页漏了**。
- * 后果：主题页 46 个色框（26 全局 + 20 keyTypes）在刚渲染完时**一个实例都没有**；
+ * 后果：主题页 48 个色框（28 全局 + 20 keyTypes）在刚渲染完时**一个实例都没有**；
  * 只有用户点过的那个框才会建实例、才有色块预览 —— 于是"有时显示、有时不显示"；
  * 而选完色会触发 afterChange → renderAll 重建表单，实例随旧元素一起丢弃，
  * 预览又消失。补上这一步后，每次渲染都保证实例齐备。
