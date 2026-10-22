@@ -562,17 +562,58 @@ html.site-light .st-split { color: #2e8b57; }
   user-select: none;
 }
 .kbt[hidden] { display: none; }
-/* chip 行：实机是 FlexboxLayout(wrap=WRAP)，但 7 个 40dp 按钮在竖屏 360dp 也放得下。
- * 预览强制单行 —— 一换行就会让人误判「实机也折成两行」。
- * 对齐按 os.java:56 的 setJustifyContent(4)=space_around（attrs.xml 枚举 4 即 space_around：
- * 每项两侧各占「剩余空间/项数的一半」，首尾也留半格），因此不是 space-between（首尾贴边）。
- * 间距受 chipGap 3dp 约束（w20.java:314 setMargins），但主态预览比实机多一个「展开」chip，
- * 8×40dp 叠 2×3dp 净距会超出键盘宽度 → 行内只给 3dp gap 作紧凑近似（见 toolbar-preview.js）。 */
-.kbt-row {
+/* 横向滚动轨道：App 里工具栏没有「自己的宽度」这个概念，内容多了就是左右滑
+ * （用户口径：工具栏和候选栏处在同一条横向布局里、无限宽）。
+ * 轨道是**唯一**的滚动视口；行尾控制 chip 钉在轨道**外面**的 .kbt 右端，
+ * 所以横向滑动不会把它带走 —— 收起/展开切换时它一个像素都不动。 */
+.kbt-track {
   width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* 不要可见滚动条：App 的 HorizontalScrollView 也是 setHorizontalScrollBarEnabled(false)。 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior-x: contain;
+  /* 触摸横向滑动交给浏览器原生处理；鼠标拖动由 toolbar-preview.js 接管。 */
+  touch-action: pan-x;
+  cursor: grab;
+}
+.kbt-track::-webkit-scrollbar { height: 0; }
+.kbt-track.is-dragging { cursor: grabbing; }
+.kbt-track.is-dragging * { cursor: grabbing; }
+/* chip 行：实机是 FlexboxLayout(wrap=WRAP)，但预览强制单行 ——
+ * 一换行就会让人误判「实机也折成两行」，横向交给轨道去滚。
+ * 对齐按 os.java:56 的 setJustifyContent(4)=space_around（attrs.xml 枚举 4 即 space_around：
+ * 每项两侧各占「剩余空间/项数的一半」，首尾也留半格），因此不是 space-between（首尾贴边）；
+ * 内容超出视口时 width:max-content 让行按内容延伸，space_around 自然退化成行首紧凑排列。
+ * 间距受 chipGap 3dp 约束（w20.java:314 setMargins），行内给 3dp gap 作紧凑近似。 */
+.kbt-row {
   display: flex;
   justify-content: space-around;
-  overflow: hidden;
+  /* 内容无限宽：宽度由 chip 撑出来，不再被父级限死 */
+  width: max-content;
+  min-width: 100%;
+}
+/* 轨道两端的渐隐提示：告诉用户「这一侧还有内容」，同时把滑到控制 chip 底下的
+ * 内容柔和收掉，不会露出被切一半的按钮。宽度由 toolbar-preview.js 按 dp 写入。
+ * 底色取键盘面板底色（--kb-bg 由 app.js 随主题写入），没有主题时退回透明。 */
+.kbt-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .12s linear;
+  z-index: 2;
+}
+.kbt-fade.on { opacity: 1; }
+.kbt-fade-l {
+  left: 0;
+  background: linear-gradient(to right, var(--kb-bg, rgba(127, 127, 127, .0)) 0%, transparent 100%);
+}
+.kbt-fade-r {
+  right: 0;
+  background: linear-gradient(to left, var(--kb-bg, rgba(127, 127, 127, .0)) 0%, transparent 100%);
 }
 /* 展开态**没有**独立的返回行：实机里「<」确实是浮在 chip 行上方的独立子节点
  * （w20.java:343-357），但网页预览按用户要求把它做成行尾同一枚按钮 ——
@@ -585,7 +626,8 @@ html.site-light .st-split { color: #2e8b57; }
   color: inherit;
   overflow: hidden;
   white-space: nowrap;
-  flex: 0 1 auto;
+  /* 无限宽轨道里 chip 一律不收缩：宽度不够就横向滚，绝不把按钮压扁 */
+  flex: 0 0 auto;
   min-width: 0;
 }
 .kbt-chip .kb-icon-wrap,
@@ -600,8 +642,8 @@ html.site-light .st-split { color: #2e8b57; }
   line-height: 1.2;
 }
 /* 预览专用的展开/收起 chip：比普通 chip 小一圈，但仍是同底色的圆角方块，
- * 绝对定位贴在 .kbt-row 的行尾（行内预留了同宽 padding-right），
- * 所以主态/展开态**同一像素位置**、只有箭头方向反过来。 */
+ * 绝对定位钉在 .kbt 右端（在滚动轨道之外 —— 行内预留了同宽 padding-right），
+ * 所以主态/展开态**同一像素位置**、只有箭头方向反过来，横向滑动也带不走它。 */
 .kbt-ctrl { user-select: none; }
 .kbt-ctrl:hover { filter: brightness(1.12); }
 

@@ -418,11 +418,15 @@
           两者实机是同一个标识。所以主题包只给了「主题2.svg」时，收起态那一格会借用它，
           不会一边是主题图标、一边是内置调色板。
           <br><strong>输入法开关这一格是文字、不是图标</strong>：实机 <code>iconRes = 0</code>，
-          显示的是该 switch 的 <code>states</code> 首项（本项目 <code>ascii_mode</code> 为
-          <code>[中文, 西文]</code>），而实机只画<b>一个字</b> —— 主题作者的实机截图里这一格是「中」，
-          工具栏 8 格中心间距又完全均匀（每格同为 40dp），两个字撑不进 40dp。所以预览也取首字。
-          它跟着上方的 <code>ASCII</code> 复选框走：不勾＝「中」、勾上＝「西」，
-          与键面文字在同一帧里一起变。
+          显示的是该 switch 的 <code>states</code> 项。文案以 <b>App 源码为准</b>：内置方案
+          <code>pinyin_simp.schema.yaml</code> / <code>stroke.schema.yaml</code> 里
+          <code>ascii_mode</code> 是 <code>reset: 0</code>、<code>states: [ 中文, 西文 ]</code>，
+          所以预览写原字「中文」/「西文」，不缩写、不取首字。它跟着上方的
+          <code>ASCII</code> 复选框走：不勾＝「中文」、勾上＝「西文」，与键面文字在同一帧里一起变。
+          <br><strong>工具栏是横向滚动的</strong>：实机上工具栏没有「自己的宽度」，和候选栏同处一条
+          横向布局、内容多了就左右滑。预览照此改成一条无限宽的轨道 —— 内容比键盘宽时超出部分裁在
+          轨道外，可以用鼠标拖动、滚轮或触摸左右滑，两端会有渐隐提示；行尾那枚展开/收起箭头钉在
+          轨道外，滑动带不走它，位置也始终不变。
           <br>图标自带实色（hex / rgb() / 具名色）就原样渲染；纯 <code>currentColor</code> 或黑白
           单色才跟随 <code>toolTextColor</code> / <code>accentColor</code> —— 与 App 的
           <code>hk0.w()</code> 判定一致。</div>

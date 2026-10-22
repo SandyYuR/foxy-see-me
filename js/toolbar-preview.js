@@ -262,17 +262,16 @@
    * 本项目 schema（pinyin_simp / stroke）里 ascii_mode 是 reset: 0 / states: [ 中文, 西文 ]
    * （assets/rime-data/*.schema.yaml）。
    *
-   * ⚠️ 实机只画**一个字**：水彩包作者的实机截图（1200x1230）里这一格是「中」，
-   *    实测工具栏 8 格中心间距完全均匀（≈137px，即每格同为 40dp），
-   *    两个字的「中文」按 18sp + 左右 10dp 内边距算下来会撑宽该格、间距就不可能均匀。
-   *    ha.java（extends TextView，工具栏文字 chip 用的就是它）的 onMeasure 里没有截断逻辑
-   *    （min = Math.min(Math.max(paddingRight, getMinimumWidth()), maxWidth)），
-   *    真正取字处 ha.a(int,int) 未反编译 —— 源码坐实不了，所以以实机观测为准：取首字。
-   *    用户口径同样给了「中文 或者 中」两个可接受写法，取短字与实机一致。
+   * ⚠️ 文案以 **App 源码为准**（用户口径）：本项目 schema 里 ascii_mode 就是
+   *    reset: 0 / states: [ 中文, 西文 ]（assets/rime-data/pinyin_simp.schema.yaml、
+   *    stroke.schema.yaml），所以预览写**源码原字**「中文 / 西文」——不缩写、不取首字。
+   *    早期版本按实机截图取过首字「中 / 西」，那只是观测口径；用户已明确要求以源码为准，
+   *    故不再为迁就截图而改写文案（ha.java 里负责取字的 ha.a(int,int) 反编译缺失，
+   *    截图为何只显一处字形从源码上无法解释，也不应反过来改写 schema 文案）。
    *
    * 预览直接读 state.status.ascii_mode（与 #pt-ascii 复选框同一份状态），
    * 于是勾选复选框时工具栏文字与键面文字在同一帧里一起变。 */
-  var RIME_STATES = ['中', '西'];   // states [中文, 西文] 的首字（实机观感）
+  var RIME_STATES = ['中文', '西文'];   // states: [ 中文, 西文 ]（源码原文）
   function rimeSwitchLabel() {
     return st().status && st().status.ascii_mode ? RIME_STATES[1] : RIME_STATES[0];
   }
@@ -309,7 +308,7 @@
         var lab = rimeSwitchLabel();
         el.title = '输入法开关（switch:ascii_mode）· 当前「' + lab +
           '」· 与预览工具栏的 ascii_mode 复选框联动' +
-          '（schema states: 中文 / 西文；实机只画首字「中 / 西」，与截图一致）';
+          '（文案取 schema states 原文：中文 / 西文）';
         el.appendChild(FE.h('span', { class: 'kbt-label' }, lab));
       } else {
         el.title = def.label + '（无图标，实机显示文字）';
@@ -390,6 +389,103 @@
     });
   }
 
+  /* ---------------- 横向滚动轨道（用户口径：工具栏没有固定宽度） ----------------
+   * App 里工具栏与候选栏是同一层级的横向布局（ox.java:646-649 两个 -1×0 weight 80 的兄弟），
+   * 内容多了就横向滑动，不存在「工具栏宽度」这个概念。网页预览照此改成：
+   *   .kbt（host，宽度=键盘面板宽） > .kbt-track（overflow-x:auto，真正的滚动视口）
+   *     > .kbt-row（width:max-content、min-width:100%、不换行、不收缩）
+   * 内容比视口短时 min-width:100% 让 row 铺满，space_around 与实机一致；
+   * 内容比视口长时 row 自然延伸出去，超出部分裁在轨道外，可拖动/滚轮/触摸左右滑。 */
+  var scrollMemo = { main: 0, expanded: 0 };
+  var dragState = null;
+  var suppressClick = false;
+
+  function canScrollX(track) {
+    var max = (track.scrollWidth || 0) - (track.clientWidth || 0);
+    return max > 1;
+  }
+
+  /* 边缘渐隐：让「后面还有内容 / 前面还漏了内容」变成看得见的提示，
+   * 同时把滚动到控制 chip 底下的内容柔和收掉，不至于露出半块 chip。 */
+  function updateFades(track, fadeL, fadeR) {
+    if (!track || !fadeL || !fadeR) return;
+    var left = track.scrollLeft || 0;
+    var max = (track.scrollWidth || 0) - (track.clientWidth || 0);
+    var hasLeft = left > 1;
+    var hasRight = max - left > 1;
+    fadeL.classList.toggle('on', hasLeft);
+    fadeR.classList.toggle('on', hasRight);
+  }
+
+  function bindTrack(track, host, key, fadeL, fadeR) {
+    if (!track || typeof track.addEventListener !== 'function') return;
+    /* --- 拖动（鼠标 / 触控笔；触摸由浏览器原生横向滚动接管） --- */
+    track.addEventListener('pointerdown', function (ev) {
+      if (!ev || ev.button === 2) return;
+      dragState = {
+        track: track,
+        startX: typeof ev.clientX === 'number' ? ev.clientX : 0,
+        startLeft: track.scrollLeft || 0,
+        moved: false
+      };
+      if (typeof track.setPointerCapture === 'function' && ev.pointerId != null) {
+        try { track.setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
+      }
+      track.classList.add('is-dragging');
+    });
+    track.addEventListener('pointermove', function (ev) {
+      if (!dragState || dragState.track !== track) return;
+      var x = typeof ev.clientX === 'number' ? ev.clientX : dragState.startX;
+      var dx = x - dragState.startX;
+      if (Math.abs(dx) > 2) dragState.moved = true;
+      track.scrollLeft = dragState.startLeft - dx;
+    });
+    function endDrag() {
+      if (!dragState || dragState.track !== track) return;
+      var moved = dragState.moved;
+      dragState = null;
+      track.classList.remove('is-dragging');
+      if (moved) {
+        /* 拖完松手时浏览器还会补一个 click，会把「拖动」误判成「点了按钮」 —— 吞掉那一下。 */
+        suppressClick = true;
+        setTimeout(function () { suppressClick = false; }, 0);
+      }
+    }
+    track.addEventListener('pointerup', endDrag);
+    track.addEventListener('pointercancel', endDrag);
+    track.addEventListener('pointerleave', endDrag);
+    track.addEventListener('click', function (ev) {
+      if (!suppressClick) return;
+      if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+      if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+    }, true);
+    /* --- 滚轮：竖向滚轮也转成横向滑动（工具栏只有一行，没有纵向内容） --- */
+    track.addEventListener('wheel', function (ev) {
+      if (!ev || ev.ctrlKey) return;
+      var dx = typeof ev.deltaX === 'number' ? ev.deltaX : 0;
+      var dy = typeof ev.deltaY === 'number' ? ev.deltaY : 0;
+      if (dx !== 0 && Math.abs(dx) >= Math.abs(dy)) return; /* 横向手势交给浏览器 */
+      var max = (track.scrollWidth || 0) - (track.clientWidth || 0);
+      if (max <= 1) return; /* 内容装得下 → 不抢页面的纵向滚动 */
+      var next = (track.scrollLeft || 0) + dy;
+      /* 到边界就停下（不冒泡去滚页面，避免「拖到尽头整页跳走」）。 */
+      if (typeof ev.preventDefault === 'function') ev.preventDefault();
+      track.scrollLeft = Math.max(0, Math.min(max, next));
+      scrollMemo[key] = track.scrollLeft;
+      updateFades(track, fadeL, fadeR);
+    }, { passive: false });
+    track.addEventListener('scroll', function () {
+      scrollMemo[key] = track.scrollLeft || 0;
+      updateFades(track, fadeL, fadeR);
+    });
+    /* 切换展开/收起、切换页签、改主题都会重画整条工具栏；
+     * 轨道位置按「当前这一组」记住，来回切换时不要被扔回最左端。 */
+    var maxLeft = (track.scrollWidth || 0) - (track.clientWidth || 0);
+    var want = Math.min(scrollMemo[key] || 0, Math.max(0, maxLeft));
+    if (want > 0) track.scrollLeft = want;
+    updateFades(track, fadeL, fadeR);
+  }
+
   /* 渲染入口：host = #preview-toolbar —— **#preview-kb 的子节点**（键盘面板最上面一行）。 */
   FE.renderPreviewToolbar = function (host, unit) {
     if (!host) return null;
@@ -407,43 +503,64 @@
      * 也不写底色 —— 否则会多出一条「比键盘窄/底色不同」的假差异。 */
     host.className = 'kbt';
     host.style.background = 'transparent';
+    /* 控制 chip 是 host 的绝对定位子节点，所以 host 要做它的定位参照 ——
+     * 它必须待在滚动轨道**外面**，否则会跟着内容一起滚走。 */
+    host.style.position = 'relative';
 
     var cfg = s.toolbarConfig || FE.TOOLBAR_DEFAULT;
     var expanded = !!s.previewToolbarExpanded;
     var ids = (expanded ? cfg.expanded : cfg.main) || [];
+    var key = expanded ? 'expanded' : 'main';
+
     /* **单行、高度固定**（用户口径）：展开/收起不新增第二行，两种状态都只有这一条 chip 行，
      * 工具栏总高度前后一致 —— 展开只是把这一行的按钮整体换成 expanded 那一组。
      * 收起入口不再是独立一行：App 展开态里那个「<」是 FrameLayout 中浮在 chip 行上方的
      * 独立子节点（w20.java:337-357），网页预览按用户要求把它做成**行尾同一枚按钮**
      * （主态朝右＝展开、展开态朝左＝收起，位置不动），所以不再需要 .kbt-back-row。 */
+    var track = FE.h('div', { class: 'kbt-track' });
+
     var row = FE.h('div', { class: 'kbt-row' });
     row.style.display = 'flex';
     row.style.flexDirection = 'row';
-    /* 实机是 FlexboxLayout wrap=WRAP，但工具栏只有 7 个 40dp 的按钮，
-     * 竖屏 360dp 宽也放得下；预览里换行只会让人误判「实机也会折成两行」，
-     * 所以主态强制单行，宽度不够时由 chip 收窄（见 style.css 的 .kbt-chip）。 */
+    /* 实机是 FlexboxLayout wrap=WRAP，但工具栏只有一行 40dp 的按钮；
+     * 预览里换行只会让人误判「实机也会折成两行」，所以强制单行、由轨道横向滚。 */
     row.style.flexWrap = 'nowrap';
     row.style.alignItems = 'center';
     /* 对齐：os.java:56 setJustifyContent(4)，按 attrs.xml:566-573 的枚举 4 = space_around
-     * （每项两侧各分「剩余空间/项数」的一半，首尾也留半格），所以不是 space-between。 */
+     * （每项两侧各分「剩余空间/项数」的一半，首尾也留半格），所以不是 space-between。
+     * 内容装不下时 row 按 max-content 长出去，space_around 自然退化成行首紧凑排列。 */
     row.style.justifyContent = 'space-around';
+    /* 宽度由内容决定（无限宽），但在内容较短时至少铺满视口 —— 两种情形都是实机观感。 */
+    row.style.width = 'max-content';
+    row.style.minWidth = '100%';
     /* 间距：实机是每个 chip 自带 chipGap 3dp 四边外边距（w20.java:314-316），相邻净距 6dp。
-     * 但主态预览比实机多一个「展开」chip（实机那格由 os.k 的激活集合表达），8 个 40dp chip
-     * 叠 6dp 净距会超过键盘宽度进而折行；这里用 3dp 行内 gap 作紧凑近似，优先保证单行。 */
+     * 这里用 3dp 行内 gap 作紧凑近似（相邻净距 6dp 会让一行太松散）。 */
     row.style.gap = dp(SPEC.gapDp, u) + 'px';
-    /* 尾部给控制 chip 留出它自己的格子（28dp + 3dp 间距），
-     * 这样 7 个普通 chip 仍按 space_around 均匀铺开、不会被控制 chip 压住。 */
-    row.style.position = 'relative';
-    row.style.paddingRight = dp(SPEC.ctrlDp + SPEC.gapDp, u) + 'px';
+    /* 给钉在右端的控制 chip 留出它自己的位置（正好 28dp）——留在**行内**而不是轨道上：
+     * 轨道加 padding 会让「内容刚好装下」时也多出几像素可滚动量，主态就会误报一条右边缘渐隐。
+     * 只留 ctrlDp、不再多留一个 gapDp：space-around 本身会在最后一块右侧留出半格，
+     * 再叠一个 gap 就会让 360px 下的 8 格差 2px 放不下，凭空多出一小段可滚动量。 */
+    row.style.paddingRight = dp(SPEC.ctrlDp, u) + 'px';
     row.style.boxSizing = 'border-box';
     var act = activeSet();
     ids.forEach(function (id) { row.appendChild(chip(id, !!act[id], u)); });
-    /* 控制 chip：主态 = 展开（→）、展开态 = 收起（←）。**同一枚、同一位置**，
-     * 绝对定位贴行尾，所以两种状态下它一个像素都不会动，只有箭头方向反过来。 */
-    row.appendChild(expanded ? backChip(u) : moreChip(u));
+    track.appendChild(row);
 
-    host.appendChild(row);
-    return { expanded: expanded, ids: ids.slice() };
+    var fadeL = FE.h('div', { class: 'kbt-fade kbt-fade-l' });
+    var fadeR = FE.h('div', { class: 'kbt-fade kbt-fade-r' });
+    fadeL.style.width = dp(14, u) + 'px';
+    fadeR.style.width = dp(SPEC.ctrlDp + SPEC.gapDp + 8, u) + 'px';
+
+    host.appendChild(track);
+    host.appendChild(fadeL);
+    host.appendChild(fadeR);
+    /* 控制 chip：主态 = 展开（→）、展开态 = 收起（←）。**同一枚、同一位置**，
+     * 绝对定位钉在 host 右端（滚动轨道外），所以两种状态下它一个像素都不会动，
+     * 只有箭头方向反过来。 */
+    host.appendChild(expanded ? backChip(u) : moreChip(u));
+
+    bindTrack(track, host, key, fadeL, fadeR);
+    return { expanded: expanded, ids: ids.slice(), scrollable: canScrollX(track) };
   };
 
   /* 重渲染（只刷新预览，不动数据/撤销栈） */

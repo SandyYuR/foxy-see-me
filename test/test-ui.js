@@ -5417,6 +5417,16 @@ console.log('== 键盘上方工具栏预览 ==');
   ok(!!row, '工具栏有 chip 行 .kbt-row');
   eq(row.style.display, 'flex', 'chip 行是 flex');
   eq(row.style.flexWrap, 'nowrap', '主态强制单行（实机 7 个按钮不会折成两行）');
+  /* 横向滚动轨道（用户口径：工具栏没有固定宽度，和候选栏同一条横向布局、内容无限宽）。
+   * 结构 = .kbt > .kbt-track（唯一滚动视口）> .kbt-row（width:max-content）。 */
+  const track = q('.kbt-track', host)[0];
+  ok(!!track, '工具栏有横向滚动轨道 .kbt-track');
+  ok(track.parentNode === host, '.kbt-track 直接挂在 #preview-toolbar 下');
+  ok(row.parentNode === track, '.kbt-row 在轨道内（由轨道横向滚动）');
+  eq(row.style.width, 'max-content', '行宽由内容撑开（无限宽，不被键盘宽度限死）');
+  eq(row.style.minWidth, '100%', '内容比视口短时至少铺满（space_around 才是实机观感）');
+  ok(/px$/.test(String(row.style.paddingRight)), '行内右端给控制 chip 预留内距（放轨道上会误报可滚动）');
+  eq(q('.kbt-fade', host).length, 2, '轨道两端各有一层渐隐提示');
   const mainChips = q('.kbt-chip', host);
   eq(mainChips.length, 8, '主工具栏 7 个按钮 + 末位 1 个展开 chip');
   ok(mainChips.some(function (c) { return c.getAttribute('data-toolbar-btn') === 'schema'; }), '主工具栏含「方案」按钮');
@@ -5424,14 +5434,15 @@ console.log('== 键盘上方工具栏预览 ==');
   eq(mainChips[mainChips.length - 1].getAttribute('data-toolbar-btn'), '__more__',
     '展开 chip 落在第一行最后一个位置（不另起一行）');
   /* 输入法开关是**文字 chip**（at0.java:1533-1573：iconRes=0 走 TextView 分支，
-   * label 取 switch 的 states 首项；本项目 ascii_mode states = [中文, 西文]、reset 0）。
-   * 实机截图只画一个字（「中」），所以预览取 states 首字。 */
+   * label 取 switch 的 states 当前项）。文案以 App 源码为准（用户口径）：
+   * pinyin_simp.schema.yaml / stroke.schema.yaml 里 ascii_mode 是
+   * reset: 0、states: [ 中文, 西文 ] —— 原字写出，不缩写、不取首字。 */
   const asciiChip = mainChips.filter(function (c) {
     return c.getAttribute('data-toolbar-btn') === 'rime_switches';
   })[0];
   ok(!!asciiChip, '主工具栏含输入法开关');
   eq(asciiChip.querySelectorAll('.kbt-icon').length, 0, '输入法开关不画图标（实机 iconRes=0）');
-  eq(asciiChip.textContent, '中', 'ascii_mode 关闭时显示 states[0] 首字「中」（与实机截图一致）');
+  eq(asciiChip.textContent, '中文', 'ascii_mode 关闭时显示 states[0]「中文」（App 源码原文）');
   eq(FE.state.status.ascii_mode, false, '默认 ascii_mode = false');
   const switchText = function () {
     return q('.kbt-chip', host).filter(function (c) {
@@ -5442,9 +5453,9 @@ console.log('== 键盘上方工具栏预览 ==');
    * 断言只按一次事件、不手动补渲染，确认真链路通。 */
   $('pt-ascii').checked = true; $('pt-ascii')._fire('change');
   eq(FE.state.status.ascii_mode, true, 'ASCII 复选框写入 state.status.ascii_mode');
-  eq(switchText(), '西', '勾选 ascii_mode 后输入法开关键立刻显示「西」');
+  eq(switchText(), '西文', '勾选 ascii_mode 后输入法开关键立刻显示「西文」');
   $('pt-ascii').checked = false; $('pt-ascii')._fire('change');
-  eq(switchText(), '中', '取消勾选后回到「中」');
+  eq(switchText(), '中文', '取消勾选后回到「中文」');
   const chipH = mainChips[0].style.height;
   ok(/px$/.test(String(chipH)), 'chip 高度按 unit 换算成 px');
   /* 40dp 在 unit=38 → 40*38/36 ≈ 42.2px */
@@ -5478,8 +5489,8 @@ console.log('== 键盘上方工具栏预览 ==');
   eq(expChips.length, 6, '展开态 5 个按钮（含语音）+ 行尾 1 个收起 chip');
   eq(expChips[expChips.length - 1].getAttribute('data-toolbar-btn'), '__back__',
     '收起 chip 在行尾（与主态展开 chip 同一位置）');
-  eq(q('.kbt-row', host)[0].querySelectorAll('.kbt-chip').length, 6,
-    '6 个 chip 全在同一行里（收起键不另起一行）');
+  eq(q('.kbt-row', host)[0].querySelectorAll('.kbt-chip').length, 5,
+    '5 个 chip 全在同一行里（收起键不另起一行，它钉在轨道外）');
 
   /* 收起 chip 与普通 chip 同一套外观：currentColor 描边，颜色走 toolTextColor */
   ok(String(expChips[expChips.length - 1].style.color).indexOf('#112233') === 0,
@@ -5529,6 +5540,8 @@ console.log('== 键盘上方工具栏预览 ==');
   eq(more.style.width, more.style.height, '展开 chip 仍是正方形（有分量感的方块，不是扁挂件）');
   ok(parseFloat(more.style.width) >= FE.kbDp(24, 38) - 0.01, '展开 chip 不退化成一枚小图标（≥24dp）');
   eq(more.style.position, 'absolute', '展开 chip 绝对定位，锁定行尾同一位置');
+  ok(more.parentNode === host, '控制 chip 挂在轨道外的 #preview-toolbar 上（横向滑动带不走它）');
+  eq(row.querySelectorAll('.kbt-chip').length, 7, '轨道内的行只有 7 个普通 chip，控制 chip 不在行内');
   more._fire('click');
   eq(FE.state.previewToolbarExpanded, true, '点展开 chip 切到展开态');
   eq(q('.kbt-chip', host).length, 6, '展开态已重渲染');
@@ -5741,6 +5754,21 @@ console.log('== 工具栏/字体：样式与页面结构 ==');
   ok(/\.kbt-row\s*\{[^}]*display:\s*flex/.test(cssSrc), '.kbt-row 是 flex 行');
   ok(/\.kbt-chip\s*\{[^}]*overflow:\s*hidden/.test(cssSrc), '.kbt-chip 不随内容撑破');
   ok(/\.kbt-label\s*\{[^}]*text-overflow:\s*ellipsis/.test(cssSrc), '.kbt-label 文字超长省略');
+  /* 横向滚动轨道：工具栏没有固定宽度，内容无限宽、可左右滑动（app 里和候选栏同一条横向布局） */
+  ok(/\.kbt-track\s*\{[^}]*overflow-x:\s*auto/.test(cssSrc), '.kbt-track 是横向滚动视口');
+  ok(/\.kbt-track\s*\{[^}]*scrollbar-width:\s*none/.test(cssSrc), '隐藏滚动条（App 也 setHorizontalScrollBarEnabled(false)）');
+  ok(/\.kbt-track\s*\{[^}]*touch-action:\s*pan-x/.test(cssSrc), '触摸横向滑动交给浏览器');
+  ok(/\.kbt-row\s*\{[^}]*width:\s*max-content/.test(cssSrc), '.kbt-row 宽度由内容撑开（无限宽轨道）');
+  ok(/\.kbt-row\s*\{[^}]*min-width:\s*100%/.test(cssSrc), '.kbt-row 内容短时仍铺满（对齐观感同实机）');
+  ok(/\.kbt-chip\s*\{[^}]*flex:\s*0\s+0\s+auto/.test(cssSrc), 'chip 不收缩（宽度不够就横向滚，不压扁）');
+  ok(/\.kbt-fade\s*\{[^}]*position:\s*absolute/.test(cssSrc), '轨道两端有绝对定位的渐隐提示层');
+  ok(/linear-gradient/.test(cssSrc), '渐隐层用线性渐变（否则看不见）');
+  ok(/scrollMemo/.test(tbSrc), '滚动位置按 main/expanded 分别记忆（切换不跳回最左）');
+  ok(/setPointerCapture/.test(tbSrc) && /typeof\s+track\.setPointerCapture\s*===\s*'function'/.test(tbSrc),
+    '拖动用 setPointerCapture 且对 DOM 桩做能力守卫');
+  ok(/suppressClick/.test(tbSrc), '拖动后吞掉误触的 click（不会把拖动当成点按钮）');
+  ok(/RIME_STATES\s*=\s*\['中文',\s*'西文'\]/.test(tbSrc),
+    '输入法开关文案取 App 源码原文 中文/西文（不缩写不取首字）');
   /* 字体预览消费点：键面主标签 + 手势提示 + 长按徽标（App 端是两个字体槽，编辑器只有一个入口） */
   ok(/\.kb-label\s*\{[^}]*font-family:\s*var\(--kb-preview-font/.test(cssSrc), '.kb-label 消费 --kb-preview-font');
   ok(/\.kb-hint\s*\{[^}]*font-family:\s*var\(--kb-preview-font/.test(cssSrc), '.kb-hint 消费 --kb-preview-font（水彩布局的汉字都在提示位）');
@@ -5758,6 +5786,9 @@ console.log('== 工具栏/字体：样式与页面结构 ==');
   ok(htmlSrc.indexOf('键盘上方的工具栏') >= 0, '主题页说明已改为「画键盘 + 键盘上方的工具栏」');
   ok(htmlSrc.indexOf('展开更多按钮') >= 0 || htmlSrc.indexOf('不等于「激活」') >= 0,
     '主题页说明已澄清「展开更多按钮 ≠ 激活」');
+  ok(htmlSrc.indexOf('横向滚动') >= 0, '主题页说明已写明工具栏是横向滚动的');
+  ok(htmlSrc.indexOf('只画<b>一个字</b>') < 0 && htmlSrc.indexOf('所以预览也取首字') < 0,
+    '过期说明「实机只画一个字 / 预览取首字」已删除');
   ok(htmlSrc.indexOf('不含 App 的候选栏 / 工具栏') < 0, '过期说明「不含候选栏/工具栏」已删除');
 }
 
