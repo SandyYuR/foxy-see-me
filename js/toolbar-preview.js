@@ -42,10 +42,13 @@
   };
 
   /* 默认两态列表（vj0.java:300-301 的 k(Context)）。
-   * 注意 main 里没有「收起」，expanded 只有 4 项 —— 照抄，不要按直觉补。 */
+   * 注意 main 里没有「收起」（expanded 只有 4 项是 App 默认）。
+   * 这里在 expanded 末尾追加 voice：App 的默认展开组不含它，但用户在 vj0 的
+   * toolbar.json 里可以自行添加；网页预览按用户口径把「语音」也放进展开组，
+   * 这样才能看到主题包里的「语音/语音激活2」这对图标。 */
   FE.TOOLBAR_DEFAULT = {
     main: ['schema', 'deploy', 'settings', 'clipboard', 'keyboard_tools', 'rime_switches', 'hide_keyboard'],
-    expanded: ['theme', 'size', 'one_hand', 'split_keyboard']
+    expanded: ['theme', 'size', 'one_hand', 'split_keyboard', 'voice']
   };
 
   /* 文件名（去掉扩展名）→ 按钮 id。**精确表，不做模糊匹配**。
@@ -67,6 +70,13 @@
     '单手': 'one_hand',
     '分体': 'split_keyboard'
   };
+
+  /* 主题图标别名回落：主题包只给了「主题2.svg」（映射成 theme），没给「键盘工具」。
+   * 而 App 里 keyboard_tools 复用的就是 ic_tool_theme（r71.java:645-648）、
+   * 显示名取 R.string.tool_theme —— 两者实机是同一枚图标。
+   * 所以主题包没给 keyboard_tools 自己的图标时，借 theme 那份，
+   * 否则收起态露内置矢量、展开态露主题图标，同一枚按钮两副面孔。 */
+  FE.TOOLBAR_ICON_ALIAS = { keyboard_tools: 'theme' };
 
   /* 文件名 → { id, active }。规则：
    *   1. 去掉扩展名、去首尾空白；
@@ -208,6 +218,8 @@
   /* 当前预览要用的图标定义：state.toolbarIcons[id] = { icon, activeIcon } */
   function iconOf(id, active) {
     var bag = (st().toolbarIcons || {})[id];
+    var alias = FE.TOOLBAR_ICON_ALIAS[id];
+    if (!bag && alias) bag = (st().toolbarIcons || {})[alias];
     if (bag) {
       if (active && bag.activeIcon) return { markup: bag.activeIcon, from: 'theme' };
       if (bag.icon) return { markup: bag.icon, from: 'theme' };
@@ -243,9 +255,32 @@
     el.appendChild(box);
   }
 
+  /* 输入法开关（rime_switches）在实机上不是一个图标 chip，而是**文字 chip**：
+   * at0.java:1533-1573 —— schema switches 非空时 q20 的 iconRes 传 0（走 TextView 分支），
+   * label 取「该 switch 的 states 首项」（qj.K0(q.b)），statusLabel = "switch:<name>"；
+   * 之后 te.java:812-820 用 t70.a 按「当前索引」重算同一个 TextView 的文字。
+   * 本项目 schema（pinyin_simp / stroke）里 ascii_mode 是 reset: 0 / states: [ 中文, 西文 ]
+   * （assets/rime-data/*.schema.yaml）。
+   *
+   * ⚠️ 实机只画**一个字**：水彩包作者的实机截图（1200x1230）里这一格是「中」，
+   *    实测工具栏 8 格中心间距完全均匀（≈137px，即每格同为 40dp），
+   *    两个字的「中文」按 18sp + 左右 10dp 内边距算下来会撑宽该格、间距就不可能均匀。
+   *    ha.java（extends TextView，工具栏文字 chip 用的就是它）的 onMeasure 里没有截断逻辑
+   *    （min = Math.min(Math.max(paddingRight, getMinimumWidth()), maxWidth)），
+   *    真正取字处 ha.a(int,int) 未反编译 —— 源码坐实不了，所以以实机观测为准：取首字。
+   *    用户口径同样给了「中文 或者 中」两个可接受写法，取短字与实机一致。
+   *
+   * 预览直接读 state.status.ascii_mode（与 #pt-ascii 复选框同一份状态），
+   * 于是勾选复选框时工具栏文字与键面文字在同一帧里一起变。 */
+  var RIME_STATES = ['中', '西'];   // states [中文, 西文] 的首字（实机观感）
+  function rimeSwitchLabel() {
+    return st().status && st().status.ascii_mode ? RIME_STATES[1] : RIME_STATES[0];
+  }
+
   function chip(id, active, unit) {
     var def = FE.TOOLBAR_BUTTONS[id] || { label: id };
-    var pick = iconOf(id, active);
+    var isSwitch = (id === 'rime_switches');
+    var pick = isSwitch ? null : iconOf(id, active);
     var fg = active ? css('accentColor') : css('toolTextColor');
     var el = chipShell(id, unit);
     if (pick) {
@@ -265,9 +300,21 @@
       el.style.padding = dp(SPEC.padYDp, unit) + 'px ' + dp(SPEC.padXDp, unit) + 'px';
       el.style.fontSize = dp(SPEC.fontSp, unit) + 'px';
       el.style.lineHeight = '1.2';
+      /* 文字 chip 不能被 flex 压缩：宽度不够时让它保持整字（实机是 wrap_content），
+       * 让左边的图标 chip 去收窄 —— 否则单字会被压扁/裁切。 */
+      el.style.flex = '0 0 auto';
+      el.style.whiteSpace = 'nowrap';
       if (fg) el.style.color = fg;
-      el.title = def.label + '（无图标，实机显示文字）';
-      el.appendChild(FE.h('span', { class: 'kbt-label' }, def.label));
+      if (isSwitch) {
+        var lab = rimeSwitchLabel();
+        el.title = '输入法开关（switch:ascii_mode）· 当前「' + lab +
+          '」· 与预览工具栏的 ascii_mode 复选框联动' +
+          '（schema states: 中文 / 西文；实机只画首字「中 / 西」，与截图一致）';
+        el.appendChild(FE.h('span', { class: 'kbt-label' }, lab));
+      } else {
+        el.title = def.label + '（无图标，实机显示文字）';
+        el.appendChild(FE.h('span', { class: 'kbt-label' }, def.label));
+      }
     }
     return el;
   }

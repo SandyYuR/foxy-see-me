@@ -5423,6 +5423,28 @@ console.log('== 键盘上方工具栏预览 ==');
   ok(!mainChips.some(function (c) { return c.getAttribute('data-toolbar-btn') === '__back__'; }), '主工具栏没有返回 chip');
   eq(mainChips[mainChips.length - 1].getAttribute('data-toolbar-btn'), '__more__',
     '展开 chip 落在第一行最后一个位置（不另起一行）');
+  /* 输入法开关是**文字 chip**（at0.java:1533-1573：iconRes=0 走 TextView 分支，
+   * label 取 switch 的 states 首项；本项目 ascii_mode states = [中文, 西文]、reset 0）。
+   * 实机截图只画一个字（「中」），所以预览取 states 首字。 */
+  const asciiChip = mainChips.filter(function (c) {
+    return c.getAttribute('data-toolbar-btn') === 'rime_switches';
+  })[0];
+  ok(!!asciiChip, '主工具栏含输入法开关');
+  eq(asciiChip.querySelectorAll('.kbt-icon').length, 0, '输入法开关不画图标（实机 iconRes=0）');
+  eq(asciiChip.textContent, '中', 'ascii_mode 关闭时显示 states[0] 首字「中」（与实机截图一致）');
+  eq(FE.state.status.ascii_mode, false, '默认 ascii_mode = false');
+  const switchText = function () {
+    return q('.kbt-chip', host).filter(function (c) {
+      return c.getAttribute('data-toolbar-btn') === 'rime_switches';
+    })[0].textContent;
+  };
+  /* 联动：#pt-ascii 的 change 走 renderPreview()，工具栏与键面在同一帧里重画 ——
+   * 断言只按一次事件、不手动补渲染，确认真链路通。 */
+  $('pt-ascii').checked = true; $('pt-ascii')._fire('change');
+  eq(FE.state.status.ascii_mode, true, 'ASCII 复选框写入 state.status.ascii_mode');
+  eq(switchText(), '西', '勾选 ascii_mode 后输入法开关键立刻显示「西」');
+  $('pt-ascii').checked = false; $('pt-ascii')._fire('change');
+  eq(switchText(), '中', '取消勾选后回到「中」');
   const chipH = mainChips[0].style.height;
   ok(/px$/.test(String(chipH)), 'chip 高度按 unit 换算成 px');
   /* 40dp 在 unit=38 → 40*38/36 ≈ 42.2px */
@@ -5453,11 +5475,12 @@ console.log('== 键盘上方工具栏预览 ==');
   eq(q('.kbt-row', host).length, 1, '展开态依旧只有一行（不新增第二行）');
   eq(q('.kbt-row', host).length, mainRowCount, '展开前后行数一致，工具栏高度不变');
   eq(q('.kbt-back-row', host).length, 0, '不再有独立的返回行 .kbt-back-row');
-  eq(expChips.length, 5, '展开态 4 个按钮 + 行尾 1 个收起 chip');
+  eq(expChips.length, 6, '展开态 5 个按钮（含语音）+ 行尾 1 个收起 chip');
   eq(expChips[expChips.length - 1].getAttribute('data-toolbar-btn'), '__back__',
     '收起 chip 在行尾（与主态展开 chip 同一位置）');
-  eq(q('.kbt-row', host)[0].querySelectorAll('.kbt-chip').length, 5,
-    '5 个 chip 全在同一行里（收起键不另起一行）');
+  eq(q('.kbt-row', host)[0].querySelectorAll('.kbt-chip').length, 6,
+    '6 个 chip 全在同一行里（收起键不另起一行）');
+
   /* 收起 chip 与普通 chip 同一套外观：currentColor 描边，颜色走 toolTextColor */
   ok(String(expChips[expChips.length - 1].style.color).indexOf('#112233') === 0,
     '收起 chip 用 toolTextColor（与普通 chip 同级）');
@@ -5476,6 +5499,8 @@ console.log('== 键盘上方工具栏预览 ==');
     '展开态里 size 用未激活色（尺寸菜单没打开）');
   ok(String(expById('one_hand').style.color).indexOf('#112233') === 0,
     '展开态里 one_hand 用未激活色（单手模式没开）');
+  ok(!!expById('voice'), '展开组含「语音」按钮（用户要求在展开态加入）');
+  ok(!!q('.kbt-icon', expById('voice')).length, '语音按钮有图标（主题包 语音.svg，无则回落内置麦克风）');
   ok(String(expById('split_keyboard').style.color).indexOf('#112233') === 0,
     '分体未开时 split_keyboard 也是未激活色');
   const savedSplit = FE.state.splitMode;
@@ -5506,7 +5531,7 @@ console.log('== 键盘上方工具栏预览 ==');
   eq(more.style.position, 'absolute', '展开 chip 绝对定位，锁定行尾同一位置');
   more._fire('click');
   eq(FE.state.previewToolbarExpanded, true, '点展开 chip 切到展开态');
-  eq(q('.kbt-chip', host).length, 5, '展开态已重渲染');
+  eq(q('.kbt-chip', host).length, 6, '展开态已重渲染');
   const backChipEl = q('.kbt-chip', host).filter(function (c) {
     return c.getAttribute('data-toolbar-btn') === '__back__';
   })[0];
@@ -5561,6 +5586,29 @@ console.log('== 键盘上方工具栏预览 ==');
   ok(pair.markup.indexOf('3a5470') >= 0 && pairOn.markup.indexOf('currentColor') >= 0,
     '未激活用实色 icon、激活用单色 activeIcon');
   ok(!FE.iconTintable(pair.markup) && FE.iconTintable(pairOn.markup), '两态的染色判定各自独立');
+
+  /* 收起态那格是 keyboard_tools、展开态那格是 theme，但主题包只给了「主题2.svg」。
+   * 实机 keyboard_tools 复用的就是 ic_tool_theme（r71.f0），所以两态必须是**同一枚**图标，
+   * 不能一边主题图标、一边内置调色板（用户肉眼最先看到的就是这个不一致）。 */
+  FE.clearToolbarIcons();
+  FE.importToolbarIcons([{ name: '主题2.svg', text: REAL_COLOR.replace('svg:', '') }]);
+  FE.state.previewToolbarExpanded = false;
+  FE.renderPreviewOnly();
+  const mainKt = q('.kbt-chip', $('preview-toolbar')).filter(function (c) {
+    return c.getAttribute('data-toolbar-btn') === 'keyboard_tools';
+  })[0];
+  ok(!!mainKt && !!mainKt.querySelectorAll('.kbt-icon')[0], '收起态 keyboard_tools 用主题图标（不再回落内置矢量）');
+  const ktMarkup = mainKt.querySelectorAll('.kbt-icon')[0].innerHTML;
+  ok(ktMarkup.indexOf('3a5470') >= 0, '收起态 keyboard_tools 画的是主题自带实色图标');
+  FE.state.previewToolbarExpanded = true;
+  FE.renderPreviewOnly();
+  const expTheme = q('.kbt-chip', $('preview-toolbar')).filter(function (c) {
+    return c.getAttribute('data-toolbar-btn') === 'theme';
+  })[0];
+  ok(!!expTheme && !!expTheme.querySelectorAll('.kbt-icon')[0], '展开态 theme 同样有主题图标');
+  eq(expTheme.querySelectorAll('.kbt-icon')[0].innerHTML, ktMarkup,
+    '收起态 keyboard_tools 与展开态 theme 是同一枚图标（两态一致）');
+  FE.state.previewToolbarExpanded = false;
 
   FE.clearToolbarIcons();
   FE.renderPreviewOnly();

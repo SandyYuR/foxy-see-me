@@ -307,7 +307,7 @@ jscolor 的颜色值和 CSS/JSON 顺序不同。项目保留它的字节序约�
 
 配色按 `c30.java` 的字段映射还原：容器底 = `keyBorderEnabled ? altKeyboardColor : candidateBarColor`，chip 默认底 `candidateBackgroundColor`、按下 `candidatePressedColor`，未选中图标/文字 `toolTextColor`，选中（展开容器打开）`accentColor`，返回 chip 文字 `candidateTextColor`。
 
-主工具栏（`main`）和展开工具栏（`expanded`）是**两种状态**，切换时整行重排，不能把两份同时渲染。展开入口是**主态第一行末尾的一个 chip**（`__more__`），不再另起一行写「展开/收起」文字提示。行 `flex-wrap: nowrap`：7 个 40dp 按钮在竖屏 360dp 里放得下，预览里一换行就会让人误判「实机也折成两行」。
+主工具栏（`main`）和展开工具栏（`expanded`）是**两种状态**，切换时整行重排，不能把两份同时渲染。展开入口是**主态第一行末尾的一个 chip**（`__more__`），不再另起一行写「展开/收起」文字提示。行 `flex-wrap: nowrap`：7 个 40dp 按钮在竖屏 360dp 里放得下，预览里一换行就会让人误判「实机也折成两行」。展开组照 App `vj0.k` 的 4 项（theme / size / one_hand / split_keyboard），用户要求再加语音，所以 `FE.TOOLBAR_DEFAULT.expanded` 是 5 项 `[..., 'voice']`，加行尾控制键共 6 格、同样一行排完（360px 实测无溢出，`row.scrollWidth === clientWidth`）。
 
 后来用户要求「展开键搞小一点、换成向右的箭头、展开后同一个位置变成向左的收起键、展开态不要变成两行、工具栏高度不变」，于是控制键独立成 `.kbt-ctrl`：**28dp 方、圆角 12dp、图标 16dp、`position:absolute` 钉在行尾**（`right:0; top:50%; translateY(-50%)`），行用 `padding-right = ctrlDp + gapDp` 给它让位。两种状态挂的都是同一位置的同一枚按钮，只有 `CTRL_SVG` 的箭头方向反过来（`__more__` 朝右、`__back__` 朝左），所以切换时位置一像素不动，也就不需要 `.kbt-back-row` 那种第二行结构了。早期按 `w20.java:335-357` 做成「返回键浮在 chip 行上方一行」是照实机结构还原，但它与用户「保持工具栏预览高度不变」的诉求冲突，以用户口径为准。
 
@@ -316,6 +316,11 @@ jscolor 的颜色值和 CSS/JSON 顺序不同。项目保留它的字节序约�
 主题包的工具栏 svg 靠**显式文件名映射表**（`FE.toolbarIconMatch`）配对，不许按中文名模糊匹配：水彩包里有「分体 / 分体激活」「单手 / 单手激活」这类成对文件，两态颜色完全相同，只有路径细节不同。文件名以「激活」结尾的进 `activeIcon`。匹配不到内置按钮的图标（水彩包里的「删除/数字/星球/月亮/编辑」）如实报告「实机工具栏不会出现」，不静默丢弃也不算错误。
 
 `keyboard_tools` 曾经回落成纯文字 chip，结论是错的：`r71.java` 的 `f0()` 给它 `R.drawable.ic_tool_theme`（复用主题图标）、显示名取 `R.string.tool_theme`＝「主题」。现在 `BUILTIN.keyboard_tools = BUILTIN.theme`，chip 的 `title` 点明「实机显示名是主题」。
+
+**两态图标不一致的根因**：水彩包的 `工具栏图标/` 里只有「主题2.svg」、没有「主题.svg」，而收起态第 5 格是 `keyboard_tools`、展开态第 1 格才是 `theme` —— 两个不同 id。`iconOf` 按 id 取图标，`keyboard_tools` 取不到就回落内置调色板，`theme` 取得到主题图标，于是同一个「主题」按钮在两种状态下一张是原厂矢量、一张是主题图。实机里这两个按钮本来就共用 `ic_tool_theme`，所以修法落在预览侧：`FE.TOOLBAR_ICON_ALIAS = { keyboard_tools: 'theme' }`，`iconOf` 拿不到自有图标时借别名那份（`theme` 自己的图标优先，不被覆盖；清除导入后别名也跟着失效、回落内置）。
+
+**`rime_switches` 是文字 chip，不是图标**：`at0.java:1533-1573` 里只要 schema 有 switches，走 `new q20(str3, ..., iconRes = 0, ...)` —— `iconRes = 0` 就是 TextView 分支，显示文字是 `states` 首项（`String str3 = str2 == null ? str : str2`，`str2 = qj.K0(q.b)`）。本项目 `pinyin_simp.schema.yaml` 与 `stroke.schema.yaml` 都是 `- name: ascii_mode / reset: 0 / states: [ 中文, 西文 ]`（用户记忆里的「英文」实机其实是「西文」）。
+    **但 schema 给两字、实机只画一个字**：水彩包作者给的实机截图里这一格是「中」，量格子中心间距是 8 格完全均匀（1200px 宽、中心 83.5/218.5/356.0/494.5/632.5/771.0/907.5/1046.5，间距≈137px ⇒ 每格都是 40dp）；18sp 的两字「中文」加左右各 10dp 内边距约需 56dp，真要两字间距就不可能均匀。`ha.java`（extends TextView，工具栏文字 chip 就是它）的 `onMeasure` 里没有任何截断/省略逻辑，取字处 `ha.a(int,int)` 反编译未出（Method not decompiled），源码坐实不了，因此以实机观测为准：预览取 `states` 首字，`RIME_STATES = ['中', '西']`。预览 `rimeSwitchLabel()` 读 `state.status.ascii_mode`；`#pt-ascii` 的 `change` 本来就走 `renderPreview()`，工具栏和键面在同一帧里重画，天然联动；符号面板页因为走同一次渲染也一起变。文字 chip 沿用 Router 分支的 18sp / 内边距 10dp×2dp / 宽度自适应，但必须补 `flex: 0 0 auto` + `white-space: nowrap` —— 沿用 `.kbt-chip` 的 `flex: 0 1 auto` 会被压扁/裁切。
 
 图标要不要被主题色染色照 `hk0.w` 的等价实现 `FE.iconTintable` 判定：所有 `fill` / `stroke` 都是 `currentColor` / `none` / 关键字才染色，出现任何具名色或 hex/rgb 就原样渲染。水彩包的 19 个 svg 全自带实色，所以它们保持原色；内置矢量（纯黑/纯白灰阶）走染色。chip 的 `title` 会标注「主题自带实色」还是「内置矢量」，让作者看清来源。
 

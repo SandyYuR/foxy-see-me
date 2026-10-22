@@ -381,6 +381,7 @@
           容器底色 = <code>keyBorderEnabled</code> ? <code>altKeyboardColor</code> : <code>candidateBarColor</code>，
           chip 底色 = <code>candidateBackgroundColor</code>，未选中图标/文字 = <code>toolTextColor</code>，
           激活态（尺寸菜单 / 单手 / 分体打开）= <code>accentColor</code>——注意「展开更多按钮」不等于「激活」。
+          输入法开关走 TextView 分支（18sp、内边距 10dp×2dp），文字取自对应的 Rime switch 状态。
           符号面板页也照样有这条工具栏（实机打开符号面板时工具栏不消失）。候选栏配色
           （<code>candidateTextColor</code> / <code>candidateCommentColor</code> 等）仍只在符号面板页可见。</div>
       </details>
@@ -412,6 +413,16 @@
           SharedPreferences。网页预览没有这些通道，所以在这里临时接管。
           <br>图标按<strong>文件名</strong>精确配到按钮（方案 / 部署 / 设置 / 剪贴板 / 语音 / 收起 /
           主题 / 尺寸 / 单手 / 分体），文件名以「激活」结尾的作为该按钮的展开态图标。
+          <br><strong>「键盘工具」与「主题」共用一枚图标</strong>：App 里 <code>keyboard_tools</code> 的
+          <code>iconRes</code> 就是 <code>ic_tool_theme</code>、显示名也取「主题」（<code>r71.f0</code>），
+          两者实机是同一个标识。所以主题包只给了「主题2.svg」时，收起态那一格会借用它，
+          不会一边是主题图标、一边是内置调色板。
+          <br><strong>输入法开关这一格是文字、不是图标</strong>：实机 <code>iconRes = 0</code>，
+          显示的是该 switch 的 <code>states</code> 首项（本项目 <code>ascii_mode</code> 为
+          <code>[中文, 西文]</code>），而实机只画<b>一个字</b> —— 主题作者的实机截图里这一格是「中」，
+          工具栏 8 格中心间距又完全均匀（每格同为 40dp），两个字撑不进 40dp。所以预览也取首字。
+          它跟着上方的 <code>ASCII</code> 复选框走：不勾＝「中」、勾上＝「西」，
+          与键面文字在同一帧里一起变。
           <br>图标自带实色（hex / rgb() / 具名色）就原样渲染；纯 <code>currentColor</code> 或黑白
           单色才跟随 <code>toolTextColor</code> / <code>accentColor</code> —— 与 App 的
           <code>hk0.w()</code> 判定一致。</div>

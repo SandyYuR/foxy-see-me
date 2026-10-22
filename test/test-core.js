@@ -1998,9 +1998,11 @@ console.log('== 对齐新版 skill：icons / drag / 条件组合 ==');
 /* ---------------- 工具栏预览（toolbar-preview.js，纯逻辑） ---------------- */
 console.log('== 工具栏预览 ==');
 {
-  /* 默认工具栏组合照 App vj0.k：main 7 项、expanded 4 项 */
+  /* 默认工具栏组合照 App vj0.k：main 7 项、expanded 4 项。
+   * 预览在 expanded 末尾追加 voice（用户要求「展开态里加入语音按钮」）—— */
   eq(FE.TOOLBAR_DEFAULT.main.length, 7, '默认主工具栏 7 个按钮');
-  eq(FE.TOOLBAR_DEFAULT.expanded.length, 4, '默认展开工具栏 4 个按钮');
+  eq(FE.TOOLBAR_DEFAULT.expanded.length, 5, '默认展开工具栏 5 个按钮（App 的 4 个 + 预览补的语音）');
+  eq(FE.TOOLBAR_DEFAULT.expanded[4], 'voice', '展开组最后一项是语音');
   eq(FE.TOOLBAR_DEFAULT.main[0], 'schema', '主工具栏第一项是方案');
   eq(FE.TOOLBAR_DEFAULT.expanded[0], 'theme', '展开工具栏第一项是主题');
   ok(Object.keys(FE.TOOLBAR_BUTTONS).length >= 12, '内置按钮表至少 12 项');
@@ -2078,9 +2080,22 @@ console.log('== 导入工具栏图标 ==');
   eq(FE.toolbarIconOf('settings', true).from, 'theme', '激活态取主题自带 activeIcon');
   eq(FE.toolbarIconOf('theme', false).from, 'builtin', '未导入的按钮回落内置矢量');
   eq(FE.toolbarIconOf('theme', true).from, 'builtin', '未导入按钮的激活态也回落内置矢量');
+  /* 别名回落：主题包只给「主题2.svg」时，keyboard_tools 也要用同一枚图标。
+   * 依据 r71.java:645-648 f0()：keyboard_tools 的 iconRes 就是 ic_tool_theme、
+   * 显示名也取 R.string.tool_theme —— 实机两者本来就是同一个标识。 */
+  const rep2 = FE.importToolbarIcons([{ name: '主题2.svg', text: svgOn }]);
+  eq(rep2.ok, ['theme'], '主题2.svg 映射到 theme');
+  eq(FE.toolbarIconOf('keyboard_tools', false).from, 'theme',
+    'keyboard_tools 借 theme 的主题图标（两态不再一内置一主题）');
+  eq(FE.toolbarIconOf('keyboard_tools', false).markup, FE.toolbarIconOf('theme', false).markup,
+    'keyboard_tools 与 theme 取到同一份图标载荷');
+  /* theme 自己有主题图标时，别名不覆盖它自己的 */
+  eq(FE.toolbarIconOf('theme', false).from, 'theme', 'theme 仍取自己的图标');
   FE.clearToolbarIcons();
   eq(FE.toolbarIconCount(), 0, '清除后图标数为 0');
   eq(FE.toolbarIconOf('settings', false).from, 'builtin', '清除后回到内置矢量');
+  eq(FE.toolbarIconOf('keyboard_tools', false).markup, FE.TOOLBAR_BUILTIN_SVG.keyboard_tools,
+    '清除后 keyboard_tools 也回到内置矢量（不再借用）');
 }
 
 /* ---------------- 符号字体覆盖度（font-preview.js，纯逻辑） ---------------- */
