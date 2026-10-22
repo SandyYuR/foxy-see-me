@@ -716,7 +716,6 @@ function buildSkeleton() {
         el('button', { id: 'pt-toolbar-reset' })),
       el('div', { id: 'pt-toolbar-status', class: 'status' }),
       el('label', null, el('input', { id: 'pt-toolbar', type: 'checkbox', checked: 'checked' })),
-      el('label', null, el('input', { id: 'pt-toolbar-expanded', type: 'checkbox' })),
       el('div', { class: 'toolbar' },
         el('button', { id: 'pt-font-pick' }),
         el('input', { id: 'pt-font-file', type: 'file' }),

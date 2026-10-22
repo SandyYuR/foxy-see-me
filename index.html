@@ -380,7 +380,8 @@
           （行高 40dp、圆角 12dp、chip 间距 3dp、字号 18sp、内边距 10dp×2dp）：
           容器底色 = <code>keyBorderEnabled</code> ? <code>altKeyboardColor</code> : <code>candidateBarColor</code>，
           chip 底色 = <code>candidateBackgroundColor</code>，未选中图标/文字 = <code>toolTextColor</code>，
-          激活态（尺寸菜单 / 单手 / 分体打开）= <code>accentColor</code>——注意「展开更多按钮」不等于「激活」。
+          激活态（尺寸菜单 / 单手 / 分体打开）= <code>accentColor</code>（<code>os.k</code> 只收这三个运行时状态，
+          其余按钮恒为未激活色）。
           输入法开关走 TextView 分支（18sp、内边距 10dp×2dp），文字取自对应的 Rime switch 状态。
           符号面板页也照样有这条工具栏（实机打开符号面板时工具栏不消失）。候选栏配色
           （<code>candidateTextColor</code> / <code>candidateCommentColor</code> 等）仍只在符号面板页可见。</div>
@@ -423,10 +424,16 @@
           <code>ascii_mode</code> 是 <code>reset: 0</code>、<code>states: [ 中文, 西文 ]</code>，
           所以预览写原字「中文」/「西文」，不缩写、不取首字。它跟着上方的
           <code>ASCII</code> 复选框走：不勾＝「中文」、勾上＝「西文」，与键面文字在同一帧里一起变。
-          <br><strong>工具栏是横向滚动的</strong>：实机上工具栏没有「自己的宽度」，和候选栏同处一条
-          横向布局、内容多了就左右滑。预览照此改成一条无限宽的轨道 —— 内容比键盘宽时超出部分裁在
-          轨道外，可以用鼠标拖动、滚轮或触摸左右滑，两端会有渐隐提示；行尾那枚展开/收起箭头钉在
-          轨道外，滑动带不走它，位置也始终不变。
+          <br><strong>工具栏一次显示全部按钮</strong>：预览不再模拟「展开态 / 收起态」，而是把
+          <code>toolbar.json</code> 的主组（<code>main</code>）和展开组（<code>expanded</code>）
+          按顺序拼成一条完整列表、一次画在同一行里，行尾<strong>没有</strong>展开/收起箭头。
+          装不下时超出部分裁在轨道外，按住<strong>拖动</strong>（或触摸横滑 / 滚轮）就能看到后面的
+          图标，两端渐隐提示哪一侧还有内容；拖动不会误点到图标。
+          <br>实机主组和展开组里可能有<strong>同一个按钮的两处入口</strong>（<code>keyboard_tools</code>
+          与 <code>theme</code>：同 label「主题」、同图标 <code>ic_tool_theme</code>、同点击绑定
+          <code>r5.a</code>，见 <code>at0.java:1440</code> / <code>:1447-1450</code>），实机互斥显示所以
+          屏幕只有一个「主题」；预览合并成一行时按按钮去重、保留先出现的那一枚，
+          不会出现两个一模一样的主题按钮。
           <br>图标自带实色（hex / rgb() / 具名色）就原样渲染；纯 <code>currentColor</code> 或黑白
           单色才跟随 <code>toolTextColor</code> / <code>accentColor</code> —— 与 App 的
           <code>hk0.w()</code> 判定一致。</div>
@@ -438,7 +445,6 @@
         <div id="pt-toolbar-status" class="status"></div>
         <div class="form-row form-inline">
           <label class="check"><input type="checkbox" id="pt-toolbar" checked> 在预览里显示工具栏</label>
-          <label class="check"><input type="checkbox" id="pt-toolbar-expanded"> 展开态（main → expanded，行尾箭头反向）</label>
         </div>
         <div class="toolbar">
           <button id="pt-font-pick" class="mini-button">导入符号字体（.otf / .ttf）</button>

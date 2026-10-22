@@ -159,14 +159,12 @@ var state = {
    * App 的工具栏是**键盘正上方**独立的一行（os.java，FrameLayout），不是键面的一部分。
    * 这些字段纯属预览建模，**不写进主题 JSON / 布局 JSON**（与边框/描边开关同一策略）：
    *   previewToolbar          是否在预览里画工具栏（默认画，能让主题作者看到效果）
-   *   previewToolbarExpanded  工具栏当前处于哪种状态（false = main / true = expanded）
    *   toolbarIcons            导入的图标 { 按钮id: {icon, activeIcon} }，为空则回落内置矢量
    *   previewFontFamily       导入的符号字体 family 名（挂到 --kb-preview-font）
    *   previewFontName         字体文件名（状态行展示用）
    *   previewFontCoverage     该字体覆盖的码位集合（解析失败为 null，表示"无法解析覆盖度"）
    *   previewFontFontFace     注册到 document.fonts 的 FontFace（清除时 unload） */
   previewToolbar: true,
-  previewToolbarExpanded: false,
   toolbarIcons: null,
   previewFontFamily: null,
   previewFontName: null,
@@ -2840,10 +2838,9 @@ function autosave() {
       swipeHintUp: state.swipeHintUp !== false,
       swipeHintDown: state.swipeHintDown !== false,
       swipeHintSide: state.swipeHintSide !== false,
-      /* 工具栏预览（toolbar-preview.js）：开关、两态、导入的图标。
+      /* 工具栏预览（toolbar-preview.js）：开关 + 导入的图标。
        * 字体**不存**：二进制没法进 localStorage，刷新后要重新导入（状态行会提示）。 */
       previewToolbar: state.previewToolbar !== false,
-      previewToolbarExpanded: state.previewToolbarExpanded === true,
       toolbarIcons: state.toolbarIcons || null
     }));
   } catch (e) { /* 忽略存储失败 */ }
@@ -7449,11 +7446,11 @@ function boot() {
         else if (d2.keyBorderEnabled === true) state.keyBorderEnabled = true;
         if (d2.keyStrokeEnabled === true) state.keyStrokeEnabled = true;
         else if (d2.keyStrokeEnabled === false) state.keyStrokeEnabled = false;
-        /* 工具栏预览三键（纯预览设置）：开关/两态用 === true/false 还原，
-         * 导入的图标是普通对象（清洗过的 SVG 标记），直接吃回来。 */
+        /* 工具栏预览（纯预览设置）：开关用 === true/false 还原，
+         * 导入的图标是普通对象（清洗过的 SVG 标记），直接吃回来。
+         * 旧草稿里的 previewToolbarExpanded 已废弃（不再有展开/收起两态），读到也忽略。 */
         if (d2.previewToolbar === false) state.previewToolbar = false;
         else if (d2.previewToolbar === true) state.previewToolbar = true;
-        state.previewToolbarExpanded = d2.previewToolbarExpanded === true;
         if (FE.isPlainObject(d2.toolbarIcons)) state.toolbarIcons = d2.toolbarIcons;
       }
     }

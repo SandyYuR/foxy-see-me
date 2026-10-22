@@ -564,8 +564,8 @@ html.site-light .st-split { color: #2e8b57; }
 .kbt[hidden] { display: none; }
 /* 横向滚动轨道：App 里工具栏没有「自己的宽度」这个概念，内容多了就是左右滑
  * （用户口径：工具栏和候选栏处在同一条横向布局里、无限宽）。
- * 轨道是**唯一**的滚动视口；行尾控制 chip 钉在轨道**外面**的 .kbt 右端，
- * 所以横向滑动不会把它带走 —— 收起/展开切换时它一个像素都不动。 */
+ * 轨道是**唯一**的滚动视口；工具栏一次画全部按钮（main + expanded），
+ * 行尾没有展开/收起 chip，多出来的图标靠拖动/滚轮/触摸滑出来。 */
 .kbt-track {
   width: 100%;
   overflow-x: auto;
@@ -594,8 +594,8 @@ html.site-light .st-split { color: #2e8b57; }
   width: max-content;
   min-width: 100%;
 }
-/* 轨道两端的渐隐提示：告诉用户「这一侧还有内容」，同时把滑到控制 chip 底下的
- * 内容柔和收掉，不会露出被切一半的按钮。宽度由 toolbar-preview.js 按 dp 写入。
+/* 轨道两端的渐隐提示：告诉用户「这一侧还有内容」，同时把滑到边缘的内容柔和收掉，
+ * 不会露出被切一半的按钮。宽度由 toolbar-preview.js 按 dp 写入（两端等宽）。
  * 底色取键盘面板底色（--kb-bg 由 app.js 随主题写入），没有主题时退回透明。 */
 .kbt-fade {
   position: absolute;
@@ -615,10 +615,6 @@ html.site-light .st-split { color: #2e8b57; }
   right: 0;
   background: linear-gradient(to left, var(--kb-bg, rgba(127, 127, 127, .0)) 0%, transparent 100%);
 }
-/* 展开态**没有**独立的返回行：实机里「<」确实是浮在 chip 行上方的独立子节点
- * （w20.java:343-357），但网页预览按用户要求把它做成行尾同一枚按钮 ——
- * 主态朝右（展开）、展开态朝左（收起），位置不动、不新增第二行，
- * 保证工具栏高度在两种状态之间完全一致。 */
 /* chip：不带主题时给一层中性底，导入主题后由行内 style 覆盖 */
 .kbt-chip {
   box-sizing: border-box;
@@ -641,11 +637,6 @@ html.site-light .st-split { color: #2e8b57; }
   font-weight: 500;
   line-height: 1.2;
 }
-/* 预览专用的展开/收起 chip：比普通 chip 小一圈，但仍是同底色的圆角方块，
- * 绝对定位钉在 .kbt 右端（在滚动轨道之外 —— 行内预留了同宽 padding-right），
- * 所以主态/展开态**同一像素位置**、只有箭头方向反过来，横向滑动也带不走它。 */
-.kbt-ctrl { user-select: none; }
-.kbt-ctrl:hover { filter: brightness(1.12); }
 
 /* ---------------- text_editor 专用预览 ----------------
  * Foxy 的 text_editor 不是一行普通键盘：ly0 充满原键盘容器，顶部是 ky0 光标触控板，

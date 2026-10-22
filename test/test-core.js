@@ -2009,6 +2009,27 @@ console.log('== 工具栏预览 ==');
   eq(FE.TOOLBAR_BUTTONS.clipboard.label, '剪贴板', '剪贴板中文名');
   eq(FE.TOOLBAR_BUTTONS.hide_keyboard.label, '收起键盘', '收起键盘中文名');
 
+  /* 单行全列表（用户口径 m08645）：main 在前、expanded 追加，去重保序、跳过空值 */
+  eq(FE.toolbarAllIds(FE.TOOLBAR_DEFAULT),
+    ['schema', 'deploy', 'settings', 'clipboard', 'keyboard_tools', 'rime_switches',
+     'hide_keyboard', 'size', 'one_hand', 'split_keyboard', 'voice'],
+    '默认配置 = main 7 项 + expanded 5 项去重后 11 项（theme 与 keyboard_tools 同一按钮）');
+  eq(FE.toolbarAllIds({ main: ['a', 'b', 'c'], expanded: ['d', 'a', 'e'] }),
+    ['a', 'b', 'c', 'd', 'e'], '重复 id 只保留首次出现（作者常把同一按钮放进两组）');
+  eq(FE.toolbarAllIds({}), [], '空配置 → 空列表（不崩）');
+  eq(FE.toolbarAllIds({ main: ['', null, 'x'], expanded: ['y'] }), ['x', 'y'],
+    '空值/缺键跳过，不产出空 chip');
+  eq(FE.toolbarAllIds(), FE.toolbarAllIds(FE.TOOLBAR_DEFAULT), '不传配置时按默认组合');
+  /* App 里 keyboard_tools 与 theme 是同一按钮（at0.java:1440 / :1447-1450：同 label、同图标、
+   * 同点击绑定 r5.a），主组与展开组互斥显示；合并成一行必须只剩一枚，否则出现两个「主题」 */
+  eq(FE.TOOLBAR_SAME_BUTTON, { theme: 'keyboard_tools' }, 'theme 与 keyboard_tools 是同一按钮');
+  eq(FE.toolbarAllIds({ main: ['keyboard_tools'], expanded: ['theme'] }), ['keyboard_tools'],
+    '主组已有时展开组的 theme 不再重复出现');
+  eq(FE.toolbarAllIds({ main: ['theme'], expanded: ['keyboard_tools'] }), ['theme'],
+    '只有展开组给了 theme 时保留 theme（先出现者胜，不丢按钮）');
+  eq(FE.toolbarAllIds({ main: ['theme'], expanded: ['size'] }), ['theme', 'size'],
+    '没有同义入口时 theme 正常保留');
+
   /* 文件名 → 按钮 id：必须精确匹配，成对图标靠「激活」后缀区分 */
   eq(FE.toolbarIconMatch('设置.svg'), { id: 'settings', active: false }, '设置.svg → settings');
   eq(FE.toolbarIconMatch('分体激活.svg'), { id: 'split_keyboard', active: true }, '分体激活 → split_keyboard 激活态');

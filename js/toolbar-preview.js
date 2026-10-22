@@ -3,8 +3,12 @@
  *
  * 目标：主题作者导入一套工具栏图标（19 个 svg 那种）后，能在网页里看到：
  *   - 工具栏**长什么样**（尺寸/圆角/间距/底色/文字色，全部按 App 的 os/w20/mf 常量）；
- *   - 图标**成对状态**（未展开用 icon，展开用 activeIcon + accentColor）；
+ *   - 图标**成对状态**（未激活用 icon，激活用 activeIcon + accentColor）；
  *   - 哪些图标自带实色（原样渲染）、哪些是单色可染色（跟随 toolTextColor/accentColor）。
+ *
+ * ⚠️ 按钮列表（用户口径）：**main + expanded 合成一条完整列表，全部一次画出来**，
+ *    不再有「展开态 / 收起态」两种状态、也不再有行尾那枚展开按钮。内容比键盘宽时
+ *    由 .kbt-track 横向滚动（拖动 / 滚轮 / 触摸）去看后面的图标。
  *
  * 权威依据（foxy_re 反编译）：
  *   - 容器底色 os.java:76 setBackgroundColor(a.e())；e() = key_border_enabled ? altKeyboardColor : candidateBarColor
@@ -183,23 +187,12 @@
   BUILTIN.keyboard_tools = BUILTIN.theme;
   FE.TOOLBAR_BUILTIN_SVG = BUILTIN;
 
-  /* 预览专用控制 chip 的矢量（App 里这两个动作没有图标：展开/收起由动作触发、
-   * 返回是展开容器自带的「<」文字）。这里统一用矢量，才能跟随 toolTextColor 上色。
-   * 方向按用户口径：主态朝**右**（"还有一组可以展开"），展开后同一枚变成朝**左**（收起）。 */
-  var CTRL_SVG = {
-    __more__: V('<path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M9,5.5l6.5,6.5 -6.5,6.5"/>'),
-    __back__: V('<path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M15,5.5l-6.5,6.5 6.5,6.5"/>')
-  };
-  FE.TOOLBAR_CONTROL_SVG = CTRL_SVG;
-
   /* ---------------- 预览渲染 ---------------- */
   var SPEC = {
     rowHeightDp: 40, iconDp: 22, gapDp: 3, cornerDp: 12,
     fontSp: 18, padXDp: 10, padYDp: 2,
-    /* 预览专用展开/收起键：比普通 chip 小一圈（用户要求「搞小一点」），
-     * 但仍然是有底色的圆角方块、看得出可点（不是旁边的小字挂件）。
-     * 行高由普通 chip 的 40dp 决定，所以缩小它**不会**改变工具栏高度。 */
-    ctrlDp: 28, ctrlIconDp: 16
+    /* 边缘渐隐层宽度（只做视觉提示，不占布局）。 */
+    fadeDp: 14
   };
   FE.TOOLBAR_SPEC = SPEC;
 
@@ -338,56 +331,32 @@
   }
   FE.toolbarActiveSet = activeSet;
 
-  /* 预览专用控制 chip（`__back__` 收起 / `__more__` 展开）。
-   * App 里这两个动作分别由 `collapse_toolbar` / `expand_toolbar` 触发，工具栏本身没有
-   * 这两格；预览补一个可点的入口，才能看到主题给的那组「剩余图标」。
-   *
-   * 尺寸：比普通 chip 小一圈（28dp 见方 / 16dp 图标，SPEC.ctrlDp），但仍是**有底色的
-   * 圆角方块**、箭头跟随 toolTextColor —— 看得出可点，不至于退化成旁边的小字挂件。
-   * 位置：绝对定位贴在这一行的右端（`.kbt-row` 预留同宽的 padding-right），
-   * 所以主态/展开态无论前面有几个图标，它都落在**同一个像素位置**（用户要求）。 */
-  function ctrlChip(id, unit, title, onClick) {
-    var el = FE.h('div', { class: 'kbt-chip kbt-ctrl', 'data-toolbar-btn': id });
-    el.style.height = dp(SPEC.ctrlDp, unit) + 'px';
-    el.style.width = dp(SPEC.ctrlDp, unit) + 'px';
-    el.style.borderRadius = dp(SPEC.cornerDp, unit) + 'px';
-    el.style.display = 'flex';
-    el.style.alignItems = 'center';
-    el.style.justifyContent = 'center';
-    el.style.boxSizing = 'border-box';
-    /* 与普通 chip 同一套底色（candidateBackgroundColor）：实机工具栏里的格子同源。 */
-    var bg = css('candidateBackgroundColor');
-    if (bg) el.style.background = bg;
-    el.style.color = css('toolTextColor') || '';
-    el.style.cursor = 'pointer';
-    el.style.position = 'absolute';
-    el.style.right = '0';
-    el.style.top = '50%';
-    el.style.transform = 'translateY(-50%)';
-    el.title = title;
-    var box = FE.h('span', { class: 'kb-icon-wrap kbt-icon' });
-    box.style.width = dp(SPEC.ctrlIconDp, unit) + 'px';
-    box.style.height = dp(SPEC.ctrlIconDp, unit) + 'px';
-    box.innerHTML = CTRL_SVG[id];
-    el.appendChild(box);
-    el.addEventListener('click', onClick);
-    return el;
-  }
+  /* App 里 `keyboard_tools` 与 `theme` 是**同一个按钮**的两处入口（用户问「为什么有两个主题按钮」）：
+   *   at0.java:1440 → keyboard_tools = r71.f0()：label = getString(R.string.tool_theme)（「主题」）、
+   *     icon = R.drawable.ic_tool_theme、点击绑定 wc(xc.a, r5.a)；
+   *   at0.java:1447-1450 → theme：同一 label、同一 icon、同一 r5.a 点击。
+   * 主组与展开组在实机**互斥显示**（w20.java:335 removeAllViews 后一次只装一组、os.java 只有一个行容器），
+   * 所以屏幕上永远只有一个「主题」。预览把两组拼成一行时必须按按钮去重，
+   * 否则就是用户看到的「两个一模一样的主题按钮」。
+   * 先出现者保留（默认配置主组在前 → 保留 keyboard_tools 那一枚，与实机主行第 5 格位置一致）。 */
+  FE.TOOLBAR_SAME_BUTTON = { theme: 'keyboard_tools' };
+  function buttonKey(id) { return FE.TOOLBAR_SAME_BUTTON[id] || id; }
 
-  function backChip(unit) {
-    return ctrlChip('__back__', unit, '收起工具栏，回到主工具栏（App 的 collapse_toolbar）', function () {
-      FE.state.previewToolbarExpanded = false;
-      if (FE.applyPreviewToolbar) FE.applyPreviewToolbar();
+  /* 一条完整列表 = 配置里的 main 组 + expanded 组，**按按钮去重后照原顺序拼起来**。
+   * 用户口径：预览不模拟「展开/收起」，一次把全部按钮画在同一行里；
+   * 装不下就横向滚动。顺序保持 main 在前、expanded 追加在后，稳定可预期。
+   * 去重是必要的：作者常把同一按钮同时放进两组，或放同义入口（theme / keyboard_tools）。 */
+  FE.toolbarAllIds = function (cfg) {
+    var c = cfg || FE.TOOLBAR_DEFAULT;
+    var out = [];
+    (c.main || []).concat(c.expanded || []).forEach(function (id) {
+      if (!id) return;
+      var key = buttonKey(id);
+      for (var i = 0; i < out.length; i++) if (buttonKey(out[i]) === key) return;
+      out.push(id);
     });
-  }
-
-  function moreChip(unit) {
-    return ctrlChip('__more__', unit, '展开工具栏，显示另外 ' +
-      ((FE.TOOLBAR_DEFAULT.expanded || []).length) + ' 个按钮（App 的 expand_toolbar）', function () {
-      FE.state.previewToolbarExpanded = true;
-      if (FE.applyPreviewToolbar) FE.applyPreviewToolbar();
-    });
-  }
+    return out;
+  };
 
   /* ---------------- 横向滚动轨道（用户口径：工具栏没有固定宽度） ----------------
    * App 里工具栏与候选栏是同一层级的横向布局（ox.java:646-649 两个 -1×0 weight 80 的兄弟），
@@ -396,7 +365,8 @@
    *     > .kbt-row（width:max-content、min-width:100%、不换行、不收缩）
    * 内容比视口短时 min-width:100% 让 row 铺满，space_around 与实机一致；
    * 内容比视口长时 row 自然延伸出去，超出部分裁在轨道外，可拖动/滚轮/触摸左右滑。 */
-  var scrollMemo = { main: 0, expanded: 0 };
+  /* 只有一条工具栏（不再分 main/expanded 两组），滚动位置记一个数就够。 */
+  var scrollMemo = 0;
   var dragState = null;
   var suppressClick = false;
 
@@ -406,7 +376,7 @@
   }
 
   /* 边缘渐隐：让「后面还有内容 / 前面还漏了内容」变成看得见的提示，
-   * 同时把滚动到控制 chip 底下的内容柔和收掉，不至于露出半块 chip。 */
+   * 也把被轨道边缘裁掉半块的 chip 柔和收掉。 */
   function updateFades(track, fadeL, fadeR) {
     if (!track || !fadeL || !fadeR) return;
     var left = track.scrollLeft || 0;
@@ -417,7 +387,7 @@
     fadeR.classList.toggle('on', hasRight);
   }
 
-  function bindTrack(track, host, key, fadeL, fadeR) {
+  function bindTrack(track, host, fadeL, fadeR) {
     if (!track || typeof track.addEventListener !== 'function') return;
     /* --- 拖动（鼠标 / 触控笔；触摸由浏览器原生横向滚动接管） --- */
     track.addEventListener('pointerdown', function (ev) {
@@ -471,17 +441,17 @@
       /* 到边界就停下（不冒泡去滚页面，避免「拖到尽头整页跳走」）。 */
       if (typeof ev.preventDefault === 'function') ev.preventDefault();
       track.scrollLeft = Math.max(0, Math.min(max, next));
-      scrollMemo[key] = track.scrollLeft;
+      scrollMemo = track.scrollLeft;
       updateFades(track, fadeL, fadeR);
     }, { passive: false });
     track.addEventListener('scroll', function () {
-      scrollMemo[key] = track.scrollLeft || 0;
+      scrollMemo = track.scrollLeft || 0;
       updateFades(track, fadeL, fadeR);
     });
-    /* 切换展开/收起、切换页签、改主题都会重画整条工具栏；
-     * 轨道位置按「当前这一组」记住，来回切换时不要被扔回最左端。 */
+    /* 切换页签、改主题、勾选状态都会重画整条工具栏；
+     * 轨道位置记住，重画时不要被扔回最左端。 */
     var maxLeft = (track.scrollWidth || 0) - (track.clientWidth || 0);
-    var want = Math.min(scrollMemo[key] || 0, Math.max(0, maxLeft));
+    var want = Math.min(scrollMemo || 0, Math.max(0, maxLeft));
     if (want > 0) track.scrollLeft = want;
     updateFades(track, fadeL, fadeR);
   }
@@ -503,20 +473,15 @@
      * 也不写底色 —— 否则会多出一条「比键盘窄/底色不同」的假差异。 */
     host.className = 'kbt';
     host.style.background = 'transparent';
-    /* 控制 chip 是 host 的绝对定位子节点，所以 host 要做它的定位参照 ——
-     * 它必须待在滚动轨道**外面**，否则会跟着内容一起滚走。 */
+    /* 两端的渐隐层是 host 的绝对定位子节点，所以 host 要做它们的定位参照。 */
     host.style.position = 'relative';
 
+    /* 用户口径（m08645）：**一次显示全部按钮** —— 主组 + 展开组拼成一条完整列表，
+     * 不再有「展开/收起」两种状态、也没有行尾那枚展开按钮。
+     * 装不下时靠 .kbt-track 横向拖动查看后面的图标。 */
     var cfg = s.toolbarConfig || FE.TOOLBAR_DEFAULT;
-    var expanded = !!s.previewToolbarExpanded;
-    var ids = (expanded ? cfg.expanded : cfg.main) || [];
-    var key = expanded ? 'expanded' : 'main';
+    var ids = FE.toolbarAllIds(cfg);
 
-    /* **单行、高度固定**（用户口径）：展开/收起不新增第二行，两种状态都只有这一条 chip 行，
-     * 工具栏总高度前后一致 —— 展开只是把这一行的按钮整体换成 expanded 那一组。
-     * 收起入口不再是独立一行：App 展开态里那个「<」是 FrameLayout 中浮在 chip 行上方的
-     * 独立子节点（w20.java:337-357），网页预览按用户要求把它做成**行尾同一枚按钮**
-     * （主态朝右＝展开、展开态朝左＝收起，位置不动），所以不再需要 .kbt-back-row。 */
     var track = FE.h('div', { class: 'kbt-track' });
 
     var row = FE.h('div', { class: 'kbt-row' });
@@ -536,11 +501,8 @@
     /* 间距：实机是每个 chip 自带 chipGap 3dp 四边外边距（w20.java:314-316），相邻净距 6dp。
      * 这里用 3dp 行内 gap 作紧凑近似（相邻净距 6dp 会让一行太松散）。 */
     row.style.gap = dp(SPEC.gapDp, u) + 'px';
-    /* 给钉在右端的控制 chip 留出它自己的位置（正好 28dp）——留在**行内**而不是轨道上：
-     * 轨道加 padding 会让「内容刚好装下」时也多出几像素可滚动量，主态就会误报一条右边缘渐隐。
-     * 只留 ctrlDp、不再多留一个 gapDp：space-around 本身会在最后一块右侧留出半格，
-     * 再叠一个 gap 就会让 360px 下的 8 格差 2px 放不下，凭空多出一小段可滚动量。 */
-    row.style.paddingRight = dp(SPEC.ctrlDp, u) + 'px';
+    /* 行内不再预留任何控制键的位置：行尾没有展开/收起 chip 了，
+     * 预留内距只会在「内容刚好装下」时凭空多出可滚动量。 */
     row.style.boxSizing = 'border-box';
     var act = activeSet();
     ids.forEach(function (id) { row.appendChild(chip(id, !!act[id], u)); });
@@ -548,19 +510,16 @@
 
     var fadeL = FE.h('div', { class: 'kbt-fade kbt-fade-l' });
     var fadeR = FE.h('div', { class: 'kbt-fade kbt-fade-r' });
-    fadeL.style.width = dp(14, u) + 'px';
-    fadeR.style.width = dp(SPEC.ctrlDp + SPEC.gapDp + 8, u) + 'px';
+    fadeL.style.width = dp(SPEC.fadeDp, u) + 'px';
+    /* 右端不再被控制 chip 占位，渐隐层与左端等宽（对称提示「这边还有图标」）。 */
+    fadeR.style.width = dp(SPEC.fadeDp, u) + 'px';
 
     host.appendChild(track);
     host.appendChild(fadeL);
     host.appendChild(fadeR);
-    /* 控制 chip：主态 = 展开（→）、展开态 = 收起（←）。**同一枚、同一位置**，
-     * 绝对定位钉在 host 右端（滚动轨道外），所以两种状态下它一个像素都不会动，
-     * 只有箭头方向反过来。 */
-    host.appendChild(expanded ? backChip(u) : moreChip(u));
 
-    bindTrack(track, host, key, fadeL, fadeR);
-    return { expanded: expanded, ids: ids.slice(), scrollable: canScrollX(track) };
+    bindTrack(track, host, fadeL, fadeR);
+    return { ids: ids.slice(), scrollable: canScrollX(track) };
   };
 
   /* 重渲染（只刷新预览，不动数据/撤销栈） */
@@ -637,20 +596,12 @@
       fontPick.addEventListener('click', function () { fontInput.click(); });
     }
     var showBox = document.getElementById('pt-toolbar');
-    var expandedBox = document.getElementById('pt-toolbar-expanded');
     var resetBtn = document.getElementById('pt-toolbar-reset');
 
     if (showBox) {
       showBox.checked = FE.state.previewToolbar !== false;
       showBox.addEventListener('change', function () {
         FE.state.previewToolbar = !!showBox.checked;
-        FE.applyPreviewToolbar();
-      });
-    }
-    if (expandedBox) {
-      expandedBox.checked = !!FE.state.previewToolbarExpanded;
-      expandedBox.addEventListener('change', function () {
-        FE.state.previewToolbarExpanded = !!expandedBox.checked;
         FE.applyPreviewToolbar();
       });
     }
@@ -666,7 +617,6 @@
         });
         Promise.all(pending).then(function (entries) {
           var rep = FE.importToolbarIcons(entries);
-          if (expandedBox) expandedBox.checked = !!FE.state.previewToolbarExpanded;
           var bits = ['已导入 ' + rep.ok.length + ' 个按钮图标'];
           if (rep.unmatched.length) bits.push('未匹配：' + rep.unmatched.join('、'));
           if (rep.skipped.length) bits.push('跳过：' + rep.skipped.map(function (x) { return x.name; }).join('、'));
@@ -678,7 +628,6 @@
     if (resetBtn) {
       resetBtn.addEventListener('click', function () {
         FE.clearToolbarIcons();
-        if (expandedBox) expandedBox.checked = false;
         setStatus('已清除导入的工具栏图标，回到内置矢量。', '');
       });
     }

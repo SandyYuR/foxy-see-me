@@ -5387,12 +5387,10 @@ console.log('== 自定义图标（icons）列表与编辑 ==');
 console.log('== 键盘上方工具栏预览 ==');
 {
   const savedTheme = FE.state.themeProfile;
-  const savedExpanded = FE.state.previewToolbarExpanded;
   const savedShow = FE.state.previewToolbar;
   const savedIcons = FE.state.toolbarIcons;
 
   FE.state.previewToolbar = true;
-  FE.state.previewToolbarExpanded = false;
   FE.state.toolbarIcons = null;
   FE.state.themeProfile = FE.normalizeThemeProfile({
     type: 'foxy.keyboard-theme', name: 'toolbar-probe',
@@ -5425,14 +5423,11 @@ console.log('== 键盘上方工具栏预览 ==');
   ok(row.parentNode === track, '.kbt-row 在轨道内（由轨道横向滚动）');
   eq(row.style.width, 'max-content', '行宽由内容撑开（无限宽，不被键盘宽度限死）');
   eq(row.style.minWidth, '100%', '内容比视口短时至少铺满（space_around 才是实机观感）');
-  ok(/px$/.test(String(row.style.paddingRight)), '行内右端给控制 chip 预留内距（放轨道上会误报可滚动）');
+  ok(!row.style.paddingRight, '行内不再预留控制键的位置（行尾没有展开键了）');
   eq(q('.kbt-fade', host).length, 2, '轨道两端各有一层渐隐提示');
   const mainChips = q('.kbt-chip', host);
-  eq(mainChips.length, 8, '主工具栏 7 个按钮 + 末位 1 个展开 chip');
-  ok(mainChips.some(function (c) { return c.getAttribute('data-toolbar-btn') === 'schema'; }), '主工具栏含「方案」按钮');
-  ok(!mainChips.some(function (c) { return c.getAttribute('data-toolbar-btn') === '__back__'; }), '主工具栏没有返回 chip');
-  eq(mainChips[mainChips.length - 1].getAttribute('data-toolbar-btn'), '__more__',
-    '展开 chip 落在第一行最后一个位置（不另起一行）');
+  eq(mainChips.length, 11, '一次画全部按钮：main 7 个 + expanded 5 个，去重后 11 个（theme 与 keyboard_tools 同一按钮）');
+  ok(mainChips.some(function (c) { return c.getAttribute('data-toolbar-btn') === 'schema'; }), '工具栏含「方案」按钮');
   /* 输入法开关是**文字 chip**（at0.java:1533-1573：iconRes=0 走 TextView 分支，
    * label 取 switch 的 states 当前项）。文案以 App 源码为准（用户口径）：
    * pinyin_simp.schema.yaml / stroke.schema.yaml 里 ascii_mode 是
@@ -5477,42 +5472,41 @@ console.log('== 键盘上方工具栏预览 ==');
   ok(String(byId('settings').style.color).indexOf('#112233') === 0, '单色图标套 toolTextColor');
   ok(String(byId('keyboard_tools').style.color).indexOf('#112233') === 0, 'keyboard_tools 图标同样套 toolTextColor');
 
-  /* 展开态：**仍是同一行、总高度不变**（用户口径：不要展开成两行），
-   * 只是前面几格换成 expanded 那一组，行尾那枚控制 chip 原地变成朝左的收起键。 */
-  const mainRowCount = q('.kbt-row', host).length;
-  FE.state.previewToolbarExpanded = true;
-  FE.renderPreviewOnly();
-  const expChips = q('.kbt-chip', host);
-  eq(q('.kbt-row', host).length, 1, '展开态依旧只有一行（不新增第二行）');
-  eq(q('.kbt-row', host).length, mainRowCount, '展开前后行数一致，工具栏高度不变');
-  eq(q('.kbt-back-row', host).length, 0, '不再有独立的返回行 .kbt-back-row');
-  eq(expChips.length, 6, '展开态 5 个按钮（含语音）+ 行尾 1 个收起 chip');
-  eq(expChips[expChips.length - 1].getAttribute('data-toolbar-btn'), '__back__',
-    '收起 chip 在行尾（与主态展开 chip 同一位置）');
-  eq(q('.kbt-row', host)[0].querySelectorAll('.kbt-chip').length, 5,
-    '5 个 chip 全在同一行里（收起键不另起一行，它钉在轨道外）');
-
-  /* 收起 chip 与普通 chip 同一套外观：currentColor 描边，颜色走 toolTextColor */
-  ok(String(expChips[expChips.length - 1].style.color).indexOf('#112233') === 0,
-    '收起 chip 用 toolTextColor（与普通 chip 同级）');
-  eq(q('.kbt-ctrl', host).length, 1, '展开态只有一个控制 chip（收起），没有多的展开键');
-  eq(q('.kbt-label', host).length, 0, '展开态没有纯文字按钮（4 个都有内置矢量）');
+  /* 一条完整列表（用户口径 m08645）：main 组在前、expanded 组追加在后，
+   * 全部按钮一次画在同一行里；行尾没有展开/收起 chip，多的靠轨道横向拖出来。 */
+  const allChips = q('.kbt-chip', host);
+  const allIds = allChips.map(function (c) { return c.getAttribute('data-toolbar-btn'); });
+  eq(allIds, ['schema', 'deploy', 'settings', 'clipboard', 'keyboard_tools', 'rime_switches',
+    'hide_keyboard', 'size', 'one_hand', 'split_keyboard', 'voice'],
+    '列表 = main 组顺序 + expanded 组顺序（按按钮去重后拼接）');
+  /* 用户问「为什么工具栏有两个主题按钮」：实机 keyboard_tools（label=主题、ic_tool_theme、
+   * 点击 r5.a）与 theme 是同一个按钮，主组/展开组互斥显示；合并成一行时只能剩一枚。 */
+  eq(allIds.filter(function (id) { return id === 'theme' || id === 'keyboard_tools'; }).length, 1,
+    '默认列表里「主题」只出现一次（不会两个一模一样的主题按钮）');
+  eq(allIds.indexOf('theme'), -1, '默认配置保留主组的 keyboard_tools，不再追加展开组的 theme');
+  eq(q('.kbt-row', host).length, 1, '全部按钮在同一行（不另起第二行）');
+  eq(q('.kbt-ctrl', host).length, 0, '没有行尾控制 chip（展开键已删除）');
+  ok(allIds.indexOf('__more__') < 0 && allIds.indexOf('__back__') < 0,
+    '没有 __more__ / __back__ 残留');
+  eq(q('.kbt-toggle', host).length, 0, '不再有独立一行的展开/收起入口');
+  eq(allChips[allChips.length - 1].getAttribute('data-toolbar-btn'), 'voice',
+    '行尾就是最后一个真实按钮，没有控制键占位');
+  eq(q('.kbt-label', host).length, 1, '只有一个文字 chip（输入法开关），其余都有图标');
   /* 激活色只给「真的处于激活态」的按钮（w20.java:279 z2 = os.k.contains(id)）。
    * os.k 全仓只有三处写入：ox.java:882-884 / w20.java:363-365 的 size / one_hand /
-   * split_keyboard —— 其余按钮永不激活。所以展开态里 theme / size / one_hand 必须
-   * 用未激活色 toolTextColor，只有真开了分体才让 split_keyboard 转 accentColor。 */
-  const expById = function (id) {
+   * split_keyboard —— 其余按钮永不激活，一律用未激活色 toolTextColor。 */
+  const allById = function (id) {
     return q('.kbt-chip', host).filter(function (c) { return c.getAttribute('data-toolbar-btn') === id; })[0];
   };
-  ok(String(expById('theme').style.color).indexOf('#112233') === 0,
-    '展开态里 theme 用未激活色（os.k 从未加入 theme）');
-  ok(String(expById('size').style.color).indexOf('#112233') === 0,
-    '展开态里 size 用未激活色（尺寸菜单没打开）');
-  ok(String(expById('one_hand').style.color).indexOf('#112233') === 0,
-    '展开态里 one_hand 用未激活色（单手模式没开）');
-  ok(!!expById('voice'), '展开组含「语音」按钮（用户要求在展开态加入）');
-  ok(!!q('.kbt-icon', expById('voice')).length, '语音按钮有图标（主题包 语音.svg，无则回落内置麦克风）');
-  ok(String(expById('split_keyboard').style.color).indexOf('#112233') === 0,
+  ok(String(allById('keyboard_tools').style.color).indexOf('#112233') === 0,
+    '键盘工具（显示为「主题」）用未激活色（os.k 从未加入它）');
+  ok(String(allById('size').style.color).indexOf('#112233') === 0,
+    'size 用未激活色（尺寸菜单没打开）');
+  ok(String(allById('one_hand').style.color).indexOf('#112233') === 0,
+    'one_hand 用未激活色（单手模式没开）');
+  ok(!!q('.kbt-icon', allById('voice')).length,
+    '语音按钮有图标（主题包 语音.svg，无则回落内置麦克风）');
+  ok(String(allById('split_keyboard').style.color).indexOf('#112233') === 0,
     '分体未开时 split_keyboard 也是未激活色');
   const savedSplit = FE.state.splitMode;
   FE.state.splitMode = true;
@@ -5522,39 +5516,7 @@ console.log('== 键盘上方工具栏预览 ==');
   })[0].style.color).indexOf('#445566') === 0, '分体开关打开后 split_keyboard 才转 accentColor');
   FE.state.splitMode = savedSplit;
   FE.renderPreviewOnly();
-  eq(host.textContent.indexOf('收起'), -1, '不再有「收起」文字提示（控制 chip 只用图标）');
-  eq(q('.kbt-toggle', host).length, 0, '不再有独立一行的展开/收起提示');
-
-  /* 点展开 chip → 切换到展开态；点返回 chip → 回到主工具栏 */
-  FE.state.previewToolbarExpanded = false;
-  FE.renderPreviewOnly();
-  /* DOM 桩不支持属性选择器，按 data-toolbar-btn 过滤（与上面的 byId 同一写法） */
-  const more = q('.kbt-chip', host).filter(function (c) {
-    return c.getAttribute('data-toolbar-btn') === '__more__';
-  })[0];
-  ok(!!more, '主工具栏第一行末位有展开 chip');
-  ok(!!more.querySelectorAll('.kbt-icon')[0], '展开 chip 用 svg 图标而不是小字');
-  /* 缩小版（用户要求「搞小一点」），但仍是圆角方块、看得出可点 */
-  ok(parseFloat(more.style.width) < parseFloat(mainChips[0].style.width),
-    '展开 chip 比普通 chip 小一圈');
-  eq(more.style.width, more.style.height, '展开 chip 仍是正方形（有分量感的方块，不是扁挂件）');
-  ok(parseFloat(more.style.width) >= FE.kbDp(24, 38) - 0.01, '展开 chip 不退化成一枚小图标（≥24dp）');
-  eq(more.style.position, 'absolute', '展开 chip 绝对定位，锁定行尾同一位置');
-  ok(more.parentNode === host, '控制 chip 挂在轨道外的 #preview-toolbar 上（横向滑动带不走它）');
-  eq(row.querySelectorAll('.kbt-chip').length, 7, '轨道内的行只有 7 个普通 chip，控制 chip 不在行内');
-  more._fire('click');
-  eq(FE.state.previewToolbarExpanded, true, '点展开 chip 切到展开态');
-  eq(q('.kbt-chip', host).length, 6, '展开态已重渲染');
-  const backChipEl = q('.kbt-chip', host).filter(function (c) {
-    return c.getAttribute('data-toolbar-btn') === '__back__';
-  })[0];
-  ok(!!backChipEl, '展开态出现收起 chip');
-  eq(backChipEl.style.position, 'absolute', '收起 chip 同样绝对定位（与展开 chip 同一位置）');
-  eq(backChipEl.style.width, more.style.width, '收起 chip 与展开 chip 同尺寸（同一枚按钮）');
-  eq(backChipEl.style.right, more.style.right, '收起 chip 与展开 chip 右端对齐（位置不动）');
-  backChipEl._fire('click');
-  eq(FE.state.previewToolbarExpanded, false, '点收起 chip 回到主工具栏');
-  eq(q('.kbt-chip', host).length, 8, '主工具栏已恢复（7 + 展开 chip）');
+  eq(host.textContent.indexOf('收起'), -1, '工具栏里没有「收起」文案（控制键已删）');
 
   /* 关闭开关 → 整条工具栏隐藏（纯预览开关，不写主题 JSON） */
   $('pt-toolbar').checked = false; $('pt-toolbar')._fire('change');
@@ -5581,7 +5543,6 @@ console.log('== 键盘上方工具栏预览 ==');
   ]);
   eq(rep.ok, ['settings'], '图标准确映射到 settings');
   eq(rep.unmatched, ['删除.svg'], '删除.svg 不在内置按钮表 → 未匹配（不报错）');
-  eq(FE.state.previewToolbarExpanded, false, '导入图标不改变展开态');
   FE.renderPreviewOnly();
   const setChip = q('.kbt-chip', $('preview-toolbar')).filter(function (c) {
     return c.getAttribute('data-toolbar-btn') === 'settings';
@@ -5600,28 +5561,29 @@ console.log('== 键盘上方工具栏预览 ==');
     '未激活用实色 icon、激活用单色 activeIcon');
   ok(!FE.iconTintable(pair.markup) && FE.iconTintable(pairOn.markup), '两态的染色判定各自独立');
 
-  /* 收起态那格是 keyboard_tools、展开态那格是 theme，但主题包只给了「主题2.svg」。
-   * 实机 keyboard_tools 复用的就是 ic_tool_theme（r71.f0），所以两态必须是**同一枚**图标，
-   * 不能一边主题图标、一边内置调色板（用户肉眼最先看到的就是这个不一致）。 */
+  /* keyboard_tools 与 theme 在实机是**同一个按钮**（at0.java:1440 / :1447-1450：同 label、
+   * 同 ic_tool_theme、同点击 r5.a），合并成一行只会剩一枚，所以主题包给的「主题2.svg」
+   * 必须落到留下的那一枚上；单独配置里只有 theme 时，theme 入口取到同一枚图。 */
   FE.clearToolbarIcons();
   FE.importToolbarIcons([{ name: '主题2.svg', text: REAL_COLOR.replace('svg:', '') }]);
-  FE.state.previewToolbarExpanded = false;
   FE.renderPreviewOnly();
   const mainKt = q('.kbt-chip', $('preview-toolbar')).filter(function (c) {
     return c.getAttribute('data-toolbar-btn') === 'keyboard_tools';
   })[0];
-  ok(!!mainKt && !!mainKt.querySelectorAll('.kbt-icon')[0], '收起态 keyboard_tools 用主题图标（不再回落内置矢量）');
+  ok(!!mainKt && !!mainKt.querySelectorAll('.kbt-icon')[0], 'keyboard_tools 用主题图标（不再回落内置矢量）');
   const ktMarkup = mainKt.querySelectorAll('.kbt-icon')[0].innerHTML;
-  ok(ktMarkup.indexOf('3a5470') >= 0, '收起态 keyboard_tools 画的是主题自带实色图标');
-  FE.state.previewToolbarExpanded = true;
+  ok(ktMarkup.indexOf('3a5470') >= 0, 'keyboard_tools 画的是主题自带实色图标');
+  /* 只有 theme（没有 keyboard_tools）的配置：theme 入口单独出现、取同一枚图标 */
+  const savedCfg = FE.state.toolbarConfig;
+  FE.state.toolbarConfig = { main: ['theme'], expanded: [] };
   FE.renderPreviewOnly();
-  const expTheme = q('.kbt-chip', $('preview-toolbar')).filter(function (c) {
-    return c.getAttribute('data-toolbar-btn') === 'theme';
-  })[0];
-  ok(!!expTheme && !!expTheme.querySelectorAll('.kbt-icon')[0], '展开态 theme 同样有主题图标');
-  eq(expTheme.querySelectorAll('.kbt-icon')[0].innerHTML, ktMarkup,
-    '收起态 keyboard_tools 与展开态 theme 是同一枚图标（两态一致）');
-  FE.state.previewToolbarExpanded = false;
+  const themeOnly = q('.kbt-chip', $('preview-toolbar'));
+  eq(themeOnly.length, 1, '只有 theme 的配置只画一枚 chip（不凭空多一个）');
+  ok(!!themeOnly[0].querySelectorAll('.kbt-icon')[0], 'theme 同样有主题图标');
+  eq(themeOnly[0].querySelectorAll('.kbt-icon')[0].innerHTML, ktMarkup,
+    'theme 与 keyboard_tools 取到同一枚图标（实机复用 ic_tool_theme）');
+  FE.state.toolbarConfig = savedCfg;
+  FE.renderPreviewOnly();
 
   FE.clearToolbarIcons();
   FE.renderPreviewOnly();
@@ -5643,7 +5605,6 @@ console.log('== 键盘上方工具栏预览 ==');
   eq(FE.toolbarIconCount(), 0, '「清除」按钮清空导入图标');
 
   FE.state.themeProfile = savedTheme;
-  FE.state.previewToolbarExpanded = savedExpanded;
   FE.state.previewToolbar = savedShow;
   FE.state.toolbarIcons = savedIcons;
   FE.renderPreviewOnly();
@@ -5746,10 +5707,11 @@ console.log('== 工具栏/字体：样式与页面结构 ==');
   /* 一体化后工具栏不再自带宽度/底条：父级 .kb 已经限宽并给了底色 */
   ok(!/\.kbt-wide\s*\{/.test(cssSrc), '.kbt-wide 已删除（工具栏不再单独限宽）');
   ok(!/\.kbt-bar\s*\{/.test(cssSrc), '.kbt-bar 已删除（不再有独立圆角底条）');
-  ok(!/\.kbt-back-row\s*\{/.test(cssSrc), '.kbt-back-row 已删除（展开态不新增第二行）');
-  /* 行尾控制 chip：缩小 + 绝对定位在行尾同一像素位置，只有箭头反向 */
+  ok(!/\.kbt-back-row\s*\{/.test(cssSrc), '.kbt-back-row 已删除（没有展开态返回键）');
+  /* 行尾展开/收起控制 chip 已彻底删除（用户口径：一次显示全部图标，多的靠拖动） */
   const tbSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'toolbar-preview.js'), 'utf8');
-  ok(/position\s*=\s*'absolute'/.test(tbSrc), '控制 chip 绝对定位钉在行尾（位置固定不随内容移动）');
+  ok(!/kbt-ctrl/.test(tbSrc) && !/kbt-ctrl/.test(cssSrc), '行尾控制 chip 的代码与样式都已删除');
+  ok(/FE\.toolbarAllIds\s*=/.test(tbSrc), '列表由 FE.toolbarAllIds 合并 main + expanded（去重保序）');
   ok(/\.kbt\s*\{[^}]*width:\s*100%/.test(cssSrc), '.kbt 撑满父级（#preview-kb）宽度');
   ok(/\.kbt-row\s*\{[^}]*display:\s*flex/.test(cssSrc), '.kbt-row 是 flex 行');
   ok(/\.kbt-chip\s*\{[^}]*overflow:\s*hidden/.test(cssSrc), '.kbt-chip 不随内容撑破');
@@ -5763,7 +5725,7 @@ console.log('== 工具栏/字体：样式与页面结构 ==');
   ok(/\.kbt-chip\s*\{[^}]*flex:\s*0\s+0\s+auto/.test(cssSrc), 'chip 不收缩（宽度不够就横向滚，不压扁）');
   ok(/\.kbt-fade\s*\{[^}]*position:\s*absolute/.test(cssSrc), '轨道两端有绝对定位的渐隐提示层');
   ok(/linear-gradient/.test(cssSrc), '渐隐层用线性渐变（否则看不见）');
-  ok(/scrollMemo/.test(tbSrc), '滚动位置按 main/expanded 分别记忆（切换不跳回最左）');
+  ok(/scrollMemo/.test(tbSrc), '滚动位置跨重渲染保留（切换页面回来不跳回最左）');
   ok(/setPointerCapture/.test(tbSrc) && /typeof\s+track\.setPointerCapture\s*===\s*'function'/.test(tbSrc),
     '拖动用 setPointerCapture 且对 DOM 桩做能力守卫');
   ok(/suppressClick/.test(tbSrc), '拖动后吞掉误触的 click（不会把拖动当成点按钮）');
@@ -5784,9 +5746,10 @@ console.log('== 工具栏/字体：样式与页面结构 ==');
   const tbJsAt = htmlSrc.indexOf('js/toolbar-preview.js');
   ok(fontAt > sysym && tbJsAt > fontAt, 'font-preview.js / toolbar-preview.js 在 symbol-preview.js 之后加载');
   ok(htmlSrc.indexOf('键盘上方的工具栏') >= 0, '主题页说明已改为「画键盘 + 键盘上方的工具栏」');
-  ok(htmlSrc.indexOf('展开更多按钮') >= 0 || htmlSrc.indexOf('不等于「激活」') >= 0,
-    '主题页说明已澄清「展开更多按钮 ≠ 激活」');
-  ok(htmlSrc.indexOf('横向滚动') >= 0, '主题页说明已写明工具栏是横向滚动的');
+  ok(htmlSrc.indexOf('展开更多按钮') < 0,
+    '过期说明「展开更多按钮」已删除（行尾没有展开键了）');
+  ok(htmlSrc.indexOf('拖动') >= 0 && htmlSrc.indexOf('渐隐') >= 0,
+    '主题页说明已写明工具栏装不下靠拖动、两端渐隐');
   ok(htmlSrc.indexOf('只画<b>一个字</b>') < 0 && htmlSrc.indexOf('所以预览也取首字') < 0,
     '过期说明「实机只画一个字 / 预览取首字」已删除');
   ok(htmlSrc.indexOf('不含 App 的候选栏 / 工具栏') < 0, '过期说明「不含候选栏/工具栏」已删除');
