@@ -6990,8 +6990,12 @@ function initToolbar() {
    * 输入框里已经填了名字时把它带进对话框（这样「新建」与「改名」走同一套校验）。 */
   (function wireIconsAdd() {
     var inp = $('icons-new'), btn = $('icons-add');
-    if (!btn || !FE.openIconDialog) return;
+    /* openIconDialog 来自 key-dialog.js（本文件之后加载）；initToolbar 在 boot() 时
+     * 就跑过一遍，那时它还没定义。监听必须先挂上，可用性留到点击时再检查 ——
+     * 绑定时早退会让按钮永远没有监听（曾因此「点了没反应」）。 */
+    if (!btn) return;
     function doAdd() {
+      if (!FE.openIconDialog) return;
       var name = inp ? inp.value.trim() : '';
       var map = (state.profile && isPlainObject(state.profile.icons)) ? state.profile.icons : {};
       if (name && FE.isBuiltinIcon(name)) { FE.uiAlert('“' + name + '” 是内置图标名，不需要自定义'); if (inp) inp.focus(); return; }

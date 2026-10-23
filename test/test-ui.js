@@ -5205,6 +5205,38 @@ console.log('== 拖动手势（drag）面板 ==');
   eq(dragOut.step, 12, '保存后 step 保留');
   eq(dragOut.feedback, 'key', '保存后 feedback 保留');
 
+  /* 大写 feedback（Foxy 契约允许 "KEY"）：回填选中对应小写 option，
+   * 重新保存时归一化成规范小写 —— 与 modifier 字段同一政策 */
+  documentStub._openDialogs.length = 0;
+  let dragUpper = 'UNSET';
+  FE.openGestureDialog({
+    slot: 'drag',
+    gesture: { feedback: 'KEY', left: { type: 'key', key: 'LEFT' } },
+    onChange: v => { dragUpper = v; }
+  });
+  const duDlg = documentStub._openDialogs[0];
+  const duFb = duDlg.querySelectorAll('select').filter(s =>
+    s.querySelectorAll('option').some(o => o.getAttribute('value') === 'none'))[0];
+  eq(duFb.value, 'key', '大写 feedback 回填到 key option（不再误显 vibrate）');
+  duDlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  eq(dragUpper.feedback, 'key', '大写 feedback 重新保存归一化为小写');
+  ok(dragUpper.left && dragUpper.left.type === 'key', '方向槽位原样保留');
+  /* 大写 VIBRATE 命中 vibrate option → 保存时按默认省略该字段（语义同为 vibrate） */
+  documentStub._openDialogs.length = 0;
+  let dragVib = 'UNSET';
+  FE.openGestureDialog({
+    slot: 'drag',
+    gesture: { feedback: 'VIBRATE', left: { type: 'key', key: 'LEFT' } },
+    onChange: v => { dragVib = v; }
+  });
+  const dvDlg = documentStub._openDialogs[0];
+  const dvFb = dvDlg.querySelectorAll('select').filter(s =>
+    s.querySelectorAll('option').some(o => o.getAttribute('value') === 'none'))[0];
+  eq(dvFb.value, 'vibrate', '大写 VIBRATE 回填到 vibrate option');
+  dvDlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  ok(dragVib.feedback === undefined, 'VIBRATE 重新保存省略字段（默认即 vibrate）');
+  ok(dragVib.left && dragVib.left.type === 'key', 'VIBRATE 用例方向槽位保留');
+
   /* 「清除（置 null 屏蔽继承）」把整条 drag 置 null（文档：drag:null 删除 drag） */
   documentStub._openDialogs.length = 0;
   let dragNull = 'UNSET';
@@ -5241,9 +5273,37 @@ console.log('== 自定义图标（icons）列表与编辑 ==');
     'icons 行用载荷渲染色块预览');
   ok(/使用 \d+/.test(icRows[0].textContent), 'icons 行显示引用次数（实际 ' + icRows[0].textContent + '）');
 
+  /* 「+ 新建自定义图标」按钮：app.js 在 key-dialog.js 之前加载，
+   * 绑定时不能因 FE.openIconDialog 未定义而早退（曾在绑定时检查 → 按钮永远无反应）。 */
+  documentStub._openDialogs.length = 0;
+  $('icons-add').click();
+  const addDlg = documentStub._openDialogs[documentStub._openDialogs.length - 1];
+  ok(!!addDlg && addDlg.open, '点「+ 新建自定义图标」打开对话框（不再无反应）');
+  if (addDlg) {
+    const addName = addDlg.querySelectorAll('input').filter(i => i.getAttribute('type') === 'text')[0];
+    const addPayload = addDlg.querySelectorAll('textarea')[0];
+    addName.value = 'foxy.star';
+    addName._fire('input');
+    addPayload.value = 'svg:<svg viewBox="0 0 24 24"><path d="M2 2"/></svg>';
+    addPayload._fire('input');
+    addDlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
+    ok(!addDlg.open, '填名字与合法载荷后保存关闭对话框');
+    ok(!!FE.state.profile.icons['foxy.star'], '新建图标写入 profile.icons');
+    FE.renderAll();
+    ok($('icons-list').querySelectorAll('.def-item.def-row-click')
+      .some(r => r.querySelectorAll('.def-name')[0].textContent === 'foxy.star'),
+      'icons 列表刷新出新建的行');
+    /* 清掉刚建的图标，保持本块后续「改名 foxy.star」的重名校验可走通 */
+    delete FE.state.profile.icons['foxy.star'];
+    FE.renderAll();
+    documentStub._openDialogs.length = 0;
+  }
+
   /* 点行 → 编辑对话框；载荷不是 svg:/xml: 时拒绝保存 */
   documentStub._openDialogs.length = 0;
-  icRows[0]._fire('click');
+  const editRow = $('icons-list').querySelectorAll('.def-item.def-row-click')
+    .filter(r => r.querySelectorAll('.def-name')[0].textContent === 'foxy.heart')[0];
+  editRow._fire('click');
   const icDlg = documentStub._openDialogs[0];
   ok(!!icDlg, '点 icons 行打开编辑对话框');
   const icName = icDlg.querySelectorAll('input').filter(i => i.getAttribute('type') === 'text')[0];

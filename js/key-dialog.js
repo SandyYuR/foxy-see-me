@@ -1263,8 +1263,16 @@ FE.openGestureDialog = function (opts) {
     feedbackSel.appendChild(h('option', { value: fb }, fb === 'none' ? 'none（无反馈）' :
       (fb === 'vibrate' ? 'vibrate（逐步震动，默认）' : 'key（完整按键反馈）')));
   });
-  feedbackSel.value = (isDrag && FE.isPlainObject(g) && FE.DRAG_FEEDBACKS.indexOf(g.feedback) >= 0)
-    ? g.feedback : 'vibrate';
+  /* 回填大小写不敏感：Foxy 契约允许 "KEY" / "Vibrate" 等写法，下拉统一选中
+   * 对应的小写 option；非法值（非枚举）才回落 vibrate。保存时 collectDragValue
+   * 写回的是下拉值，因此重新保存会把用户原文归一化成规范小写 —— 与 modifier
+   * 字段「图形界面重新保存时写规范形式」同一政策。 */
+  var fbValue = 'vibrate';
+  if (isDrag && FE.isPlainObject(g) && typeof g.feedback === 'string') {
+    var fbLower = g.feedback.toLowerCase();
+    if (FE.DRAG_FEEDBACKS.indexOf(fbLower) >= 0) fbValue = fbLower;
+  }
+  feedbackSel.value = fbValue;
 
   function dragSlotValue(key) {
     return Object.prototype.hasOwnProperty.call(dragDraft, key) ? dragDraft[key] : undefined;
