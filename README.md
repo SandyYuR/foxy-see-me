@@ -50,7 +50,7 @@ Android/data/com.fxliang.foxy/files/foxy/frontend/layouts/
 - [文档索引](docs/README.md)：按用户、代理和维护者列出全部入口。
 - [项目历史与决策记录](docs/history/project-history.md)：原始任务、长期决策、功能演进、修复背景、实测数据和测试基线。
 - [代理修改指南](AGENT.md)：代理改代码前必须遵守的硬约束和验证流程。
-- [格式规范与 Schema](skills/)：`SKILL.md` 以及布局、popup、definitions 的 JSON Schema。
+- [格式规范与 Schema](skills/)：`SKILL.md`、布局 / popup / definitions 的 JSON Schema，以及 [Foxy JavaScript 插件指南](skills/Foxy%20JavaScript%20Plugin%20Guide.md) 与示例插件 `qwen-asr.js`。
 
 ## 格式与范围
 
