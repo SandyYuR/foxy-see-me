@@ -1,0 +1,85 @@
+{
+  "actions": {
+    "copy": {
+      "type": "key",
+      "key": "C",
+      "meta": [
+        "CTRL",
+        "SHIFT"
+      ]
+    },
+    "mod": {
+      "type": "modifier",
+      "modifier": "CTRL",
+      "state": "LOCKED"
+    }
+  },
+  "keys": {
+    "k": {
+      "label": "X",
+      "tap": "copy",
+      "doubleTap": {
+        "action": "mod"
+      },
+      "longPress": {
+        "type": "commit",
+        "text": "hi"
+      },
+      "swipe": {
+        "up": {
+          "type": "switch_layout",
+          "layout": "numpad"
+        },
+        "down": {
+          "type": "app",
+          "command": "select_schema",
+          "argument": "wubi"
+        },
+        "left": {
+          "type": "app",
+          "command": "toggle_toolbar_container",
+          "argument": "c1"
+        },
+        "right": {
+          "type": "app",
+          "command": "expand_switches",
+          "argument": "false"
+        }
+      }
+    }
+  },
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              {
+                "ref": "k"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    "numpad": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              {
+                "label": "A",
+                "tap": {
+                  "type": "key",
+                  "key": "A"
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

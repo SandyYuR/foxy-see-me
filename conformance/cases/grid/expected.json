@@ -1,0 +1,143 @@
+{
+  "profile": true,
+  "statuses": {
+    "idle": {
+      "totalUnits": 3.0,
+      "hasDynamicVariants": false,
+      "keyboardHeightPercent": null,
+      "keyboardHeightPercentLandscape": null,
+      "sidePaddingDp": null,
+      "sidePaddingLandscapeDp": null,
+      "bottomPaddingDp": null,
+      "bottomPaddingLandscapeDp": null,
+      "icons": {},
+      "sections": [
+        {
+          "kind": "grid",
+          "columns": 3,
+          "rows": 2,
+          "rowHeights": [
+            1.0,
+            2.0
+          ],
+          "cells": [
+            {
+              "column": 0,
+              "row": 0,
+              "columnSpan": 2,
+              "rowSpan": 1,
+              "key": {
+                "label": "a",
+                "weight": 1.0,
+                "autoWidth": false,
+                "height": 1.0,
+                "modifier": null,
+                "keyType": null,
+                "id": null,
+                "statusLabel": null,
+                "textSize": null,
+                "hintTextSize": null,
+                "hintTextSizes": {},
+                "shiftedLabel": null,
+                "icon": null,
+                "iconName": null,
+                "spacer": false,
+                "colors": null,
+                "gestures": [
+                  {
+                    "kind": "click",
+                    "label": "a",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "key",
+                        "key": "A"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "column": 2,
+              "row": 0,
+              "columnSpan": 1,
+              "rowSpan": 1,
+              "key": {
+                "label": "B",
+                "weight": 1.0,
+                "autoWidth": false,
+                "height": 1.0,
+                "modifier": null,
+                "keyType": null,
+                "id": null,
+                "statusLabel": null,
+                "textSize": null,
+                "hintTextSize": null,
+                "hintTextSizes": {},
+                "shiftedLabel": null,
+                "icon": null,
+                "iconName": null,
+                "spacer": false,
+                "colors": null,
+                "gestures": [
+                  {
+                    "kind": "click",
+                    "label": "B",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "key",
+                        "key": "B"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "column": 0,
+              "row": 1,
+              "columnSpan": 1,
+              "rowSpan": 1,
+              "key": {
+                "label": "C",
+                "weight": 1.0,
+                "autoWidth": false,
+                "height": 1.0,
+                "modifier": null,
+                "keyType": null,
+                "id": null,
+                "statusLabel": null,
+                "textSize": null,
+                "hintTextSize": null,
+                "hintTextSizes": {},
+                "shiftedLabel": null,
+                "icon": null,
+                "iconName": null,
+                "spacer": false,
+                "colors": null,
+                "gestures": [
+                  {
+                    "kind": "click",
+                    "label": "C",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "key",
+                        "key": "C"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

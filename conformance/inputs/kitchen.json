@@ -1,0 +1,119 @@
+{
+  "actions": {
+    "act.copy": { "type": "key", "key": "C", "meta": ["CTRL"] },
+    "act.text": { "type": "text", "text": "hi" }
+  },
+  "macros": {
+    "m1": [ { "action": "act.copy" }, { "type": "key", "key": "BACKSPACE" } ]
+  },
+  "keys": {
+    "k.longbase": {
+      "ref": "rime.q",
+      "longPress": { "repeat": true, "action": { "type": "key", "key": "BACKSPACE" } }
+    },
+    "k.longref": {
+      "ref": "k.longbase",
+      "longPress": { "ref": "k.longbase", "repeat": false, "label": "LP", "popup": false }
+    },
+    "k.hold": {
+      "ref": "rime.space",
+      "hold": {
+        "label": "Hold",
+        "hint": "H",
+        "popup": false,
+        "start": { "type": "app", "command": "voice_start" },
+        "end": { "type": "app", "command": "voice_stop" }
+      }
+    },
+    "k.holdref": {
+      "ref": "k.hold",
+      "hold": { "ref": "k.hold", "label": "Reuse", "start": { "type": "key", "key": "A" } }
+    },
+    "k.double": { "ref": "rime.a", "doubleTap": { "ref": "rime.b" } },
+    "k.swipes": {
+      "ref": "rime.q",
+      "swipe": {
+        "up": { "ref": "rime.Q" },
+        "down": { "action": { "type": "text", "text": "d" } },
+        "left": { "ref": "rime.Left", "label": "L", "popup": false },
+        "right": { "action": { "type": "key", "key": "RIGHT" } }
+      }
+    },
+    "k.appearance": {
+      "ref": "rime.a",
+      "label": "日",
+      "shiftedLabel": "A",
+      "keyType": "FUNCTION",
+      "modifier": "CTRL",
+      "id": "custom",
+      "statusLabel": { "source": "schema_name" },
+      "textSize": 18,
+      "hintTextSize": { "up": 10, "down": 9 },
+      "icon": "shift",
+      "height": 1.25,
+      "colors": {
+        "text": "#FFFFFFFF",
+        "background": "#4CAF50",
+        "states": {
+          "modifierActive": { "text": "#FFFF00" },
+          "pressed": { "background": "#2E7D32" }
+        }
+      }
+    },
+    "k.auto": { "ref": "rime.space", "weight": "auto" },
+    "k.nullclear": {
+      "ref": "k.appearance",
+      "override": {
+        "label": null,
+        "shiftedLabel": null,
+        "keyType": null,
+        "modifier": null,
+        "id": null,
+        "statusLabel": null,
+        "textSize": null,
+        "hintTextSize": null,
+        "icon": null,
+        "colors": null
+      }
+    },
+    "k.macro": { "ref": "rime.x", "tap": { "macro": "m1" } },
+    "k.actionref": { "ref": "rime.c", "tap": "act.copy" },
+    "k.variants": {
+      "ref": "rime.q",
+      "label": "手",
+      "shiftedLabel": "Q",
+      "variants": [
+        { "when": { "rime": { "ascii_mode": true } }, "label": "q" },
+        { "when": { "rime": { "composing": true } }, "label": "二", "tap": { "ref": "rime.2" } }
+      ]
+    },
+    "k.spacer": { "spacer": true, "tap": { "type": "key", "key": "SPACE" } }
+  },
+  "layouts": {
+    "default": {
+      "sections": [{
+        "type": "rows",
+        "rows": [
+          [
+            { "ref": "k.longref" },
+            { "ref": "k.holdref" },
+            { "ref": "k.double" },
+            { "ref": "k.swipes" },
+            { "ref": "k.appearance" }
+          ],
+          {
+            "totalWeight": 10,
+            "keys": [
+              { "ref": "k.auto" },
+              { "ref": "k.nullclear" },
+              { "ref": "k.macro" },
+              { "ref": "k.actionref" },
+              { "ref": "k.variants" },
+              { "ref": "k.spacer" }
+            ]
+          }
+        ]
+      }]
+    }
+  }
+}

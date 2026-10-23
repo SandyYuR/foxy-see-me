@@ -1,0 +1,802 @@
+foxy.Copy
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Copy hint=null popup=true
+      action Copy
+foxy.Cut
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Cut hint=null popup=true
+      action Cut
+foxy.KP_Enter
+  key w=1.0000 auto=false h=1.0000 mod=null type=ACTION id=null status=null text=null hint=null hints={} shifted=null icon=enter spacer=false colors=null
+    gesture click label=Enter hint=null popup=true
+      action Key(key=KP_ENTER, metaState=0)
+foxy.LayoutDefault
+  key w=1.0000 auto=false h=1.0000 mod=null type=FUNCTION id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=ABC hint=null popup=true
+      action SwitchKeyboardLayout(layoutId=default)
+foxy.LayoutNumpad
+  key w=1.0000 auto=false h=1.0000 mod=null type=FUNCTION id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=123 hint=null popup=true
+      action SwitchKeyboardLayout(layoutId=numpad)
+foxy.Paste
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Paste hint=null popup=true
+      action Paste
+foxy.Redo
+  key w=1.0000 auto=false h=1.0000 mod=null type=FUNCTION id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Redo hint=null popup=true
+      action Redo
+foxy.SelectAll
+  key w=1.0000 auto=false h=1.0000 mod=null type=FUNCTION id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Sel hint=null popup=true
+      action SelectAll
+foxy.Shift
+  key w=1.0000 auto=false h=1.0000 mod=SHIFT type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=⇧ hint=null popup=true
+foxy.Spacer
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=true colors=null
+    gesture click label= hint=null popup=true
+foxy.Undo
+  key w=1.0000 auto=false h=1.0000 mod=null type=FUNCTION id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Undo hint=null popup=true
+      action Undo
+rime.0
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=0 hint=null popup=true
+      action Key(key=DIGIT_0, metaState=0)
+rime.1
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=1 hint=null popup=true
+      action Key(key=DIGIT_1, metaState=0)
+rime.2
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=2 hint=null popup=true
+      action Key(key=DIGIT_2, metaState=0)
+rime.3
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=3 hint=null popup=true
+      action Key(key=DIGIT_3, metaState=0)
+rime.4
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=4 hint=null popup=true
+      action Key(key=DIGIT_4, metaState=0)
+rime.5
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=5 hint=null popup=true
+      action Key(key=DIGIT_5, metaState=0)
+rime.6
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=6 hint=null popup=true
+      action Key(key=DIGIT_6, metaState=0)
+rime.7
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=7 hint=null popup=true
+      action Key(key=DIGIT_7, metaState=0)
+rime.8
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=8 hint=null popup=true
+      action Key(key=DIGIT_8, metaState=0)
+rime.9
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=9 hint=null popup=true
+      action Key(key=DIGIT_9, metaState=0)
+rime.A
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=A hint=null popup=true
+      action Key(key=A, metaState=1)
+rime.Alt_L
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Alt hint=null popup=true
+      action Key(key=ALT_LEFT, metaState=0)
+rime.Alt_R
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Alt hint=null popup=true
+      action Key(key=ALT_RIGHT, metaState=0)
+rime.ApostropheShift
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=" hint=null popup=true
+      action Key(key=APOSTROPHE, metaState=1)
+rime.B
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=B hint=null popup=true
+      action Key(key=B, metaState=1)
+rime.BackSpace
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=⌫ hint=null popup=true
+      action Key(key=BACKSPACE, metaState=0)
+rime.Begin
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Begin hint=null popup=true
+      action Key(key=BEGIN, metaState=0)
+rime.Break
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Break hint=null popup=true
+      action Key(key=BREAK, metaState=0)
+rime.C
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=C hint=null popup=true
+      action Key(key=C, metaState=1)
+rime.Cancel
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Cancel hint=null popup=true
+      action Key(key=CANCEL, metaState=0)
+rime.Caps_Lock
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Caps Lock hint=null popup=true
+      action Key(key=CAPS_LOCK, metaState=0)
+rime.Clear
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Clear hint=null popup=true
+      action Key(key=CLEAR, metaState=0)
+rime.Control_L
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Ctrl hint=null popup=true
+      action Key(key=CONTROL_LEFT, metaState=0)
+rime.Control_R
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Ctrl hint=null popup=true
+      action Key(key=CONTROL_RIGHT, metaState=0)
+rime.D
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=D hint=null popup=true
+      action Key(key=D, metaState=1)
+rime.Delete
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Delete hint=null popup=true
+      action Key(key=DELETE, metaState=0)
+rime.Down
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Down hint=null popup=true
+      action Key(key=DOWN, metaState=0)
+rime.E
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=E hint=null popup=true
+      action Key(key=E, metaState=1)
+rime.End
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=End hint=null popup=true
+      action Key(key=END, metaState=0)
+rime.Escape
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Esc hint=null popup=true
+      action Key(key=ESCAPE, metaState=0)
+rime.Execute
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Execute hint=null popup=true
+      action Key(key=EXECUTE, metaState=0)
+rime.F
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F hint=null popup=true
+      action Key(key=F, metaState=1)
+rime.F1
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F1 hint=null popup=true
+      action Key(key=F1, metaState=0)
+rime.F10
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F10 hint=null popup=true
+      action Key(key=F10, metaState=0)
+rime.F11
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F11 hint=null popup=true
+      action Key(key=F11, metaState=0)
+rime.F12
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F12 hint=null popup=true
+      action Key(key=F12, metaState=0)
+rime.F2
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F2 hint=null popup=true
+      action Key(key=F2, metaState=0)
+rime.F3
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F3 hint=null popup=true
+      action Key(key=F3, metaState=0)
+rime.F4
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F4 hint=null popup=true
+      action Key(key=F4, metaState=0)
+rime.F5
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F5 hint=null popup=true
+      action Key(key=F5, metaState=0)
+rime.F6
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F6 hint=null popup=true
+      action Key(key=F6, metaState=0)
+rime.F7
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F7 hint=null popup=true
+      action Key(key=F7, metaState=0)
+rime.F8
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F8 hint=null popup=true
+      action Key(key=F8, metaState=0)
+rime.F9
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F9 hint=null popup=true
+      action Key(key=F9, metaState=0)
+rime.Find
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Find hint=null popup=true
+      action Key(key=FIND, metaState=0)
+rime.G
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=G hint=null popup=true
+      action Key(key=G, metaState=1)
+rime.H
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=H hint=null popup=true
+      action Key(key=H, metaState=1)
+rime.Help
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Help hint=null popup=true
+      action Key(key=HELP, metaState=0)
+rime.Home
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Home hint=null popup=true
+      action Key(key=HOME, metaState=0)
+rime.I
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=I hint=null popup=true
+      action Key(key=I, metaState=1)
+rime.Insert
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Insert hint=null popup=true
+      action Key(key=INSERT, metaState=0)
+rime.J
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=J hint=null popup=true
+      action Key(key=J, metaState=1)
+rime.K
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=K hint=null popup=true
+      action Key(key=K, metaState=1)
+rime.KP_0
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=0 hint=null popup=true
+      action Key(key=KP_0, metaState=0)
+rime.KP_1
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=1 hint=null popup=true
+      action Key(key=KP_1, metaState=0)
+rime.KP_2
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=2 hint=null popup=true
+      action Key(key=KP_2, metaState=0)
+rime.KP_3
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=3 hint=null popup=true
+      action Key(key=KP_3, metaState=0)
+rime.KP_4
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=4 hint=null popup=true
+      action Key(key=KP_4, metaState=0)
+rime.KP_5
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=5 hint=null popup=true
+      action Key(key=KP_5, metaState=0)
+rime.KP_6
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=6 hint=null popup=true
+      action Key(key=KP_6, metaState=0)
+rime.KP_7
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=7 hint=null popup=true
+      action Key(key=KP_7, metaState=0)
+rime.KP_8
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=8 hint=null popup=true
+      action Key(key=KP_8, metaState=0)
+rime.KP_9
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=9 hint=null popup=true
+      action Key(key=KP_9, metaState=0)
+rime.KP_Add
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=+ hint=null popup=true
+      action Key(key=KP_ADD, metaState=0)
+rime.KP_Begin
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Begin hint=null popup=true
+      action Key(key=KP_BEGIN, metaState=0)
+rime.KP_Decimal
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=. hint=null popup=true
+      action Key(key=KP_DECIMAL, metaState=0)
+rime.KP_Delete
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Delete hint=null popup=true
+      action Key(key=KP_DELETE, metaState=0)
+rime.KP_Divide
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=/ hint=null popup=true
+      action Key(key=KP_DIVIDE, metaState=0)
+rime.KP_Down
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Down hint=null popup=true
+      action Key(key=KP_DOWN, metaState=0)
+rime.KP_End
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=End hint=null popup=true
+      action Key(key=KP_END, metaState=0)
+rime.KP_Enter
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Enter hint=null popup=true
+      action Key(key=KP_ENTER, metaState=0)
+rime.KP_Equal
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label== hint=null popup=true
+      action Key(key=KP_EQUAL, metaState=0)
+rime.KP_F1
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F1 hint=null popup=true
+      action Key(key=KP_F1, metaState=0)
+rime.KP_F2
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F2 hint=null popup=true
+      action Key(key=KP_F2, metaState=0)
+rime.KP_F3
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F3 hint=null popup=true
+      action Key(key=KP_F3, metaState=0)
+rime.KP_F4
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=F4 hint=null popup=true
+      action Key(key=KP_F4, metaState=0)
+rime.KP_Home
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Home hint=null popup=true
+      action Key(key=KP_HOME, metaState=0)
+rime.KP_Insert
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Insert hint=null popup=true
+      action Key(key=KP_INSERT, metaState=0)
+rime.KP_Left
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Left hint=null popup=true
+      action Key(key=KP_LEFT, metaState=0)
+rime.KP_Multiply
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=* hint=null popup=true
+      action Key(key=KP_MULTIPLY, metaState=0)
+rime.KP_Next
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Next hint=null popup=true
+      action Key(key=KP_PAGE_DOWN, metaState=0)
+rime.KP_Page_Down
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Page Down hint=null popup=true
+      action Key(key=KP_PAGE_DOWN, metaState=0)
+rime.KP_Page_Up
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Page Up hint=null popup=true
+      action Key(key=KP_PAGE_UP, metaState=0)
+rime.KP_Prior
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Prior hint=null popup=true
+      action Key(key=KP_PAGE_UP, metaState=0)
+rime.KP_Right
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Right hint=null popup=true
+      action Key(key=KP_RIGHT, metaState=0)
+rime.KP_Separator
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=, hint=null popup=true
+      action Key(key=KP_SEPARATOR, metaState=0)
+rime.KP_Space
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=space hint=null popup=true
+      action Key(key=KP_SPACE, metaState=0)
+rime.KP_Subtract
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=- hint=null popup=true
+      action Key(key=KP_SUBTRACT, metaState=0)
+rime.KP_Tab
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Tab hint=null popup=true
+      action Key(key=KP_TAB, metaState=0)
+rime.KP_Up
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Up hint=null popup=true
+      action Key(key=KP_UP, metaState=0)
+rime.L
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=L hint=null popup=true
+      action Key(key=L, metaState=1)
+rime.Left
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Left hint=null popup=true
+      action Key(key=LEFT, metaState=0)
+rime.Linefeed
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Linefeed hint=null popup=true
+      action Key(key=LINEFEED, metaState=0)
+rime.M
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=M hint=null popup=true
+      action Key(key=M, metaState=1)
+rime.Menu
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Menu hint=null popup=true
+      action Key(key=MENU, metaState=0)
+rime.Meta_L
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Meta hint=null popup=true
+      action Key(key=META_LEFT, metaState=0)
+rime.Meta_R
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Meta hint=null popup=true
+      action Key(key=META_RIGHT, metaState=0)
+rime.N
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=N hint=null popup=true
+      action Key(key=N, metaState=1)
+rime.Next
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Next hint=null popup=true
+      action Key(key=PAGE_DOWN, metaState=0)
+rime.Num_Lock
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Num Lock hint=null popup=true
+      action Key(key=NUM_LOCK, metaState=0)
+rime.O
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=O hint=null popup=true
+      action Key(key=O, metaState=1)
+rime.P
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=P hint=null popup=true
+      action Key(key=P, metaState=1)
+rime.Page_Down
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Page Down hint=null popup=true
+      action Key(key=PAGE_DOWN, metaState=0)
+rime.Page_Up
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Page Up hint=null popup=true
+      action Key(key=PAGE_UP, metaState=0)
+rime.Pause
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Pause hint=null popup=true
+      action Key(key=PAUSE, metaState=0)
+rime.Print
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Print hint=null popup=true
+      action Key(key=PRINT, metaState=0)
+rime.Prior
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Prior hint=null popup=true
+      action Key(key=PAGE_UP, metaState=0)
+rime.Q
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Q hint=null popup=true
+      action Key(key=Q, metaState=1)
+rime.Question
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=? hint=null popup=true
+      action Key(key=SLASH, metaState=1)
+rime.R
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=R hint=null popup=true
+      action Key(key=R, metaState=1)
+rime.Redo
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Redo hint=null popup=true
+      action Key(key=REDO, metaState=0)
+rime.Return
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Enter hint=null popup=true
+      action Key(key=ENTER, metaState=0)
+rime.Right
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Right hint=null popup=true
+      action Key(key=RIGHT, metaState=0)
+rime.S
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=S hint=null popup=true
+      action Key(key=S, metaState=1)
+rime.Scroll_Lock
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Scroll Lock hint=null popup=true
+      action Key(key=SCROLL_LOCK, metaState=0)
+rime.Select
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Select hint=null popup=true
+      action Key(key=SELECT, metaState=0)
+rime.Shift_L
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Shift hint=null popup=true
+      action Key(key=SHIFT_LEFT, metaState=0)
+rime.Shift_R
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Shift hint=null popup=true
+      action Key(key=SHIFT_RIGHT, metaState=0)
+rime.Sys_Req
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Sys Req hint=null popup=true
+      action Key(key=SYS_REQ, metaState=0)
+rime.T
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=T hint=null popup=true
+      action Key(key=T, metaState=1)
+rime.Tab
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Tab hint=null popup=true
+      action Key(key=TAB, metaState=0)
+rime.U
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=U hint=null popup=true
+      action Key(key=U, metaState=1)
+rime.Undo
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Undo hint=null popup=true
+      action Key(key=UNDO, metaState=0)
+rime.Up
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Up hint=null popup=true
+      action Key(key=UP, metaState=0)
+rime.V
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=V hint=null popup=true
+      action Key(key=V, metaState=1)
+rime.W
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=W hint=null popup=true
+      action Key(key=W, metaState=1)
+rime.X
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=X hint=null popup=true
+      action Key(key=X, metaState=1)
+rime.Y
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Y hint=null popup=true
+      action Key(key=Y, metaState=1)
+rime.Z
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=Z hint=null popup=true
+      action Key(key=Z, metaState=1)
+rime.a
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=a hint=null popup=true
+      action Key(key=A, metaState=0)
+rime.ampersand
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=& hint=null popup=true
+      action Key(key=DIGIT_7, metaState=1)
+rime.apostrophe
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=' hint=null popup=true
+      action Key(key=APOSTROPHE, metaState=0)
+rime.asciicircum
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=^ hint=null popup=true
+      action Key(key=DIGIT_6, metaState=1)
+rime.asciitilde
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=~ hint=null popup=true
+      action Key(key=GRAVE, metaState=1)
+rime.asterisk
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=* hint=null popup=true
+      action Key(key=DIGIT_8, metaState=1)
+rime.at
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=@ hint=null popup=true
+      action Key(key=DIGIT_2, metaState=1)
+rime.b
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=b hint=null popup=true
+      action Key(key=B, metaState=0)
+rime.backslash
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=\ hint=null popup=true
+      action Key(key=BACKSLASH, metaState=0)
+rime.bar
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=| hint=null popup=true
+      action Key(key=BACKSLASH, metaState=1)
+rime.braceleft
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label={ hint=null popup=true
+      action Key(key=LEFT_BRACKET, metaState=1)
+rime.braceright
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=} hint=null popup=true
+      action Key(key=RIGHT_BRACKET, metaState=1)
+rime.bracketleft
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=[ hint=null popup=true
+      action Key(key=LEFT_BRACKET, metaState=0)
+rime.bracketright
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=] hint=null popup=true
+      action Key(key=RIGHT_BRACKET, metaState=0)
+rime.c
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=c hint=null popup=true
+      action Key(key=C, metaState=0)
+rime.colon
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=: hint=null popup=true
+      action Key(key=SEMICOLON, metaState=1)
+rime.comma
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=, hint=null popup=true
+      action Key(key=COMMA, metaState=0)
+rime.d
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=d hint=null popup=true
+      action Key(key=D, metaState=0)
+rime.dollar
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=$ hint=null popup=true
+      action Key(key=DIGIT_4, metaState=1)
+rime.e
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=e hint=null popup=true
+      action Key(key=E, metaState=0)
+rime.equal
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label== hint=null popup=true
+      action Key(key=EQUAL, metaState=0)
+rime.exclam
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=! hint=null popup=true
+      action Key(key=DIGIT_1, metaState=1)
+rime.f
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=f hint=null popup=true
+      action Key(key=F, metaState=0)
+rime.g
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=g hint=null popup=true
+      action Key(key=G, metaState=0)
+rime.grave
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=` hint=null popup=true
+      action Key(key=GRAVE, metaState=0)
+rime.greater
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=> hint=null popup=true
+      action Key(key=PERIOD, metaState=1)
+rime.h
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=h hint=null popup=true
+      action Key(key=H, metaState=0)
+rime.i
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=i hint=null popup=true
+      action Key(key=I, metaState=0)
+rime.j
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=j hint=null popup=true
+      action Key(key=J, metaState=0)
+rime.k
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=k hint=null popup=true
+      action Key(key=K, metaState=0)
+rime.l
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=l hint=null popup=true
+      action Key(key=L, metaState=0)
+rime.less
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=< hint=null popup=true
+      action Key(key=COMMA, metaState=1)
+rime.m
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=m hint=null popup=true
+      action Key(key=M, metaState=0)
+rime.minus
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=- hint=null popup=true
+      action Key(key=MINUS, metaState=0)
+rime.n
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=n hint=null popup=true
+      action Key(key=N, metaState=0)
+rime.numbersign
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=# hint=null popup=true
+      action Key(key=DIGIT_3, metaState=1)
+rime.o
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=o hint=null popup=true
+      action Key(key=O, metaState=0)
+rime.p
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=p hint=null popup=true
+      action Key(key=P, metaState=0)
+rime.parenleft
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=( hint=null popup=true
+      action Key(key=DIGIT_9, metaState=1)
+rime.parenright
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=) hint=null popup=true
+      action Key(key=DIGIT_0, metaState=1)
+rime.percent
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=% hint=null popup=true
+      action Key(key=DIGIT_5, metaState=1)
+rime.period
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=. hint=null popup=true
+      action Key(key=PERIOD, metaState=0)
+rime.plus
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=+ hint=null popup=true
+      action Key(key=EQUAL, metaState=1)
+rime.q
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=q hint=null popup=true
+      action Key(key=Q, metaState=0)
+rime.question
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=? hint=null popup=true
+      action Key(key=SLASH, metaState=1)
+rime.quotedbl
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=" hint=null popup=true
+      action Key(key=APOSTROPHE, metaState=1)
+rime.quoteleft
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=` hint=null popup=true
+      action Key(key=GRAVE, metaState=0)
+rime.quoteright
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=' hint=null popup=true
+      action Key(key=APOSTROPHE, metaState=0)
+rime.r
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=r hint=null popup=true
+      action Key(key=R, metaState=0)
+rime.s
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=s hint=null popup=true
+      action Key(key=S, metaState=0)
+rime.semicolon
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=; hint=null popup=true
+      action Key(key=SEMICOLON, metaState=0)
+rime.slash
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=/ hint=null popup=true
+      action Key(key=SLASH, metaState=0)
+rime.space
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=space hint=null popup=true
+      action Key(key=SPACE, metaState=0)
+rime.t
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=t hint=null popup=true
+      action Key(key=T, metaState=0)
+rime.u
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=u hint=null popup=true
+      action Key(key=U, metaState=0)
+rime.underscore
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=_ hint=null popup=true
+      action Key(key=MINUS, metaState=1)
+rime.v
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=v hint=null popup=true
+      action Key(key=V, metaState=0)
+rime.w
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=w hint=null popup=true
+      action Key(key=W, metaState=0)
+rime.x
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=x hint=null popup=true
+      action Key(key=X, metaState=0)
+rime.y
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=y hint=null popup=true
+      action Key(key=Y, metaState=0)
+rime.z
+  key w=1.0000 auto=false h=1.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+    gesture click label=z hint=null popup=true
+      action Key(key=Z, metaState=0)

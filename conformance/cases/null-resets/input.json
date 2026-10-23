@@ -1,0 +1,63 @@
+{
+  "keys": {
+    "base": {
+      "label": "B",
+      "weight": 2,
+      "height": 1.5,
+      "shiftedLabel": "S",
+      "tap": {
+        "type": "key",
+        "key": "A"
+      },
+      "swipe": {
+        "up": {
+          "type": "key",
+          "key": "UP"
+        },
+        "down": {
+          "type": "key",
+          "key": "DOWN"
+        }
+      },
+      "hintTextSize": {
+        "up": 10,
+        "down": 9
+      },
+      "colors": {
+        "text": "#FFFFFFFF",
+        "states": {
+          "pressed": {
+            "background": "#FF000000"
+          }
+        }
+      }
+    }
+  },
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              {
+                "ref": "base",
+                "override": {
+                  "weight": null,
+                  "height": null,
+                  "tap": null,
+                  "swipe": {
+                    "up": null
+                  },
+                  "hintTextSize": null,
+                  "shiftedLabel": null,
+                  "colors": null
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

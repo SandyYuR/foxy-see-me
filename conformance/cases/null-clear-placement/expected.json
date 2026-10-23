@@ -1,0 +1,65 @@
+{
+  "profile": true,
+  "statuses": {
+    "idle": {
+      "totalUnits": 5.0,
+      "hasDynamicVariants": false,
+      "keyboardHeightPercent": null,
+      "keyboardHeightPercentLandscape": null,
+      "sidePaddingDp": null,
+      "sidePaddingLandscapeDp": null,
+      "bottomPaddingDp": null,
+      "bottomPaddingLandscapeDp": null,
+      "icons": {
+        "custom": "svg:<svg/>"
+      },
+      "sections": [
+        {
+          "kind": "rows",
+          "rowWidthFractions": [
+            null
+          ],
+          "rowWeightTotals": [
+            null
+          ],
+          "rows": [
+            [
+              {
+                "label": "",
+                "weight": 1.0,
+                "autoWidth": false,
+                "height": 5.0,
+                "modifier": null,
+                "keyType": null,
+                "id": null,
+                "statusLabel": null,
+                "textSize": null,
+                "hintTextSize": null,
+                "hintTextSizes": {},
+                "shiftedLabel": null,
+                "icon": null,
+                "iconName": null,
+                "spacer": false,
+                "colors": null,
+                "gestures": [
+                  {
+                    "kind": "click",
+                    "label": "",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "key",
+                        "key": "A"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

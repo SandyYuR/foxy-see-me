@@ -1,0 +1,46 @@
+rows profile=true
+rows/idle=rows:[null]:[null]:A|1.0|5.0|null|null|null|null|null|null|null|false{click label=A hint=null popup=true|Key(key=A, metaState=0)},b|2.0|5.0|null|null|null|null|null|null|null|false{click label=b hint=null popup=true|CommitText(text=b)}
+weighted profile=true
+weighted/idle=rows:[0.9, null]:[10.0, 10.0]:A|1.0|2.5|null|null|null|null|null|null|null|false{click label=A hint=null popup=true|Key(key=A, metaState=0)},B|1.0|2.5|null|null|null|null|null|null|null|false{click label=B hint=null popup=true|Key(key=B, metaState=0)}/C|2.0|2.5|null|null|null|null|null|null|null|false{click label=C hint=null popup=true|Key(key=C, metaState=0)},D|1.0|2.5|null|null|null|null|null|null|null|false{click label=D hint=null popup=true|Key(key=D, metaState=0)}
+grid profile=true
+grid/idle=grid:3x2:[1.0, 2.0]:0:0:2:1:a|1.0|1.0|null|null|null|null|null|null|null|false{click label=a hint=null popup=true|Key(key=A, metaState=0)},2:0:1:1:B|1.0|1.0|null|null|null|null|null|null|null|false{click label=B hint=null popup=true|Key(key=B, metaState=0)},0:1:1:1:C|1.0|1.0|null|null|null|null|null|null|null|false{click label=C hint=null popup=true|Key(key=C, metaState=0)}
+variants profile=true
+variants/idle=rows:[null]:[null]:base|1.0|5.0|null|null|null|null|null|null|null|false{click label=base hint=null popup=true|Key(key=Q, metaState=0)}
+variants/composing=rows:[null]:[null]:C|1.0|5.0|null|null|null|null|null|null|null|false{click label=C hint=null popup=true|Key(key=Q, metaState=0)}
+variants/ascii=rows:[null]:[null]:A|1.0|5.0|null|null|null|null|null|null|null|false{click label=A hint=null popup=true|Key(key=A, metaState=0)}
+split profile=true
+split/idle=rows:[null]:[null]:S|1.0|5.0|null|null|null|null|null|null|null|false{click label=S hint=null popup=true|Key(key=S, metaState=0)}
+gestures profile=true
+gestures/idle=rows:[null]:[null]:K|1.0|5.0|null|null|null|null|null|null|null|false{click label=K hint=null popup=true|MacroAction(steps=[Input(action=Key(key=C, metaState=4096))])}{double label=K hint=null popup=true|Key(key=C, metaState=4096)}{hold label=K hint=null popup=true|StartVoiceInput|end=StopVoiceInput}{swipe dir=UP label=K hint=null popup=true|CommitText(text=up)}{swipe dir=DOWN label=K hint=null popup=true|Key(key=DOWN, metaState=0)}
+longpress-drag profile=true
+longpress-drag/idle=rows:[null]:[null]:LP|1.0|5.0|null|null|null|null|null|null|null|false{click label=LP hint=null popup=true|Key(key=A, metaState=0)}{long label=Long hint=L repeat=true popup=false popupKey=q|PreviousPage},DR|1.0|5.0|null|null|null|null|null|null|null|false{click label=DR hint=null popup=true|Key(key=B, metaState=0)}{drag label=Drag hint=D popup=false step=12.0 feedback=KEY dirs=LEFT=[Key(key=LEFT, metaState=0)],RIGHT=[CommitText(text=r), NextPage]|Key(key=LEFT, metaState=0)|CommitText(text=r)|NextPage}
+composing-conditional profile=true
+composing-conditional/idle=rows:[null]:[null]:a|1.0|5.0|null|null|null|null|null|null|null|false{click label=a hint=null popup=true|ConditionalAction(composing=[Key(key=B, metaState=0)], default=[Key(key=A, metaState=0)])}
+composing-conditional/composing=rows:[null]:[null]:a|1.0|5.0|null|null|null|null|null|null|null|false{click label=a hint=null popup=true|ConditionalAction(composing=[Key(key=B, metaState=0)], default=[Key(key=A, metaState=0)])}
+actions-args profile=true
+actions-args/idle=rows:[null]:[null]:X|1.0|5.0|null|null|null|null|null|null|null|false{click label=X hint=null popup=true|Key(key=C, metaState=4097)}{double label=X hint=null popup=true|Modifier(modifier=CTRL, state=LOCKED)}{long label=X hint=null repeat=false popup=true popupKey=null|CommitText(text=hi)}{swipe dir=UP label=X hint=null popup=true|SwitchKeyboardLayout(layoutId=numpad)}{swipe dir=DOWN label=X hint=null popup=true|SelectSchema(schemaId=wubi)}{swipe dir=LEFT label=X hint=null popup=true|ToggleToolbarContainer(containerId=c1)}{swipe dir=RIGHT label=X hint=null popup=true|ExpandSwitches(expanded=false)}
+appearance profile=true
+appearance/idle=rows:[null]:[null]:日|1.0|1.25|FUNCTION|CTRL|custom|schema_name|18.0|null|A|false{click label=日 hint=null popup=true|Key(key=A, metaState=0)},a|1.0|5.0|null|null|null|null|null|12.0|null|false{click label=a hint=null popup=true|Key(key=A, metaState=0)}
+null-resets profile=true
+null-resets/idle=rows:[null]:[null]:B|1.0|1.0|null|null|null|null|null|null|null|false{click label=B hint=null popup=true|Key(key=A, metaState=0)}{swipe dir=DOWN label=B hint=null popup=true|Key(key=DOWN, metaState=0)}
+section-defaults profile=true
+section-defaults/idle=grid:2x2:[2.5, 2.5]:0:0:2:1:A|1.0|1.0|null|null|null|null|null|null|null|false{click label=A hint=null popup=true|Key(key=A, metaState=0)},0:1:1:1:B|1.0|1.0|null|null|null|null|null|null|null|false{click label=B hint=null popup=true|Key(key=B, metaState=0)},1:1:1:1:C|1.0|1.0|null|null|null|null|null|null|null|false{click label=C hint=null popup=true|Key(key=C, metaState=0)};rows:[null]:[null]:D|1.0|2.0|null|null|null|null|null|null|null|false{click label=D hint=null popup=true|Key(key=D, metaState=0)}
+override-vs-direct profile=true
+override-vs-direct/idle=grid:1x1:[5.0]:0:0:1:1:K|1.0|1.0|null|null|null|null|18.0|null|null|false{click label=K hint=null popup=true|Key(key=A, metaState=0)}
+null-clear-placement profile=true
+null-clear-placement/idle=rows:[null]:[null]:|1.0|5.0|null|null|null|null|null|null|null|false{click label= hint=null popup=true|Key(key=A, metaState=0)}
+invalid-auto-no-total profile=false
+invalid-auto-no-total/idle=null
+invalid-auto-total-too-small profile=false
+invalid-auto-total-too-small/idle=null
+invalid-grid-overlap profile=false
+invalid-grid-overlap/idle=null
+invalid-grid-bounds profile=false
+invalid-grid-bounds/idle=null
+invalid-variant-cycle profile=false
+invalid-variant-cycle/idle=rows:[null]:[null]:D|1.0|5.0|null|null|null|null|null|null|null|false{click label=D hint=null popup=true|Key(key=D, metaState=0)}
+invalid-variant-cycle/ascii=null
+invalid-section-type profile=false
+invalid-section-type/idle=null
+invalid profile=false
+invalid/idle=null

@@ -1,0 +1,30 @@
+layout totalUnits=5.0000 dynamic=true height=null/null side=null/null bottom=null/null
+section rows widths=[null] weights=[null]
+  row
+    key w=1.0000 auto=false h=5.0000 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=Q icon=0 spacer=false colors=null
+      gesture click label=Q-child hint=null popup=true
+        action Key(key=Q, metaState=0)
+      gesture long label=Q-child hint=null repeat=true popup=true popupKey=null
+        action Key(key=BACKSPACE, metaState=0)
+      gesture swipe dir=UP label=Q hint=null popup=true
+        action Key(key=Q, metaState=1)
+      gesture swipe dir=DOWN label=one hint=null popup=true
+        action Key(key=DIGIT_1, metaState=0)
+    key w=1.0000 auto=false h=5.0000 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=Q icon=0 spacer=false colors=null
+      gesture click label= hint=null popup=true
+        action Key(key=Q, metaState=0)
+      gesture swipe dir=UP label=Q hint=null popup=true
+        action Key(key=Q, metaState=1)
+      gesture swipe dir=DOWN label=one hint=null popup=true
+        action Key(key=DIGIT_1, metaState=0)
+      gesture swipe dir=LEFT label=Left hint=null popup=true
+        action Key(key=LEFT, metaState=0)
+    key w=1.0000 auto=false h=5.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=space hint=null popup=true
+        action Key(key=SPACE, metaState=0)
+      gesture hold label=Reuse hint=null popup=true
+        action StartVoiceInput
+        end StopVoiceInput
+    key w=1.0000 auto=false h=5.0000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=手 hint=null popup=true
+        action Key(key=Q, metaState=0)

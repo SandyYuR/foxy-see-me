@@ -1,0 +1,62 @@
+{
+  "keys": {
+    "k": {
+      "ref": "rime.q",
+      "label": "base",
+      "variants": [
+        {
+          "when": {
+            "rime": {
+              "composing": true
+            }
+          },
+          "label": "C"
+        }
+      ]
+    }
+  },
+  "layouts": {
+    "default": {
+      "variants": [
+        {
+          "when": {
+            "rime": {
+              "ascii_mode": true
+            }
+          },
+          "layout": "ascii"
+        }
+      ],
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              {
+                "ref": "k"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    "ascii": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              {
+                "label": "A",
+                "tap": {
+                  "type": "key",
+                  "key": "A"
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

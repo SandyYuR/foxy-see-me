@@ -1,0 +1,43 @@
+{
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "grid",
+          "columns": 3,
+          "rows": 2,
+          "rowHeights": [
+            1,
+            2
+          ],
+          "keys": [
+            {
+              "column": 0,
+              "row": 0,
+              "ref": "rime.a",
+              "columnSpan": 2
+            },
+            {
+              "column": 2,
+              "row": 0,
+              "label": "B",
+              "tap": {
+                "type": "key",
+                "key": "B"
+              }
+            },
+            {
+              "column": 0,
+              "row": 1,
+              "label": "C",
+              "tap": {
+                "type": "key",
+                "key": "C"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "profile": true,
+  "statuses": {
+    "idle": {
+      "totalUnits": 5.0,
+      "hasDynamicVariants": false,
+      "keyboardHeightPercent": null,
+      "keyboardHeightPercentLandscape": null,
+      "sidePaddingDp": null,
+      "sidePaddingLandscapeDp": null,
+      "bottomPaddingDp": null,
+      "bottomPaddingLandscapeDp": null,
+      "icons": {},
+      "sections": [
+        {
+          "kind": "rows",
+          "rowWidthFractions": [
+            null
+          ],
+          "rowWeightTotals": [
+            null
+          ],
+          "rows": [
+            [
+              {
+                "label": "X",
+                "weight": 1.0,
+                "autoWidth": false,
+                "height": 5.0,
+                "modifier": null,
+                "keyType": null,
+                "id": null,
+                "statusLabel": null,
+                "textSize": null,
+                "hintTextSize": null,
+                "hintTextSizes": {},
+                "shiftedLabel": null,
+                "icon": null,
+                "iconName": null,
+                "spacer": false,
+                "colors": null,
+                "gestures": [
+                  {
+                    "kind": "click",
+                    "label": "X",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "key",
+                        "key": "C",
+                        "meta": [
+                          "shift",
+                          "ctrl"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "double_click",
+                    "label": "X",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "modifier",
+                        "modifier": "CTRL",
+                        "state": "LOCKED"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "long_press",
+                    "label": "X",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "commit_text",
+                        "text": "hi"
+                      }
+                    ],
+                    "repeat": false,
+                    "popupKey": null
+                  },
+                  {
+                    "kind": "swipe",
+                    "label": "X",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "app",
+                        "action": "switch_layout",
+                        "layout": "numpad"
+                      }
+                    ],
+                    "direction": "UP"
+                  },
+                  {
+                    "kind": "swipe",
+                    "label": "X",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "app",
+                        "action": "select_schema",
+                        "schema": "wubi"
+                      }
+                    ],
+                    "direction": "DOWN"
+                  },
+                  {
+                    "kind": "swipe",
+                    "label": "X",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "app",
+                        "action": "toggle_container",
+                        "container": "c1"
+                      }
+                    ],
+                    "direction": "LEFT"
+                  },
+                  {
+                    "kind": "swipe",
+                    "label": "X",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "app",
+                        "action": "expand_switches",
+                        "expanded": false
+                      }
+                    ],
+                    "direction": "RIGHT"
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            {
+              "keys": [
+                {
+                  "label": "A",
+                  "tap": {
+                    "type": "key",
+                    "key": "A"
+                  }
+                },
+                {
+                  "label": "B",
+                  "weight": "auto",
+                  "tap": {
+                    "type": "key",
+                    "key": "B"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "columns",
+          "columns": 2
+        }
+      ]
+    }
+  }
+}

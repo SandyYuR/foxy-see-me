@@ -1,0 +1,44 @@
+{
+  "name": "variants",
+  "layoutId": "default",
+  "schemaId": null,
+  "splitRequested": false,
+  "statuses": {
+    "idle": {
+      "schemaId": "wubi",
+      "schemaName": "五笔",
+      "isDisabled": false,
+      "isComposing": false,
+      "isAsciiMode": false,
+      "isFullShape": false,
+      "isSimplified": false,
+      "isTraditional": false,
+      "isAsciiPunct": false,
+      "options": {}
+    },
+    "composing": {
+      "schemaId": "wubi",
+      "schemaName": "五笔",
+      "isDisabled": false,
+      "isComposing": true,
+      "isAsciiMode": false,
+      "isFullShape": false,
+      "isSimplified": false,
+      "isTraditional": false,
+      "isAsciiPunct": false,
+      "options": {}
+    },
+    "ascii": {
+      "schemaId": "wubi",
+      "schemaName": "五笔",
+      "isDisabled": false,
+      "isComposing": false,
+      "isAsciiMode": true,
+      "isFullShape": false,
+      "isSimplified": false,
+      "isTraditional": false,
+      "isAsciiPunct": false,
+      "options": {}
+    }
+  }
+}

@@ -1,0 +1,52 @@
+layout totalUnits=5.0000 dynamic=true height=null/null side=null/null bottom=null/null
+section rows widths=[null, null] weights=[null, 10.0]
+  row
+    key w=1.0000 auto=false h=2.5000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=q hint=null popup=true
+        action Key(key=Q, metaState=0)
+      gesture long label=LP hint=null repeat=false popup=false popupKey=null
+        action Key(key=Q, metaState=0)
+    key w=1.0000 auto=false h=2.5000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=space hint=null popup=true
+        action Key(key=SPACE, metaState=0)
+      gesture hold label=Reuse hint=H popup=false
+        action Key(key=A, metaState=0)
+        end StopVoiceInput
+    key w=1.0000 auto=false h=2.5000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=a hint=null popup=true
+        action Key(key=A, metaState=0)
+      gesture double label=b hint=null popup=true
+        action Key(key=B, metaState=0)
+    key w=1.0000 auto=false h=2.5000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=q hint=null popup=true
+        action Key(key=Q, metaState=0)
+      gesture swipe dir=UP label=Q hint=null popup=true
+        action Key(key=Q, metaState=1)
+      gesture swipe dir=DOWN label=q hint=null popup=true
+        action CommitText(text=d)
+      gesture swipe dir=LEFT label=L hint=null popup=false
+        action Key(key=LEFT, metaState=0)
+      gesture swipe dir=RIGHT label=q hint=null popup=true
+        action Key(key=RIGHT, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=CTRL type=FUNCTION id=custom status=schema_name text=18.0 hint=null hints={UP=10.0, DOWN=9.0} shifted=A icon=shift spacer=false colors=KeyColors(textColor=-1, backgroundColor=-11751600, pressedColor=null, borderColor=null, shadowColor=null, hintTextColor=null, hintTextColorTop=null, hintTextColorBottom=null, hintTextColorLeft=null, hintTextColorRight=null, states={MODIFIER_ACTIVE=KeyColorOverride(textColor=-256, backgroundColor=null, pressedColor=null, borderColor=null, shadowColor=null, hintTextColor=null, hintTextColorTop=null, hintTextColorBottom=null, hintTextColorLeft=null, hintTextColorRight=null), PRESSED=KeyColorOverride(textColor=null, backgroundColor=-13730510, pressedColor=null, borderColor=null, shadowColor=null, hintTextColor=null, hintTextColorTop=null, hintTextColorBottom=null, hintTextColorLeft=null, hintTextColorRight=null)})
+      gesture click label=日 hint=null popup=true
+        action Key(key=A, metaState=0)
+  row
+    key w=1.0000 auto=true h=2.5000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=space hint=null popup=true
+        action Key(key=SPACE, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label= hint=null popup=true
+        action Key(key=A, metaState=0)
+    key w=1.0000 auto=false h=2.5000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=x hint=null popup=true
+        action MacroAction(steps=[Input(action=Key(key=C, metaState=4096)), Input(action=Key(key=BACKSPACE, metaState=0))])
+    key w=1.0000 auto=false h=2.5000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=c hint=null popup=true
+        action Key(key=C, metaState=4096)
+    key w=1.0000 auto=false h=2.5000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=Q icon=0 spacer=false colors=null
+      gesture click label=二 hint=null popup=true
+        action ConditionalAction(composing=[Key(key=DIGIT_2, metaState=0)], default=[Key(key=Q, metaState=0)])
+    key w=1.0000 auto=false h=2.5000 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=true colors=null
+      gesture click label= hint=null popup=true
+        action Key(key=SPACE, metaState=0)

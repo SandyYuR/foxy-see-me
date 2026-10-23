@@ -671,6 +671,11 @@ FE.gestureInfo = function (g, status, depth, scope) {
   if (typeof g === 'string') {
     return { raw: g, action: FE.resolveActionSpec(g, scope), label: null };
   }
+  /* 手势槽位也允许直接写成「动作数组」（drag 的每个方向常用这种形式）：
+   * 与字符串动作名一样，没有自己的 label / hint / popup，只有动作列表。 */
+  if (Array.isArray(g)) {
+    return { raw: g, action: FE.resolveActionSpec(g, scope), label: null };
+  }
   if (!isPlainObject(g)) return null;
   depth = depth || 0;
   var has = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
@@ -1040,21 +1045,31 @@ FE.layoutHeightUnits = function (L) {
 };
 
 /* 布局级状态变体：返回实际应渲染的布局名 */
-FE.resolvePreviewLayout = function (profile, name, status, seen) {
+/* Variant chain resolution with cycle information. The editor preview keeps
+ * using resolvePreviewLayout() (which falls back to the repeated layout), while
+ * compileLayout() rejects chains that actually cycle for the current status,
+ * matching Foxy's parser. */
+FE.resolvePreviewLayoutInfo = function (profile, name, status, seen) {
   seen = seen || {};
-  if (seen[name]) return name;
+  if (seen[name]) return { name: name, cycle: true };
   seen[name] = true;
   var L = profile && profile.layouts && profile.layouts[name];
-  if (!isPlainObject(L)) return name;
+  if (!isPlainObject(L)) return { name: name, cycle: false };
   if (Array.isArray(L.variants)) {
     var target = null;
     for (var i = 0; i < L.variants.length; i++) {
       var v = L.variants[i];
       if (v && typeof v.layout === 'string' && variantMatches(v.when, status)) target = v.layout;
     }
-    if (target && profile.layouts[target]) return FE.resolvePreviewLayout(profile, target, status, seen);
+    if (target && profile.layouts[target]) {
+      return FE.resolvePreviewLayoutInfo(profile, target, status, seen);
+    }
   }
-  return name;
+  return { name: name, cycle: false };
+};
+
+FE.resolvePreviewLayout = function (profile, name, status, seen) {
+  return FE.resolvePreviewLayoutInfo(profile, name, status, seen).name;
 };
 
 /* ================================================================
@@ -1184,7 +1199,13 @@ function checkGestureRefs(container, where, err, profile, scope) {
       if (!acts[g]) err(gw + ' 引用动作名不存在: ' + g);
       return;
     }
+    /* 动作数组形式（drag 方向槽位常用）：逐项按动作校验，整体合法 */
+    if (Array.isArray(g)) {
+      g.forEach(function (a, i) { validateAction(a, gw + '[' + i + ']', err, profile); });
+      return;
+    }
     if (!isPlainObject(g)) { err(gw + ' 的手势结构无效'); return; }
+
     if (g.macro != null) {
       if (!macros[g.macro]) err(gw + ' 引用宏不存在: ' + g.macro);
     }
@@ -1226,7 +1247,10 @@ function checkGestureRefs(container, where, err, profile, scope) {
     if (dg.step != null && (typeof dg.step !== 'number' || !isFinite(dg.step) || dg.step <= 0)) {
       err(dw + '.step 必须是大于 0 的数字（单位 dp）');
     }
-    if (dg.feedback != null && FE.DRAG_FEEDBACKS.indexOf(dg.feedback) < 0) {
+    /* feedback 大小写不敏感（Foxy 契约允许 "KEY" / "Vibrate" 等写法；
+     * 原值仍按用户输入保留，导出与回显不做强制归一化）。 */
+    if (dg.feedback != null && typeof dg.feedback === 'string'
+        && FE.DRAG_FEEDBACKS.map(function (f) { return f.toUpperCase(); }).indexOf(dg.feedback.toUpperCase()) < 0) {
       err(dw + '.feedback 只能是 ' + FE.DRAG_FEEDBACKS.join(' / ') + '：' + dg.feedback);
     }
   }
@@ -2432,8 +2456,16 @@ FE.compileLayout = function (profile, layoutName, opts) {
   /* 布局级状态变体先解析，再决定取常规片段还是 split 片段。
    * opts.noVariants：不解析变体，编译 layoutName 本身——区段编辑器编辑的是当前布局的
    * sections 数组，若这里跟着变体跳到别的布局，键索引会与编辑目标错位。 */
-  var resolvedName = opts.noVariants ? layoutName : FE.resolvePreviewLayout(profile, layoutName, status);
+  var resolved = opts.noVariants
+    ? { name: layoutName, cycle: false }
+    : FE.resolvePreviewLayoutInfo(profile, layoutName, status);
+  var resolvedName = resolved.name;
   out.resolvedName = resolvedName;
+  if (resolved.cycle) {
+    out.ok = false;
+    out.issues.push({ code: 'variant-cycle', message: '布局变体存在循环: ' + layoutName });
+    return out;
+  }
   var L = profile.layouts[resolvedName] || profile.layouts[layoutName];
   if (!isPlainObject(L)) {
     out.ok = false; out.issues.push({ code: 'missing-layout', message: '找不到布局 ' + layoutName });

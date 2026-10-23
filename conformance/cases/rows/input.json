@@ -1,0 +1,35 @@
+{
+  "keys": {
+    "a": {
+      "ref": "rime.a",
+      "label": "A"
+    },
+    "b": {
+      "ref": "rime.b",
+      "tap": {
+        "type": "text",
+        "text": "b"
+      }
+    }
+  },
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              {
+                "ref": "a"
+              },
+              {
+                "ref": "b",
+                "weight": 2
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

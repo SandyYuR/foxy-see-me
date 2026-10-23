@@ -1,0 +1,80 @@
+{
+  "icons": {
+    "custom": "svg:<svg/>"
+  },
+  "keys": {
+    "k": {
+      "ref": "rime.a",
+      "label": "日",
+      "shiftedLabel": "A",
+      "keyType": "FUNCTION",
+      "modifier": "CTRL",
+      "id": "custom",
+      "statusLabel": {
+        "source": "schema_name"
+      },
+      "textSize": 18,
+      "hintTextSize": {
+        "up": 10,
+        "down": 9
+      },
+      "icon": "shift",
+      "height": 1.25,
+      "colors": {
+        "text": "#FFFFFFFF",
+        "background": "#4CAF50",
+        "pressed": "#FF000000",
+        "border": "#FF0000FF",
+        "shadow": "#80000000",
+        "hint": "#FFFF0000",
+        "hintTop": "#FF00FF00",
+        "hintBottom": "#FF0000FF",
+        "hintLeft": "#FFFFFF00",
+        "hintRight": "#FF00FFFF",
+        "states": {
+          "modifierActive": {
+            "text": "#FFFF00"
+          },
+          "modifierLocked": {
+            "background": "#FF123456"
+          },
+          "pressed": {
+            "pressed": "#FFABCDEF"
+          },
+          "unknown": {
+            "text": "#FFFFFFFF"
+          }
+        }
+      }
+    },
+    "c": {
+      "ref": "rime.a",
+      "icon": "custom",
+      "hintTextSize": 12,
+      "colors": {
+        "states": {
+          "pressed": {}
+        }
+      }
+    }
+  },
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              {
+                "ref": "k"
+              },
+              {
+                "ref": "c"
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "keys": {
+    "base.q": { "ref": "rime.q", "keyType": "LETTER" },
+    "child.q": {
+      "ref": "base.q",
+      "label": "Q-child",
+      "shiftedLabel": "Q",
+      "override": { "label": "ignored" },
+      "swipe": {
+        "up": { "ref": "rime.Q" },
+        "down": { "ref": "rime.1", "label": "one" }
+      },
+      "longPress": { "repeat": true, "action": { "type": "key", "key": "BACKSPACE" } }
+    },
+    "voice.hold": {
+      "ref": "rime.space",
+      "hold": {
+        "label": "Hold",
+        "start": { "type": "app", "command": "voice_start" },
+        "end": { "type": "app", "command": "voice_stop" }
+      }
+    },
+    "cleared": {
+      "ref": "child.q",
+      "override": {
+        "label": null,
+        "swipe": { "up": null, "left": { "ref": "rime.Left" } },
+        "longPress": null,
+        "hold": null
+      }
+    },
+    "refhold": { "ref": "voice.hold", "hold": { "ref": "voice.hold", "label": "Reuse" } },
+    "variant.q": {
+      "ref": "rime.q",
+      "label": "手",
+      "variants": [
+        { "when": { "rime": { "ascii_mode": true } }, "label": "q", "shiftedLabel": "Q" }
+      ]
+    }
+  },
+  "layouts": {
+    "default": {
+      "sections": [{
+        "type": "rows",
+        "rows": [
+          [
+            { "ref": "child.q" },
+            { "ref": "cleared" },
+            { "ref": "refhold" },
+            { "ref": "variant.q" }
+          ]
+        ]
+      }]
+    }
+  }
+}

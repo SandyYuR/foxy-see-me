@@ -1,0 +1,18 @@
+{
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              {
+                "ref": "missing"
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

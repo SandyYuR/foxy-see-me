@@ -1,0 +1,174 @@
+{
+  "profile": true,
+  "statuses": {
+    "idle": {
+      "totalUnits": 5.0,
+      "hasDynamicVariants": false,
+      "keyboardHeightPercent": null,
+      "keyboardHeightPercentLandscape": null,
+      "sidePaddingDp": null,
+      "sidePaddingLandscapeDp": null,
+      "bottomPaddingDp": null,
+      "bottomPaddingLandscapeDp": null,
+      "icons": {
+        "custom": "svg:<svg/>"
+      },
+      "sections": [
+        {
+          "kind": "rows",
+          "rowWidthFractions": [
+            null
+          ],
+          "rowWeightTotals": [
+            null
+          ],
+          "rows": [
+            [
+              {
+                "label": "日",
+                "weight": 1.0,
+                "autoWidth": false,
+                "height": 1.25,
+                "modifier": "CTRL",
+                "keyType": "FUNCTION",
+                "id": "custom",
+                "statusLabel": "schema_name",
+                "textSize": 18.0,
+                "hintTextSize": null,
+                "hintTextSizes": {
+                  "UP": 10.0,
+                  "DOWN": 9.0
+                },
+                "shiftedLabel": "A",
+                "icon": "shift",
+                "iconName": null,
+                "spacer": false,
+                "colors": {
+                  "text": -1,
+                  "background": -11751600,
+                  "pressed": -16777216,
+                  "border": -16776961,
+                  "shadow": -2147483648,
+                  "hint": -65536,
+                  "hintTop": -16711936,
+                  "hintBottom": -16776961,
+                  "hintLeft": -256,
+                  "hintRight": -16711681,
+                  "states": {
+                    "MODIFIER_ACTIVE": {
+                      "text": -256,
+                      "background": null,
+                      "pressed": null,
+                      "border": null,
+                      "shadow": null,
+                      "hint": null,
+                      "hintTop": null,
+                      "hintBottom": null,
+                      "hintLeft": null,
+                      "hintRight": null
+                    },
+                    "MODIFIER_LOCKED": {
+                      "text": null,
+                      "background": -15584170,
+                      "pressed": null,
+                      "border": null,
+                      "shadow": null,
+                      "hint": null,
+                      "hintTop": null,
+                      "hintBottom": null,
+                      "hintLeft": null,
+                      "hintRight": null
+                    },
+                    "PRESSED": {
+                      "text": null,
+                      "background": null,
+                      "pressed": -5517841,
+                      "border": null,
+                      "shadow": null,
+                      "hint": null,
+                      "hintTop": null,
+                      "hintBottom": null,
+                      "hintLeft": null,
+                      "hintRight": null
+                    }
+                  }
+                },
+                "gestures": [
+                  {
+                    "kind": "click",
+                    "label": "日",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "key",
+                        "key": "A"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "label": "a",
+                "weight": 1.0,
+                "autoWidth": false,
+                "height": 5.0,
+                "modifier": null,
+                "keyType": null,
+                "id": null,
+                "statusLabel": null,
+                "textSize": null,
+                "hintTextSize": 12.0,
+                "hintTextSizes": {},
+                "shiftedLabel": null,
+                "icon": null,
+                "iconName": "custom",
+                "spacer": false,
+                "colors": {
+                  "text": null,
+                  "background": null,
+                  "pressed": null,
+                  "border": null,
+                  "shadow": null,
+                  "hint": null,
+                  "hintTop": null,
+                  "hintBottom": null,
+                  "hintLeft": null,
+                  "hintRight": null,
+                  "states": {
+                    "PRESSED": {
+                      "text": null,
+                      "background": null,
+                      "pressed": null,
+                      "border": null,
+                      "shadow": null,
+                      "hint": null,
+                      "hintTop": null,
+                      "hintBottom": null,
+                      "hintLeft": null,
+                      "hintRight": null
+                    }
+                  }
+                },
+                "gestures": [
+                  {
+                    "kind": "click",
+                    "label": "a",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "key",
+                        "key": "A"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

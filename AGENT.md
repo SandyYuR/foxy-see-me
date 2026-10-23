@@ -36,7 +36,15 @@ node test/test-core.js
 node test/test-ui.js
 ```
 
-当前基线是 core 799、UI 1590，两个套件都必须 0 失败。按改动范围追加：
+当前基线是 core 799、UI 1590，两个套件都必须 0 失败。Foxy 数据契约门禁：
+
+```bash
+node test/conformance-adapter.js   # conformance v1 共 46 项检查，必须全过
+```
+
+`conformance/` 是 Foxy 作者提供的可执行数据契约（`conformance/README.md`）：给定输入 JSON，Foxy 端的编译结果必须与 `cases/<case>/expected.json` 逐字段一致。它是 Foxy 语义的权威判据，`skills/SKILL.md` 与它冲突时以契约为准。改过解析、变体、手势、网格或校验逻辑后必须重跑。
+
+按改动范围追加：
 
 ```bash
 node test/test-color-source.js   # 改过 color-source.js 或颜色链路
@@ -131,6 +139,7 @@ cd foxy-editor
 # 修改代码或文档
 node test/test-core.js
 node test/test-ui.js
+node test/conformance-adapter.js
 # 按改动范围运行 build-examples.js、test-color-source.js、check-real-files.js
 # 修改 AGENT.md 后同步并校验两份副本
 node tools/check-agent-sync.js --write

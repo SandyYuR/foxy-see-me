@@ -1,0 +1,36 @@
+{
+  "icons": {
+    "custom": "svg:<svg/>"
+  },
+  "keys": {
+    "k": {
+      "ref": "rime.a",
+      "label": "K",
+      "icon": "custom",
+      "textSize": 18,
+      "shiftedLabel": "A"
+    }
+  },
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              {
+                "ref": "k",
+                "override": {
+                  "label": null,
+                  "icon": null,
+                  "textSize": null,
+                  "shiftedLabel": null
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

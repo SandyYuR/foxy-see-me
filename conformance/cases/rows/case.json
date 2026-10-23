@@ -1,0 +1,20 @@
+{
+  "name": "rows",
+  "layoutId": "default",
+  "schemaId": null,
+  "splitRequested": false,
+  "statuses": {
+    "idle": {
+      "schemaId": "wubi",
+      "schemaName": "五笔",
+      "isDisabled": false,
+      "isComposing": false,
+      "isAsciiMode": false,
+      "isFullShape": false,
+      "isSimplified": false,
+      "isTraditional": false,
+      "isAsciiPunct": false,
+      "options": {}
+    }
+  }
+}

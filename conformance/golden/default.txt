@@ -1,0 +1,266 @@
+layout totalUnits=5.0000 dynamic=true height=null/null side=null/null bottom=null/null
+section rows widths=[null, 0.9, null, null] weights=[null, null, null, null]
+  row
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=q hint=null popup=true
+        action Key(key=Q, metaState=0)
+      gesture long label=q hint=null repeat=false popup=true popupKey=q
+      gesture swipe dir=UP label=Q hint=null popup=true
+        action Key(key=Q, metaState=1)
+      gesture swipe dir=DOWN label=1 hint=null popup=true
+        action Key(key=DIGIT_1, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=w hint=null popup=true
+        action Key(key=W, metaState=0)
+      gesture long label=w hint=null repeat=false popup=true popupKey=w
+      gesture swipe dir=UP label=W hint=null popup=true
+        action Key(key=W, metaState=1)
+      gesture swipe dir=DOWN label=2 hint=null popup=true
+        action Key(key=DIGIT_2, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=e hint=null popup=true
+        action Key(key=E, metaState=0)
+      gesture long label=e hint=null repeat=false popup=true popupKey=e
+      gesture swipe dir=UP label=E hint=null popup=true
+        action Key(key=E, metaState=1)
+      gesture swipe dir=DOWN label=3 hint=null popup=true
+        action Key(key=DIGIT_3, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=r hint=null popup=true
+        action Key(key=R, metaState=0)
+      gesture long label=r hint=null repeat=false popup=true popupKey=r
+      gesture swipe dir=UP label=R hint=null popup=true
+        action Key(key=R, metaState=1)
+      gesture swipe dir=DOWN label=4 hint=null popup=true
+        action Key(key=DIGIT_4, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=t hint=null popup=true
+        action Key(key=T, metaState=0)
+      gesture long label=t hint=null repeat=false popup=true popupKey=t
+      gesture swipe dir=UP label=T hint=null popup=true
+        action Key(key=T, metaState=1)
+      gesture swipe dir=DOWN label=5 hint=null popup=true
+        action Key(key=DIGIT_5, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=y hint=null popup=true
+        action Key(key=Y, metaState=0)
+      gesture long label=y hint=null repeat=false popup=true popupKey=y
+      gesture swipe dir=UP label=Y hint=null popup=true
+        action Key(key=Y, metaState=1)
+      gesture swipe dir=DOWN label=6 hint=null popup=true
+        action Key(key=DIGIT_6, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=u hint=null popup=true
+        action Key(key=U, metaState=0)
+      gesture long label=u hint=null repeat=false popup=true popupKey=u
+      gesture swipe dir=UP label=U hint=null popup=true
+        action Key(key=U, metaState=1)
+      gesture swipe dir=DOWN label=7 hint=null popup=true
+        action Key(key=DIGIT_7, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=i hint=null popup=true
+        action Key(key=I, metaState=0)
+      gesture long label=i hint=null repeat=false popup=true popupKey=i
+      gesture swipe dir=UP label=I hint=null popup=true
+        action Key(key=I, metaState=1)
+      gesture swipe dir=DOWN label=8 hint=null popup=true
+        action Key(key=DIGIT_8, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=o hint=null popup=true
+        action Key(key=O, metaState=0)
+      gesture long label=o hint=null repeat=false popup=true popupKey=o
+      gesture swipe dir=UP label=O hint=null popup=true
+        action Key(key=O, metaState=1)
+      gesture swipe dir=DOWN label=9 hint=null popup=true
+        action Key(key=DIGIT_9, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=p hint=null popup=true
+        action Key(key=P, metaState=0)
+      gesture long label=p hint=null repeat=false popup=true popupKey=p
+      gesture swipe dir=UP label=P hint=null popup=true
+        action Key(key=P, metaState=1)
+      gesture swipe dir=DOWN label=0 hint=null popup=true
+        action Key(key=DIGIT_0, metaState=0)
+  row
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=a hint=null popup=true
+        action Key(key=A, metaState=0)
+      gesture long label=a hint=null repeat=false popup=true popupKey=a
+      gesture swipe dir=UP label=A hint=null popup=true
+        action Key(key=A, metaState=1)
+      gesture swipe dir=DOWN label=Sel hint=null popup=true
+        action SelectAll
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=s hint=null popup=true
+        action Key(key=S, metaState=0)
+      gesture long label=s hint=null repeat=false popup=true popupKey=s
+      gesture swipe dir=UP label=S hint=null popup=true
+        action Key(key=S, metaState=1)
+      gesture swipe dir=DOWN label=- hint=null popup=true
+        action Key(key=MINUS, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=d hint=null popup=true
+        action Key(key=D, metaState=0)
+      gesture long label=d hint=null repeat=false popup=true popupKey=d
+      gesture swipe dir=UP label=D hint=null popup=true
+        action Key(key=D, metaState=1)
+      gesture swipe dir=DOWN label== hint=null popup=true
+        action Key(key=EQUAL, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=f hint=null popup=true
+        action Key(key=F, metaState=0)
+      gesture long label=f hint=null repeat=false popup=true popupKey=f
+      gesture swipe dir=UP label=F hint=null popup=true
+        action Key(key=F, metaState=1)
+      gesture swipe dir=DOWN label=` hint=null popup=true
+        action Key(key=GRAVE, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=g hint=null popup=true
+        action Key(key=G, metaState=0)
+      gesture long label=g hint=null repeat=false popup=true popupKey=g
+      gesture swipe dir=UP label=G hint=null popup=true
+        action Key(key=G, metaState=1)
+      gesture swipe dir=DOWN label=/ hint=null popup=true
+        action Key(key=SLASH, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=h hint=null popup=true
+        action Key(key=H, metaState=0)
+      gesture long label=h hint=null repeat=false popup=true popupKey=h
+      gesture swipe dir=UP label=H hint=null popup=true
+        action Key(key=H, metaState=1)
+      gesture swipe dir=DOWN label=' hint=null popup=true
+        action Key(key=APOSTROPHE, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=j hint=null popup=true
+        action Key(key=J, metaState=0)
+      gesture long label=j hint=null repeat=false popup=true popupKey=j
+      gesture swipe dir=UP label=J hint=null popup=true
+        action Key(key=J, metaState=1)
+      gesture swipe dir=DOWN label=" hint=null popup=true
+        action Key(key=APOSTROPHE, metaState=1)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=k hint=null popup=true
+        action Key(key=K, metaState=0)
+      gesture long label=k hint=null repeat=false popup=true popupKey=k
+      gesture swipe dir=UP label=K hint=null popup=true
+        action Key(key=K, metaState=1)
+      gesture swipe dir=DOWN label=? hint=null popup=true
+        action Key(key=SLASH, metaState=1)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=l hint=null popup=true
+        action Key(key=L, metaState=0)
+      gesture long label=l hint=null repeat=false popup=true popupKey=l
+      gesture swipe dir=UP label=L hint=null popup=true
+        action Key(key=L, metaState=1)
+      gesture swipe dir=DOWN label=\ hint=null popup=true
+        action Key(key=BACKSLASH, metaState=0)
+  row
+    key w=1.5000 auto=false h=1.2500 mod=SHIFT type=FUNCTION id=null status=null text=null hint=null hints={} shifted=null icon=shift spacer=false colors=null
+      gesture click label=⇧ hint=null popup=true
+      gesture long label=⇪ hint=null repeat=false popup=true popupKey=null
+      gesture swipe dir=DOWN label=Edit hint=null popup=true
+        action ShowTextEditorTouchpad
+      gesture swipe dir=UP label=Redo hint=null popup=true
+        action Redo
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=z hint=null popup=true
+        action Key(key=Z, metaState=0)
+      gesture long label=z hint=null repeat=false popup=true popupKey=z
+      gesture swipe dir=UP label=Z hint=null popup=true
+        action Key(key=Z, metaState=1)
+      gesture swipe dir=DOWN label=Undo hint=null popup=true
+        action Undo
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=x hint=null popup=true
+        action Key(key=X, metaState=0)
+      gesture long label=x hint=null repeat=false popup=true popupKey=x
+      gesture swipe dir=UP label=X hint=null popup=true
+        action Key(key=X, metaState=1)
+      gesture swipe dir=DOWN label=Cut hint=null popup=true
+        action Cut
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=c hint=null popup=true
+        action Key(key=C, metaState=0)
+      gesture long label=c hint=null repeat=false popup=true popupKey=c
+      gesture swipe dir=UP label=C hint=null popup=true
+        action Key(key=C, metaState=1)
+      gesture swipe dir=DOWN label=Copy hint=null popup=true
+        action Copy
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=v hint=null popup=true
+        action Key(key=V, metaState=0)
+      gesture long label=v hint=null repeat=false popup=true popupKey=v
+      gesture swipe dir=UP label=V hint=null popup=true
+        action Key(key=V, metaState=1)
+      gesture swipe dir=DOWN label=Paste hint=null popup=true
+        action Paste
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=b hint=null popup=true
+        action Key(key=B, metaState=0)
+      gesture long label=b hint=null repeat=false popup=true popupKey=b
+      gesture swipe dir=UP label=B hint=null popup=true
+        action Key(key=B, metaState=1)
+      gesture swipe dir=DOWN label=Home hint=null popup=true
+        action Key(key=HOME, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=n hint=null popup=true
+        action Key(key=N, metaState=0)
+      gesture long label=n hint=null repeat=false popup=true popupKey=n
+      gesture swipe dir=UP label=N hint=null popup=true
+        action Key(key=N, metaState=1)
+      gesture swipe dir=DOWN label=End hint=null popup=true
+        action Key(key=END, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=LETTER id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=m hint=null popup=true
+        action Key(key=M, metaState=0)
+      gesture long label=m hint=null repeat=false popup=true popupKey=m
+      gesture swipe dir=UP label=M hint=null popup=true
+        action Key(key=M, metaState=1)
+      gesture swipe dir=DOWN label=Delete hint=null popup=true
+        action Key(key=DELETE, metaState=0)
+    key w=1.5000 auto=false h=1.2500 mod=null type=FUNCTION id=null status=null text=null hint=null hints={} shifted=null icon=backspace spacer=false colors=null
+      gesture click label=⌫ hint=null popup=true
+        action Key(key=BACKSPACE, metaState=0)
+      gesture long label=⌫ hint=null repeat=true popup=true popupKey=null
+        action Key(key=BACKSPACE, metaState=0)
+      gesture drag label=⌫ hint=null popup=true step=null feedback=VIBRATE dirs=LEFT=[EditorNavigation(key=LEFT, selecting=true)],RIGHT=[EditorNavigation(key=RIGHT, selecting=true)]
+        action EditorNavigation(key=LEFT, selecting=true)
+        action EditorNavigation(key=RIGHT, selecting=true)
+        end DeleteSelection
+      gesture swipe dir=UP label=Esc hint=null popup=true
+        action Key(key=ESCAPE, metaState=0)
+  row
+    key w=1.5000 auto=false h=1.2500 mod=null type=FUNCTION id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=123 hint=null popup=true
+        action SwitchKeyboardLayout(layoutId=numpad)
+      gesture swipe dir=UP label=Tab hint=null popup=true
+        action Key(key=TAB, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=, hint=null popup=true
+        action Key(key=COMMA, metaState=0)
+      gesture swipe dir=UP label=!?# hint=null popup=true
+        action SwitchKeyboardLayout(layoutId=symbols)
+    key w=5.0000 auto=false h=1.2500 mod=null type=LETTER id=space status=schema_name text=16.0 hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=space hint=null popup=true
+        action Key(key=SPACE, metaState=0)
+      gesture hold label=🎤 hint=null popup=true
+        action StartVoiceInput
+        end StopVoiceInput
+      gesture swipe dir=UP label=Up hint=null popup=true
+        action Key(key=UP, metaState=0)
+      gesture swipe dir=DOWN label=Down hint=null popup=true
+        action Key(key=DOWN, metaState=0)
+      gesture swipe dir=LEFT label=Left hint=null popup=true
+        action Key(key=LEFT, metaState=0)
+      gesture swipe dir=RIGHT label=Right hint=null popup=true
+        action Key(key=RIGHT, metaState=0)
+    key w=1.0000 auto=false h=1.2500 mod=null type=null id=null status=null text=null hint=null hints={} shifted=null icon=0 spacer=false colors=null
+      gesture click label=. hint=null popup=true
+        action Key(key=PERIOD, metaState=0)
+      gesture swipe dir=UP label=Emoji hint=null popup=true
+        action SwitchKeyboardLayout(layoutId=emoji)
+    key w=1.5000 auto=false h=1.2500 mod=null type=ACTION id=null status=null text=null hint=null hints={} shifted=null icon=enter spacer=false colors=null
+      gesture click label=Enter hint=null popup=true
+        action Key(key=ENTER, metaState=0)
+      gesture swipe dir=UP label=Kaomoji hint=null popup=true
+        action SwitchKeyboardLayout(layoutId=kaomoji)

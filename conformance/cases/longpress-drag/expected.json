@@ -1,0 +1,139 @@
+{
+  "profile": true,
+  "statuses": {
+    "idle": {
+      "totalUnits": 5.0,
+      "hasDynamicVariants": false,
+      "keyboardHeightPercent": null,
+      "keyboardHeightPercentLandscape": null,
+      "sidePaddingDp": null,
+      "sidePaddingLandscapeDp": null,
+      "bottomPaddingDp": null,
+      "bottomPaddingLandscapeDp": null,
+      "icons": {},
+      "sections": [
+        {
+          "kind": "rows",
+          "rowWidthFractions": [
+            null
+          ],
+          "rowWeightTotals": [
+            null
+          ],
+          "rows": [
+            [
+              {
+                "label": "LP",
+                "weight": 1.0,
+                "autoWidth": false,
+                "height": 5.0,
+                "modifier": null,
+                "keyType": null,
+                "id": null,
+                "statusLabel": null,
+                "textSize": null,
+                "hintTextSize": null,
+                "hintTextSizes": {},
+                "shiftedLabel": null,
+                "icon": null,
+                "iconName": null,
+                "spacer": false,
+                "colors": null,
+                "gestures": [
+                  {
+                    "kind": "click",
+                    "label": "LP",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "key",
+                        "key": "A"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "long_press",
+                    "label": "Long",
+                    "hint": "L",
+                    "popup": false,
+                    "actions": [
+                      {
+                        "type": "candidate_previous_page"
+                      }
+                    ],
+                    "repeat": true,
+                    "popupKey": "q"
+                  }
+                ]
+              },
+              {
+                "label": "DR",
+                "weight": 1.0,
+                "autoWidth": false,
+                "height": 5.0,
+                "modifier": null,
+                "keyType": null,
+                "id": null,
+                "statusLabel": null,
+                "textSize": null,
+                "hintTextSize": null,
+                "hintTextSizes": {},
+                "shiftedLabel": null,
+                "icon": null,
+                "iconName": null,
+                "spacer": false,
+                "colors": null,
+                "gestures": [
+                  {
+                    "kind": "click",
+                    "label": "DR",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "key",
+                        "key": "B"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "drag",
+                    "label": "Drag",
+                    "hint": "D",
+                    "popup": false,
+                    "directions": {
+                      "LEFT": [
+                        {
+                          "type": "key",
+                          "key": "LEFT"
+                        }
+                      ],
+                      "RIGHT": [
+                        {
+                          "type": "commit_text",
+                          "text": "r"
+                        },
+                        {
+                          "type": "candidate_next_page"
+                        }
+                      ]
+                    },
+                    "endActions": [
+                      {
+                        "type": "app",
+                        "action": "voice_stop"
+                      }
+                    ],
+                    "stepDp": 12.0,
+                    "feedback": "KEY"
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

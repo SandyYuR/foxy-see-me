@@ -1,0 +1,60 @@
+{
+  "layouts": {
+    "default": {
+      "variants": [
+        {
+          "when": {
+            "rime": {
+              "ascii_mode": true
+            }
+          },
+          "layout": "alt"
+        }
+      ],
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              {
+                "label": "D",
+                "tap": {
+                  "type": "key",
+                  "key": "D"
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    "alt": {
+      "variants": [
+        {
+          "when": {
+            "rime": {
+              "ascii_mode": true
+            }
+          },
+          "layout": "default"
+        }
+      ],
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              {
+                "label": "A",
+                "tap": {
+                  "type": "key",
+                  "key": "A"
+                }
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

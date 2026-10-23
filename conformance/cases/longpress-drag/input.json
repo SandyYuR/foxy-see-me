@@ -1,0 +1,73 @@
+{
+  "keys": {
+    "lp": {
+      "label": "LP",
+      "tap": {
+        "type": "key",
+        "key": "A"
+      },
+      "longPress": {
+        "repeat": true,
+        "popupKey": "q",
+        "label": "Long",
+        "hint": "L",
+        "popup": false,
+        "action": {
+          "type": "app",
+          "command": "candidate_previous"
+        }
+      }
+    },
+    "dr": {
+      "label": "DR",
+      "tap": {
+        "type": "key",
+        "key": "B"
+      },
+      "drag": {
+        "label": "Drag",
+        "hint": "D",
+        "popup": false,
+        "step": 12,
+        "feedback": "KEY",
+        "left": {
+          "type": "key",
+          "key": "LEFT"
+        },
+        "right": [
+          {
+            "type": "text",
+            "text": "r"
+          },
+          {
+            "type": "app",
+            "command": "candidate_next"
+          }
+        ],
+        "end": {
+          "type": "app",
+          "command": "voice_stop"
+        }
+      }
+    }
+  },
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              {
+                "ref": "lp"
+              },
+              {
+                "ref": "dr"
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

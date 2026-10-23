@@ -21,13 +21,13 @@ function def(name, obj, cat) { obj._cat = cat; B[name] = obj; }
 var LOWER = 'abcdefghijklmnopqrstuvwxyz';
 for (i = 0; i < 26; i++) {
   ch = LOWER.charAt(i); up = ch.toUpperCase();
-  def('rime.' + ch, { label: ch, shiftedLabel: up, keyType: 'LETTER', tap: { type: 'key', key: up } }, '字母');
-  def('rime.' + up, { label: up, keyType: 'LETTER', tap: { type: 'key', key: up, meta: ['SHIFT'] } }, '字母');
+  def('rime.' + ch, { label: ch, tap: { type: 'key', key: up } }, '字母');
+  def('rime.' + up, { label: up, tap: { type: 'key', key: up, meta: ['SHIFT'] } }, '字母');
 }
 
 /* ---- 数字 rime.0 ... rime.9 ---- */
 for (i = 0; i <= 9; i++) {
-  def('rime.' + i, { label: String(i), keyType: 'LETTER', tap: { type: 'key', key: 'DIGIT_' + i } }, '数字');
+  def('rime.' + i, { label: String(i), tap: { type: 'key', key: 'DIGIT_' + i } }, '数字');
 }
 
 /* ---- Shift 后标点（rime.exclam 等） ---- */
@@ -39,7 +39,7 @@ var SHIFTED_PUNCT = {
   ApostropheShift: '"', Question: '?'
 };
 for (name in SHIFTED_PUNCT) {
-  def('rime.' + name, { label: SHIFTED_PUNCT[name], keyType: 'LETTER', tap: { __builtin: 'rime.' + name } }, '标点');
+  def('rime.' + name, { label: SHIFTED_PUNCT[name], tap: { __builtin: 'rime.' + name } }, '标点');
 }
 
 /* ---- 直接标点 ---- */
@@ -53,7 +53,7 @@ var DIRECT_PUNCT = {
 for (name in DIRECT_PUNCT) {
   var pl = DIRECT_PUNCT[name][0], code = DIRECT_PUNCT[name][1];
   def('rime.' + name, {
-    label: pl, keyType: 'LETTER',
+    label: pl,
     tap: code ? { type: 'key', key: code } : { __builtin: 'rime.' + name }
   }, '标点');
 }
@@ -78,18 +78,18 @@ var NAMED = {
   Caps_Lock: ['Caps', 'CAPS_LOCK']
 };
 for (name in NAMED) {
-  def('rime.' + name, { label: NAMED[name][0], keyType: 'FUNCTION', tap: { type: 'key', key: NAMED[name][1] } }, '编辑与导航');
+  def('rime.' + name, { label: NAMED[name][0], tap: { type: 'key', key: NAMED[name][1] } }, '编辑与导航');
 }
 
 /* ---- F1 ... F12（无公开 KeyCode 名称，标记为内置动作） ---- */
 for (i = 1; i <= 12; i++) {
-  def('rime.F' + i, { label: 'F' + i, keyType: 'FUNCTION', tap: { __builtin: 'rime.F' + i } }, '功能键');
+  def('rime.F' + i, { label: 'F' + i, tap: { __builtin: 'rime.F' + i } }, '功能键');
 }
 
 /* ---- 小键盘 ---- */
 var KP_DIGIT = { KP_0: '0', KP_1: '1', KP_2: '2', KP_3: '3', KP_4: '4', KP_5: '5', KP_6: '6', KP_7: '7', KP_8: '8', KP_9: '9' };
 for (name in KP_DIGIT) {
-  def('rime.' + name, { label: KP_DIGIT[name], keyType: 'LETTER', tap: { type: 'key', key: name } }, '小键盘');
+  def('rime.' + name, { label: KP_DIGIT[name], tap: { type: 'key', key: name } }, '小键盘');
 }
 var KP_MISC = {
   KP_Decimal: ['.', 'KP_DECIMAL'], KP_Add: ['+', 'KP_ADD'], KP_Subtract: ['-', 'KP_SUBTRACT'],
@@ -105,30 +105,30 @@ var KP_MISC = {
   KP_Insert: ['Ins', 'KP_INSERT'], KP_Delete: ['Del', 'KP_DELETE']
 };
 for (name in KP_MISC) {
-  def('rime.' + name, { label: KP_MISC[name][0], keyType: 'FUNCTION', tap: { type: 'key', key: KP_MISC[name][1] } }, '小键盘');
+  def('rime.' + name, { label: KP_MISC[name][0], tap: { type: 'key', key: KP_MISC[name][1] } }, '小键盘');
 }
 
 /* ---- foxy.* 内置能力键 ---- */
 def('foxy.Shift', {
-  label: '⇧', keyType: 'FUNCTION', icon: 'shift', modifier: 'SHIFT',
+  label: '⇧', icon: 'shift', modifier: 'SHIFT',
   tap: { type: 'modifier', modifier: 'SHIFT', state: 'ONESHOT' }
 }, 'Foxy 功能');
 def('foxy.LayoutNumpad', {
-  label: '123', keyType: 'FUNCTION',
+  label: '123',
   tap: { type: 'switch_layout', layout: 'numpad' }
 }, 'Foxy 功能');
 def('foxy.LayoutDefault', {
-  label: 'ABC', keyType: 'FUNCTION',
+  label: 'ABC',
   tap: { type: 'switch_layout', layout: 'default' }
 }, 'Foxy 功能');
-def('foxy.SelectAll', { label: 'Sel', keyType: 'FUNCTION', tap: { type: 'key', key: 'A', meta: ['CTRL'] } }, 'Foxy 功能');
-def('foxy.Undo', { label: 'Undo', keyType: 'FUNCTION', tap: { type: 'app', command: 'undo' } }, 'Foxy 功能');
-def('foxy.Redo', { label: 'Redo', keyType: 'FUNCTION', tap: { type: 'app', command: 'redo' } }, 'Foxy 功能');
-def('foxy.Cut', { label: 'Cut', keyType: 'LETTER', tap: { type: 'key', key: 'X', meta: ['CTRL'] } }, 'Foxy 功能');
-def('foxy.Copy', { label: 'Copy', keyType: 'LETTER', tap: { type: 'key', key: 'C', meta: ['CTRL'] } }, 'Foxy 功能');
-def('foxy.Paste', { label: 'Paste', keyType: 'LETTER', tap: { type: 'key', key: 'V', meta: ['CTRL'] } }, 'Foxy 功能');
+def('foxy.SelectAll', { label: 'Sel', tap: { type: 'key', key: 'A', meta: ['CTRL'] } }, 'Foxy 功能');
+def('foxy.Undo', { label: 'Undo', tap: { type: 'app', command: 'undo' } }, 'Foxy 功能');
+def('foxy.Redo', { label: 'Redo', tap: { type: 'app', command: 'redo' } }, 'Foxy 功能');
+def('foxy.Cut', { label: 'Cut', tap: { type: 'key', key: 'X', meta: ['CTRL'] } }, 'Foxy 功能');
+def('foxy.Copy', { label: 'Copy', tap: { type: 'key', key: 'C', meta: ['CTRL'] } }, 'Foxy 功能');
+def('foxy.Paste', { label: 'Paste', tap: { type: 'key', key: 'V', meta: ['CTRL'] } }, 'Foxy 功能');
 def('foxy.KP_Enter', { label: 'Enter', keyType: 'ACTION', icon: 'enter', tap: { type: 'key', key: 'KP_ENTER' } }, 'Foxy 功能');
-def('foxy.Spacer', { label: '', keyType: 'LETTER', spacer: true, tap: { __builtin: 'foxy.Spacer' } }, 'Foxy 功能');
+def('foxy.Spacer', { label: '', spacer: true, tap: { __builtin: 'foxy.Spacer' } }, 'Foxy 功能');
 
 FE.BUILTIN_KEYS = B;
 

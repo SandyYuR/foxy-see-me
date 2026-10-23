@@ -1,0 +1,40 @@
+{
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              {
+                "label": "D",
+                "tap": {
+                  "type": "key",
+                  "key": "D"
+                }
+              }
+            ]
+          ]
+        }
+      ],
+      "split": {
+        "sections": [
+          {
+            "type": "rows",
+            "rows": [
+              [
+                {
+                  "label": "S",
+                  "tap": {
+                    "type": "key",
+                    "key": "S"
+                  }
+                }
+              ]
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

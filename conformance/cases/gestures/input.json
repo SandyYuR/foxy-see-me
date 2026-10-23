@@ -1,0 +1,67 @@
+{
+  "actions": {
+    "copy": {
+      "type": "key",
+      "key": "C",
+      "meta": [
+        "CTRL"
+      ]
+    }
+  },
+  "macros": {
+    "m": [
+      {
+        "action": "copy"
+      }
+    ]
+  },
+  "keys": {
+    "k": {
+      "label": "K",
+      "tap": {
+        "macro": "m"
+      },
+      "doubleTap": {
+        "action": "copy"
+      },
+      "hold": {
+        "start": {
+          "type": "app",
+          "command": "voice_start"
+        },
+        "end": {
+          "type": "app",
+          "command": "voice_stop"
+        }
+      },
+      "swipe": {
+        "up": {
+          "action": {
+            "type": "text",
+            "text": "up"
+          }
+        },
+        "down": {
+          "type": "key",
+          "key": "DOWN"
+        }
+      }
+    }
+  },
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            [
+              {
+                "ref": "k"
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

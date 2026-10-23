@@ -1,0 +1,60 @@
+{
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "grid",
+          "columns": 2,
+          "rows": 2,
+          "keys": [
+            {
+              "column": 0,
+              "row": 0,
+              "columnSpan": 2,
+              "label": "A",
+              "tap": {
+                "type": "key",
+                "key": "A"
+              }
+            },
+            {
+              "column": 0,
+              "row": 1,
+              "label": "B",
+              "tap": {
+                "type": "key",
+                "key": "B"
+              }
+            },
+            {
+              "column": 1,
+              "row": 1,
+              "label": "C",
+              "tap": {
+                "type": "key",
+                "key": "C"
+              }
+            }
+          ]
+        },
+        {
+          "type": "rows",
+          "rows": [
+            {
+              "height": 2,
+              "keys": [
+                {
+                  "label": "D",
+                  "tap": {
+                    "type": "key",
+                    "key": "D"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

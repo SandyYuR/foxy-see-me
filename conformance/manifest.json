@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "generatedBy": ":core:desktopTest ConformanceExportTest",
+  "inputs": [
+    "synthetic.json",
+    "kitchen.json"
+  ],
+  "cases": [
+    "rows",
+    "weighted",
+    "grid",
+    "variants",
+    "split",
+    "gestures",
+    "longpress-drag",
+    "composing-conditional",
+    "actions-args",
+    "appearance",
+    "null-resets",
+    "section-defaults",
+    "override-vs-direct",
+    "null-clear-placement",
+    "invalid-auto-no-total",
+    "invalid-auto-total-too-small",
+    "invalid-grid-overlap",
+    "invalid-grid-bounds",
+    "invalid-variant-cycle",
+    "invalid-section-type",
+    "invalid"
+  ],
+  "golden": [
+    "builtins.txt",
+    "default.txt",
+    "kitchen-ascii.txt",
+    "kitchen-composing.txt",
+    "kitchen-disabled.txt",
+    "kitchen-normal.txt",
+    "layout_corpus.txt",
+    "synthetic-ascii.txt",
+    "synthetic.txt"
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "rows",
+          "rows": [
+            {
+              "width": 0.9,
+              "totalWeight": 10,
+              "keys": [
+                {
+                  "label": "A",
+                  "tap": {
+                    "type": "key",
+                    "key": "A"
+                  }
+                },
+                {
+                  "label": "B",
+                  "weight": "auto",
+                  "tap": {
+                    "type": "key",
+                    "key": "B"
+                  }
+                }
+              ]
+            },
+            {
+              "totalWeight": 10,
+              "keys": [
+                {
+                  "label": "C",
+                  "weight": 2,
+                  "tap": {
+                    "type": "key",
+                    "key": "C"
+                  }
+                },
+                {
+                  "label": "D",
+                  "weight": "auto",
+                  "tap": {
+                    "type": "key",
+                    "key": "D"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

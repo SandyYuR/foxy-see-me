@@ -1,0 +1,64 @@
+{
+  "profile": false,
+  "statuses": {
+    "idle": {
+      "totalUnits": 5.0,
+      "hasDynamicVariants": false,
+      "keyboardHeightPercent": null,
+      "keyboardHeightPercentLandscape": null,
+      "sidePaddingDp": null,
+      "sidePaddingLandscapeDp": null,
+      "bottomPaddingDp": null,
+      "bottomPaddingLandscapeDp": null,
+      "icons": {},
+      "sections": [
+        {
+          "kind": "rows",
+          "rowWidthFractions": [
+            null
+          ],
+          "rowWeightTotals": [
+            null
+          ],
+          "rows": [
+            [
+              {
+                "label": "D",
+                "weight": 1.0,
+                "autoWidth": false,
+                "height": 5.0,
+                "modifier": null,
+                "keyType": null,
+                "id": null,
+                "statusLabel": null,
+                "textSize": null,
+                "hintTextSize": null,
+                "hintTextSizes": {},
+                "shiftedLabel": null,
+                "icon": null,
+                "iconName": null,
+                "spacer": false,
+                "colors": null,
+                "gestures": [
+                  {
+                    "kind": "click",
+                    "label": "D",
+                    "hint": null,
+                    "popup": true,
+                    "actions": [
+                      {
+                        "type": "key",
+                        "key": "D"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    "ascii": null
+  }
+}

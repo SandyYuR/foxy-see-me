@@ -1,0 +1,36 @@
+{
+  "icons": {
+    "custom": "svg:<svg/>"
+  },
+  "keys": {
+    "k": {
+      "ref": "rime.a",
+      "label": "K",
+      "icon": "custom",
+      "textSize": 18,
+      "override": {
+        "label": null,
+        "icon": null,
+        "textSize": null
+      }
+    }
+  },
+  "layouts": {
+    "default": {
+      "sections": [
+        {
+          "type": "grid",
+          "columns": 1,
+          "rows": 1,
+          "keys": [
+            {
+              "column": 0,
+              "row": 0,
+              "ref": "k"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
