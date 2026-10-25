@@ -3257,6 +3257,7 @@ FE.syncPreviewPanelChrome = syncPreviewPanelChrome;
  * Foxy 的变体条件除了 composing/ascii_mode/disabled 还有选项（option / options：
  * 平假名、ASCII 标点、简繁……），编辑器不知道活动 schema 声明了哪些开关，
  * 只能把「条件里出现过的选项名 + 常开选项」列成开关，让预览状态可调。
+ * **条件里一个选项名都没有时整组隐藏**：那时的勾选不影响任何渲染结果。
  * 关掉的选项与未声明一样是中性：不写进条件里的时候不参与判定。 */
 function renderPreviewOptionToggles() {
   var host = null;
@@ -3264,13 +3265,17 @@ function renderPreviewOptionToggles() {
   if (!host) return;
   var st = state.status;
   if (!isPlainObject(st.options)) st.options = {};
+  /* 先看「当前 profile 的条件里到底用到过哪些选项名」。一个都没有时整组隐藏 ——
+   * 连四个常开选项也不列：那时勾选改的只是一个没人读的键，勾与不勾预览毫无变化，
+   * 摆出来只会让人以为开关坏了（默认 profile 就是这种状态，0 处选项条件）。
+   * 常开选项只在**确实有选项条件**时才有资格占位（它们不必由 schema 声明）。 */
+  var used = (state.validation && state.validation.optionNames) || [];
+  clearEl(host);
+  if (!used.length) { host.hidden = true; return; }
   var names = {};
   FE.ALWAYS_ON_OPTIONS.forEach(function (n) { names[n] = true; });
-  var used = (state.validation && state.validation.optionNames) || [];
   used.forEach(function (n) { names[n] = true; });
   var list = Object.keys(names).sort();
-  clearEl(host);
-  if (!list.length) { host.hidden = true; return; }
   host.hidden = false;
   host.appendChild(h('span', { class: 'mini-label' }, '选项'));
   list.forEach(function (n) {

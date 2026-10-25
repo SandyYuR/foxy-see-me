@@ -57,7 +57,8 @@
 | 四修饰键阶段 | 2026-10-21 实测 | `modifier` 从 SHIFT / CTRL 扩到 SHIFT / CTRL / ALT / META，补齐键/override/变体的 `modifier` 字段校验，预览加 Ctrl / Alt / Meta 修饰键模拟；core 739、UI 1472。 |
 | 宏引用选取阶段 | 2026-10-25 实测 | 修复手势对话框「来源切到宏调用后不碰下拉就保存」被误判成未选宏的问题，动作名同构修正；顺手补齐 `FE.snapshotGuard` 按来源过滤快照。core 814、UI 1651。 |
 | 临时布局阶段 | 2026-10-24 skill 更新（`switch_layout_once`）实测 | 动作类型新增临时层 `switch_layout_once`：动作摘要、校验、布局重命名引用改写、动作编辑器选项与取值全部覆盖；`skills/*.schema.json` 的上游枚举未含该类型，故未改 schema。core 819、UI 1658。 |
-| 当前阶段 | 本次文档重组前后实测 | core 821、UI 1658、颜色解析 111、主题颜色 295、真实文件体检 46 个示例且 0 错误。 |
+| 预览选项开关阶段 | 2026-10-25 实测 | 预览工具栏的选项开关组只在条件里出现选项名时显示，否则整组隐藏（默认 profile 与示例里 0 处 `option` 条件，勾选影响不到任何渲染）；勾选只写 `state.status.options`，取消勾选删键。core 821、UI 1672。 |
+| 当前阶段 | 本次文档重组前后实测 | core 821、UI 1672、颜色解析 111、主题颜色 295、真实文件体检 46 个示例且 0 错误。 |
 
 ## 2. 长期有效的决策记录
 
@@ -482,6 +483,17 @@ jscolor 的颜色值和 CSS/JSON 顺序不同。项目保留它的字节序约�
 
 E 段是端到端导出往返：拦下 `window.Blob` 拿到「导出 JSON」按钮真正写进下载文件的那段文本，断言里面 `"type": "switch_layout_once"` 原样保留、目标布局名正确；再把这段文本喂回 `FE.applyProfileText`（等同导入文件），断言仍只有一处 `switch_layout_once`、且 `FE.state.validation.errors` 为空。这条把「不改 schema 会不会挡住保存/加载」从源码推断变成实测：整条链路只经 `FE.serializeProfile` → `JSON.parse` → `FE.normalizeProfile` → `FE.validateProfile`，没有任何 schema 参与。
 
+### 6.10 预览选项开关：条件为空时整组隐藏
+
+预览工具栏里那排 `ascii_punct` / `full_shape` / `simplification` / `traditional` 复选框对应 Foxy 的选项条件（`option` / `value` / `options`）。编辑器读不到活动 schema 声明了哪些开关，只能按「条件里出现过的选项名 + 常开选项 `FE.ALWAYS_ON_OPTIONS`」列出开关，勾选只写 `state.status.options[n]`，由 `FE.optionState` → `FE.condResult` 影响按键变体（`FE.applyVariants`）、命名布局变体（`FE.resolvePreviewLayoutInfo`）与编译快照的传参。它不写进导出的 JSON，也不参与校验。
+
+**整组隐藏的理由**：默认 profile 与示例包（`examples/`、`examples-bundle.js`）里 `option` 条件有 0 处，那时勾任何开关都不改变一个像素，四个复选框摆在那里只会像坏了。于是 `FE.renderPreviewOptionToggles`（`js/app.js:3262`）先取 `state.validation.optionNames`，为空就把容器 `hidden = true` 并直接返回；有选项条件时才把「常开选项 + 用到的名字」排序列出。
+
+**语义差别要注意**：常开选项在 `FE.optionState` 里被预置成 `false`，所以未勾选是**假**；而条件里写的、schema 没声明的选项名是**中性**（三态里的第三种），不是假。取消勾选时直接删键而不是留 `false`，避免把中性语义固化成假。
+
+**测试**：`test/test-ui.js` 的「预览选项开关：无选项条件时整组隐藏」一块 13 条断言，覆盖无选项条件时隐藏且容器清空、有选项条件时显示并列出 `zenkaku` 与四个常开选项、勾选后变体命中（标签变 `全角A`）、取消勾选删键、以及条件被移除后重新隐藏。做过变异验证：把隐藏分支临时注释掉会红 3 条。
+
+同一轮把主题页「工具栏图标与符号字体」那段约 1900 字符、含源码引用（`at0.java:1440`、`r71.f0`、`hk0.w()`、`pinyin_simp.schema.yaml`）的实现者说明改写成了面向用户的两段短说明；被删的实现细节在 `js/toolbar-preview.js`、`js/font-preview.js` 的代码注释里本来就完整保留。改动时踩了一次坑：`test/test-ui.js` 对这段文案有字面断言（要求同时出现「拖动」与「渐隐」），精简时漏掉「渐隐」二字会红一条。
 ## 7. 验证基线与文档维护记录
 
 ### 7.1 当前验证命令
@@ -496,7 +508,7 @@ node test/test-ui.js
 当前 AGENT 开头记录的基线是：
 
 - core：821 通过，0 失败；
-- UI：1658 通过，0 失败；
+- UI：1672 通过，0 失败；
 - 颜色解析：`node test/test-color-source.js`，111 通过；
 - 主题颜色：`node test/test-theme-colors.js`，295 通过；
 - 数据契约：`node test/conformance-adapter.js`，46 项检查全过；
@@ -552,7 +564,7 @@ node tools/check-agent-sync.js
 → 798 core + 1577 UI（2026-10-22 工具栏预览、符号字体预览、图标选择器与符号面板选中色）
 → 799 core + 1590 UI（2026-10-22 工具栏并入键盘面板、展开态返回行、keyboard_tools 图标）
 → 814 core + 1651 UI（2026-10-25 宏调用 / 动作名「显示即已选」修复与回归测试）
-→ 821 core + 1658 UI（2026-10-24 skill 更新 `switch_layout_once` 临时层对齐 + 导出往返实测后的当前基线）
+→ 821 core + 1672 UI（2026-10-25 预览选项开关整组隐藏、补测试与主题页说明精简后的当前基线）
 ```
 
 另有一段旧的 AGENT 末尾仍写着：core 531、UI 1062、示例 20（16 布局 + 4 popup）。它是文档未同步时留下的历史基线，不能覆盖文件顶部和标准工作流中的当前数字。重组文档时保留这条说明，是为了让以后看到旧提交或旧截图的人知道数字差异来自文档漂移，而不是测试随机变化。

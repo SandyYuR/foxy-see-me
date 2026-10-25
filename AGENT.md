@@ -36,7 +36,7 @@ node test/test-core.js
 node test/test-ui.js
 ```
 
-当前基线是 core 821、UI 1658，两个套件都必须 0 失败。Foxy 数据契约门禁：
+当前基线是 core 821、UI 1672，两个套件都必须 0 失败。Foxy 数据契约门禁：
 
 ```bash
 node test/conformance-adapter.js   # conformance v1 共 46 项检查，必须全过
@@ -83,6 +83,7 @@ node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 - 预览的修饰键模拟表是 `state.status.modifiers`（四值布尔）；`status.shift` 是历史字段，决定 `shiftedLabel` / 弹出候选，并作为 SHIFT 的镜像。判定某键是否进入 `modifierActive` 一律走 `FE.keyStateOpts` + `FE.statusModifierOn`，不要在任何渲染处写死 `'SHIFT'`。
 - `switch_layout_once` 与 `switch_layout` 字段完全相同（`layout`），语义是临时层：下一次有效输入后自动回到切换前的布局。凡是按 `switch_layout` 分支处理动作的地方都要同时覆盖它——`FE.actionDisplay` 摘要、`FE.validateAction` 校验（`js/app.js:1124` 内部函数，导出名是 `FE.validateAction`，不是 `checkAction`）、布局重命名时的 `walkAllActions` 引用改写、`FE.buildActionEditor` 的类型选项与 `getValue`（返回时保留原 type，不要降级成 `switch_layout`）。动作类型白名单只有 `js/app.js` 的兜底报错与 `js/key-dialog.js` 的类型选项表两处。注意 `skills/*.schema.json` 是上游产物，其 `type` enum 尚未包含 `switch_layout_once`，不要自行扩枚举。这样不会挡住保存/加载：编辑器没有 schema 驱动的校验链（不加载 `*.schema.json`、无 ajv / fetch / `$ref` 解析），校验一律走自研的 `FE.validateAction`（`js/app.js:1124`）与 `FE.validateProfile`（`js/app.js:1265`）。
 - 键的 `icon` 只有 backspace / shift / enter / return 是内置名；其余名字先查 profile 顶层 `icons`，再看是否 `svg:` / `xml:` 内联载荷；查不到就不画图标（回落文本），不要报错。
+- 预览工具栏的选项开关组（`#pt-options`，由 `FE.renderPreviewOptionToggles` 生成）只列「常开选项 `FE.ALWAYS_ON_OPTIONS` + `FE.validateProfile().optionNames` 里出现过的名字」。条件里一个选项名都没有时**整组隐藏**：那时勾选改的是没人读的键，摆出来只会像坏了。勾选只写 `state.status.options[n] = true`，取消勾选直接删键（不留 `false`），经 `FE.optionState` / `FE.condResult` 影响按键与布局变体；不写进导出的 JSON，也不参与校验。
 - `FE.validateProfile` 的 `errors` / `warnings` 字符串数组是兼容 API，不能删除或改类型。
 - `issues` 是与旧数组等长的结构化结果，保留 `level`、`message`、`path`、`code` 和点击定位坐标。
 - 新校验规则必须同时提供稳定 code 和定位信息；合并 issue 时不能丢坐标。

@@ -5963,6 +5963,76 @@ console.log('== 工具栏/字体：样式与页面结构 ==');
   ok(htmlSrc.indexOf('不含 App 的候选栏 / 工具栏') < 0, '过期说明「不含候选栏/工具栏」已删除');
 }
 
+/* 选项开关组（#pt-options）的显隐与联动：
+ * 条件里一个选项名都没有时整组隐藏 —— 默认 profile 与 examples 里 0 处 option 条件，
+ * 那时摆出四个常开开关只会让人以为坏了（勾了预览毫无变化）。
+ * 有选项条件时才列「常开选项 + 条件里出现过的名字」，勾选写进 state.status.options，
+ * 经 FE.optionState / FE.condResult 影响按键变体。 */
+console.log('== 预览选项开关：无选项条件时整组隐藏 ==');
+{
+  const savedProfileText = JSON.stringify(FE.state.profile);
+  const savedLayout = FE.state.layoutName;
+  const savedTab = FE.state.activeTab;
+  const savedOptions = Object.assign({}, FE.state.status.options);
+  const optHost = $('pt-options');
+  FE.state.activeTab = 'tab-layout';
+  try {
+    /* 1. 没有任何 option 条件：整组隐藏，容器清空 */
+    FE.applyProfileText(JSON.stringify({
+      layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.q' }]] }] } }
+    }));
+    FE.renderPreviewOnly();
+    eq((FE.state.validation.optionNames || []).length, 0, '这份 profile 的条件里没有选项名');
+    eq(optHost.hidden, true, '无选项条件时 #pt-options 整组隐藏');
+    eq(optHost.children.length, 0, '隐藏时容器里不留开关（连常开选项也不列）');
+
+    /* 2. 有 option 条件：显示，并列出「常开选项 + 用到的名字」 */
+    FE.applyProfileText(JSON.stringify({
+      keys: {
+        'test.k': {
+          label: 'a',
+          variants: [{ when: { rime: { option: 'zenkaku' } }, label: '全角A' }]
+        }
+      },
+      layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'test.k' }]] }] } }
+    }));
+    FE.renderPreviewOnly();
+    eq(FE.state.validation.optionNames, ['zenkaku'], '校验结果收集到条件里的选项名');
+    eq(optHost.hidden, false, '有选项条件时 #pt-options 显示');
+    const optLabels = optHost.querySelectorAll('label').map(l => l.textContent.trim());
+    ok(optLabels.indexOf('zenkaku') >= 0, '列出条件里出现的选项名 zenkaku');
+    ok(FE.ALWAYS_ON_OPTIONS.every(n => optLabels.indexOf(n) >= 0), '四个常开选项一并列出');
+    eq(q('.kb-key')[0].textContent.indexOf('全角A'), -1, '未勾选时按键显示原标签 a');
+
+    /* 3. 勾选 → 写进 state.status.options → 变体命中 */
+    const zenBox = optHost.querySelectorAll('input').filter(i => i.parentNode.textContent.indexOf('zenkaku') >= 0)[0];
+    ok(!!zenBox, '找到 zenkaku 复选框');
+    zenBox.checked = true;
+    zenBox._fire('change');
+    eq(FE.state.status.options.zenkaku, true, '勾选写入 state.status.options');
+    ok(q('.kb-key')[0].textContent.indexOf('全角A') >= 0, '勾选后变体命中，按键显示 全角A');
+
+    /* 4. 取消勾选 → 删键（而不是留 false），回到中性 */
+    zenBox.checked = false;
+    zenBox._fire('change');
+    eq('zenkaku' in FE.state.status.options, false, '取消勾选直接删键，不留 false');
+    eq(q('.kb-key')[0].textContent.indexOf('全角A'), -1, '取消后按键回到原标签 a');
+
+    /* 5. 条件被移除后重新隐藏（不能停在上一轮的显示状态） */
+    FE.applyProfileText(JSON.stringify({
+      layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.q' }]] }] } }
+    }));
+    FE.renderPreviewOnly();
+    eq(optHost.hidden, true, '条件被移除后重新整组隐藏');
+  } finally {
+    FE.state.status.options = savedOptions;
+    FE.applyProfileText(savedProfileText);
+    FE.state.layoutName = savedLayout;
+    FE.state.activeTab = savedTab;
+    FE.renderPreviewOnly();
+  }
+}
+
 }   /* 结束 await sleep(350) 后的主体块 */
 
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');

@@ -61,7 +61,8 @@
             <label class="check" title="横屏预览：容器加宽到分体宽度（1228px）、按键按 flex 拉宽，但**仍渲染当前常规布局**，不切到 split 片段。用来查看同一套布局在宽屏下的观感"><input type="checkbox" id="pt-landscape"> 横屏</label>
             <label class="mini-label">状态标签示例 <input id="pt-status-text" type="text" class="mini-input" size="8" value="朙月拼音"></label>
             <!-- 选项条件开关：由 app.js 的 renderPreviewOptionToggles() 按「条件里出现过的
-                 选项名 + 常开选项」动态填充（编辑器读不到 schema 的 switches 声明）。 -->
+                 选项名 + 常开选项」动态填充（编辑器读不到 schema 的 switches 声明）。
+                 条件里一个选项名都没有时整组隐藏 —— 那时勾选不会改变任何渲染结果。 -->
             <span class="pt-options" id="pt-options"></span>
           </div>
         </div>
@@ -409,34 +410,15 @@
       </details>
       <details class="card" open>
         <summary>工具栏图标与符号字体（仅影响预览，不写入任何 Foxy 文件）</summary>
-        <div class="status dim">这两样在 App 里都<strong>不属于主题 JSON</strong>：工具栏按钮来自
-          <code>frontend/toolbar.json</code>，字体来自 <code>frontend/fonts/</code> 下的文件 +
-          SharedPreferences。网页预览没有这些通道，所以在这里临时接管。
-          <br>图标按<strong>文件名</strong>精确配到按钮（方案 / 部署 / 设置 / 剪贴板 / 语音 / 收起 /
-          主题 / 尺寸 / 单手 / 分体），文件名以「激活」结尾的作为该按钮的展开态图标。
-          <br><strong>「键盘工具」与「主题」共用一枚图标</strong>：App 里 <code>keyboard_tools</code> 的
-          <code>iconRes</code> 就是 <code>ic_tool_theme</code>、显示名也取「主题」（<code>r71.f0</code>），
-          两者实机是同一个标识。所以主题包只给了「主题2.svg」时，收起态那一格会借用它，
-          不会一边是主题图标、一边是内置调色板。
-          <br><strong>输入法开关这一格是文字、不是图标</strong>：实机 <code>iconRes = 0</code>，
-          显示的是该 switch 的 <code>states</code> 项。文案以 <b>App 源码为准</b>：内置方案
-          <code>pinyin_simp.schema.yaml</code> / <code>stroke.schema.yaml</code> 里
-          <code>ascii_mode</code> 是 <code>reset: 0</code>、<code>states: [ 中文, 西文 ]</code>，
-          所以预览写原字「中文」/「西文」，不缩写、不取首字。它跟着上方的
-          <code>ASCII</code> 复选框走：不勾＝「中文」、勾上＝「西文」，与键面文字在同一帧里一起变。
-          <br><strong>工具栏一次显示全部按钮</strong>：预览不再模拟「展开态 / 收起态」，而是把
-          <code>toolbar.json</code> 的主组（<code>main</code>）和展开组（<code>expanded</code>）
-          按顺序拼成一条完整列表、一次画在同一行里，行尾<strong>没有</strong>展开/收起箭头。
-          装不下时超出部分裁在轨道外，按住<strong>拖动</strong>（或触摸横滑 / 滚轮）就能看到后面的
-          图标，两端渐隐提示哪一侧还有内容；拖动不会误点到图标。
-          <br>实机主组和展开组里可能有<strong>同一个按钮的两处入口</strong>（<code>keyboard_tools</code>
-          与 <code>theme</code>：同 label「主题」、同图标 <code>ic_tool_theme</code>、同点击绑定
-          <code>r5.a</code>，见 <code>at0.java:1440</code> / <code>:1447-1450</code>），实机互斥显示所以
-          屏幕只有一个「主题」；预览合并成一行时按按钮去重、保留先出现的那一枚，
-          不会出现两个一模一样的主题按钮。
-          <br>图标自带实色（hex / rgb() / 具名色）就原样渲染；纯 <code>currentColor</code> 或黑白
-          单色才跟随 <code>toolTextColor</code> / <code>accentColor</code> —— 与 App 的
-          <code>hk0.w()</code> 判定一致。</div>
+        <div class="status dim">主题 JSON 里<strong>没有</strong>这两样：工具栏按钮来自 App 的
+          <code>toolbar.json</code>，字体来自 App 的字体目录 + 设置项。所以在这里导入，
+          让预览提前长成真机的样子。</div>
+        <div class="status dim"><strong>工具栏图标</strong>：按<strong>文件名</strong>配到按钮，
+          文件名以「激活」结尾的当作该按钮的选中态。「键盘工具」与「主题」在 App 里是
+          同一个按钮，只给其中一个的图标就够。<strong>输入法开关那一格是文字不是图标</strong>：
+          显示「中文」/「西文」，跟着上方的 <code>ASCII</code> 复选框变。
+          工具栏一次画出全部按钮（不模拟展开/收起），装不下时横向拖动查看，两端渐隐表示还有内容；
+          图标自带颜色就原样显示，单色图标才跟随主题的工具栏文字色。</div>
         <div class="toolbar">
           <button id="pt-toolbar-icons-pick" class="mini-button">导入工具栏图标（多个 SVG）</button>
           <input id="pt-toolbar-icons-file" type="file" accept=".svg,image/svg+xml" multiple hidden>
@@ -452,9 +434,9 @@
           <button id="pt-font-clear" class="mini-button">移除预览字体</button>
         </div>
         <div id="pt-font-status" class="status"></div>
-        <div class="status dim">字体只作用于<strong>预览</strong>：键面文字与符号面板会按字体真实字形渲染。
-          实机缺字时会回退系统字体，所以导入后这里会列出「当前布局用到、但该字体没有字形」的字符，
-          那些字在真机上不会长成字体里的样子。字体二进制无法存进浏览器草稿，刷新后需要重新导入。</div>
+        <div class="status dim"><strong>符号字体</strong>：键面文字与符号面板按字体的真实字形渲染。
+          实机缺字会回退系统字体，导入后会列出「布局用到、但字体里没有」的字符。
+          字体文件存不进浏览器草稿，刷新后需要重新导入。</div>
       </details>
     </section>
 

@@ -59,7 +59,7 @@ Android/data/com.fxliang.foxy/files/foxy/frontend/layouts/
 - 主题编辑只处理独立主题文件；Foxy App 的全局主题选择、跟随系统等设置不属于本工具。
 - `modifier` 取值为 SHIFT / CTRL / ALT / META（大小写不敏感），可以在键、`override` 和变体上用 `"modifier": null` 显式改回普通键；声明了 `modifier` 的键长按会隐式锁定该修饰键，写了 `hold` 手势则关闭这个回退，没有 `modifier` 的原始键长按只发本键。
 - 键的 `icon` 除内置的 backspace / shift / enter / return 外，还可以引用顶层 `icons` 映射里的名字，或直接写 `svg:` / `xml:` 内联载荷。
-- 变体条件支持 `option` / `value` / `options` 与 `all_of` / `any_of` / `none_of` 组合；编辑器不知道活动 schema 声明了哪些开关，只能把条件里出现过的选项名做成预览开关。
+- 变体条件支持 `option` / `value` / `options` 与 `all_of` / `any_of` / `none_of` 组合；编辑器不知道活动 schema 声明了哪些开关，只能把条件里出现过的选项名做成预览开关；条件里一个选项名都没有时（默认 profile 就是这种）整组隐藏，因为那时的勾选不影响任何渲染。
 - 符号、emoji、颜文字外部文件需要在 Foxy 设置的符号布局中显式选中，同名文件不会自动覆盖内置数据。
 - `symbols`、`emoji`、`kaomoji` 作为 `switch_layout` / `switch_layout_once` 目标时会被识别为符号面板，因此不要把这三个名字用作自定义布局名。
 - `switch_layout_once` 是临时层：切到目标布局后，下一次有效输入（按键、宏、选词或上屏文本）完成即自动回到切换前的布局；再次切换会替换返回目标，唤起键盘或回到基础布局则取消这次返回。它的字段与 `switch_layout` 相同，编辑器只负责写对类型，不模拟返回时机。
