@@ -36,7 +36,7 @@ node test/test-core.js
 node test/test-ui.js
 ```
 
-当前基线是 core 821、UI 1672，两个套件都必须 0 失败。Foxy 数据契约门禁：
+当前基线是 core 821、UI 1668，两个套件都必须 0 失败。工作区重构将旧弹窗展示断言改为面板断言，移除了候选嵌入立即提交的旧断言；`node test/test-workspace.js` 共 35 项事务回归。Foxy 数据契约门禁：
 
 ```bash
 node test/conformance-adapter.js   # conformance v1 共 46 项检查，必须全过
@@ -48,6 +48,9 @@ node test/conformance-adapter.js   # conformance v1 共 46 项检查，必须全
 
 ```bash
 node tools/macro-ref-smoke.js   # 宏调用 / 动作名「显示即已选」两条入口路径都写对 {macro: 名称}；动作编辑器写 switch_layout_once 不被降级成 switch_layout；导出的 JSON 能原样载回（once 保留、校验零错误）
+node tools/workspace-smoke.js   # 属性面板、刷新缓存、无效草稿、手机视口与真实触摸事件
+node tools/inspector-feedback-smoke.js # 45 项：常驻面板、等高、滚动、模式切换、大弹窗、还原和分栏缓存迁移
+node tools/interface-copy-smoke.js # 17 项：用户文案、主题说明与六个标签页默认展开
 ```
 
 按改动范围追加：
@@ -70,6 +73,14 @@ node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 - 解析类函数显式接收并向下传递 `scope`，不要临时覆盖全局 `state.profile`。
 - DOM 使用项目已有的 `h`、`clearEl` 和模块模式；新增节点同时更新 `test/dom-stub.js` 的 `buildSkeleton()`。
 - 新增脚本模块时同步 `index.html` 的 `<script>` 顺序、`test/test-core.js` 和 `test/test-ui.js` 的 `load()` 列表。
+- 按键表单位于 `key-editor.js`，手势表单位于 `gesture-editor.js`，编辑会话位于 `edit-session.js`，面板与缓存位于 `workspace.js`。`key-dialog.js` 保留通用窗口、动作编辑器、选择器与状态变体。`workspace.js` 必须在各可选编辑模块之后加载。
+- 顶栏的绿色草稿提示与副标题同一行右侧；布局、popup、主题、符号的导入/导出保留各自模块入口，不提升布局文件为全局入口。
+- 未应用会话不进入正式文档；取消不能遗留子控件的立即提交。候选在独立 popup 页编辑。自动保存同时保留未应用文本，恢复期间禁止初始化写入覆盖旧缓存；缓存恢复不等于应用。
+- 属性窗默认显示，未选键时内部各分栏收起且禁用；关闭状态与选择状态独立。预览键打开右侧面板，下方行区段/网格键打开原有大对话框。手机空面板随页面排列，选键才用底部浮层。
+- 横屏/分体等预览模式切换不关闭面板；失效选择清空并暂存草稿，重新选择原键时恢复。普通控件焦点变化不能当作取消按键选择。
+- 属性面板的字段重建保留滚动和分栏开合状态；页面主分栏的开合缓存使用固定标识（workspace v2），不能按全页 details 顺序恢复，否则右侧动态分栏会污染六个功能页。
+- 六个功能页主分栏默认展开，保持用户手动开合。旧 workspace v1 的 openDetails 顺序数组只丢弃界面开合部分，不丢文档或草稿。
+- 还原默认由 `workspace-reset.js` 在备份成功后仅清理本编辑器的两个存储键，保留撤回入口。用户可见文案保留操作与作用范围，源码定位、渲染常量等放到文档或代码注释。
 
 ## 5. Foxy 语义与校验
 
