@@ -1130,6 +1130,21 @@ const controlAliasEditor = FE.buildActionEditor({ type: 'key', key: 'ENTER', met
 const controlAliasChecks = controlAliasEditor.el.querySelectorAll('.meta-checks input');
 ok(controlAliasChecks[1].checked === true, '动作编辑器把 CONTROL 别名回显为 Ctrl 勾选');
 eq(controlAliasEditor.getValue().meta, ['CTRL'], '动作编辑器保存 CONTROL 时输出规范 CTRL');
+/* switch_layout_once：类型下拉里能选到，字段与普通切换同构，保存时类型不被降级。 */
+const onceEditor = FE.buildActionEditor({ type: 'switch_layout_once', layout: 'numpad' });
+const onceTypeSel = onceEditor.el.querySelectorAll('select')[0];
+eq(onceTypeSel.value, 'switch_layout_once', '动作编辑器按 switch_layout_once 预选类型');
+ok(onceEditor.el.textContent.indexOf('临时层') >= 0, 'once 类型字段区提示临时层语义');
+eq(onceEditor.getValue(), { type: 'switch_layout_once', layout: 'numpad' },
+  '动作编辑器保存 switch_layout_once 时保留该类型（不降级成 switch_layout）');
+const onceFromScratch = FE.buildActionEditor(null);
+onceFromScratch.el.querySelectorAll('select')[0].value = 'switch_layout_once';
+onceFromScratch.el.querySelectorAll('select')[0]._fire('change');
+eq(onceFromScratch.el.querySelectorAll('input')[0].value, '', '切到 once 时目标布局输入框为空待填');
+ok(onceFromScratch.getValue() === null, 'once 未填目标布局时不产出动作');
+onceFromScratch.el.querySelectorAll('input')[0].value = 'numpad';
+eq(onceFromScratch.getValue(), { type: 'switch_layout_once', layout: 'numpad' },
+  'once 从空开始填写后产出 switch_layout_once 动作');
 const actTypeSel = actEd.querySelectorAll('select')[0];
 eq(actTypeSel.value, 'key', '类型下拉按当前动作类型预选');
 /* 关键：只动下拉框、不碰任何 JSON 文本，就应当写回 profile */
@@ -3009,6 +3024,25 @@ await sleep(350);
     single: FE.state.profile.layouts.other.sections[0].rows[0][0].hold.endAction.layout,
     array: FE.state.profile.layouts.other.sections[0].rows[0][0].hold.endActions[0].layout
    }, { single: 'renamed', array: 'renamed' }, '布局重命名更新 hold 的 endAction/endActions switch_layout');
+   /* switch_layout_once 也引用布局名：只改 switch_layout 会让临时层指向旧名。 */
+   FE.applyProfileText(JSON.stringify({ layouts: {
+     default: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.q' }]] }] },
+     other: { sections: [{ type: 'rows', rows: [[{
+       ref: 'rime.q',
+       tap: { type: 'switch_layout_once', layout: 'default' },
+       longPress: { action: { type: 'switch_layout_once', layout: 'default' } }
+     }]] }] }
+   } }));
+   FE.state.layoutName = 'default';
+   FE.renderAll();
+   $('layout-rename').click();
+   var renameDlg2 = lastDialog();
+   renameDlg2.querySelectorAll('.ui-dialog-input')[0].value = 'renamed';
+   renameDlg2.querySelectorAll('.ui-dialog-ok')[0].click();
+   await sleep(0);
+   var onceKey = FE.state.profile.layouts.other.sections[0].rows[0][0];
+   eq({ tap: onceKey.tap.layout, hold: onceKey.longPress.action.layout }, { tap: 'renamed', hold: 'renamed' },
+     '布局重命名同步更新 switch_layout_once 的 tap 与 longPress 引用');
 
    /* P1-popup：裸数组直接作为 normal 编辑，写 shifted 时才升级数据形态。 */
 

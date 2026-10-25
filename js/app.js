@@ -30,7 +30,7 @@ FE.deepClone = deepClone;
 FE.omit = omit;
 FE.clamp = clamp;
 
-/* `switch_layout` 的**保留布局名**（基线 foxy-app-baseline.md §2.4）。
+/* `switch_layout` / `switch_layout_once` 的**保留布局名**（基线 foxy-app-baseline.md §2.4）。
  *
  * 下游 `cv.I(String)` 按字符串分派时**优先把这三个名字当作符号 / emoji / 颜文字面板**，
  * 即使该动作来自 `switch_layout` 也一样（`cv.java:821-873`、`fo.java:587-597`）。
@@ -38,7 +38,7 @@ FE.clamp = clamp;
  * 的自定义布局 —— 请求会被符号面板分支截胡（基线 §2.4 已确认此副作用）。
  *
  * 因此这份清单两处都用：
- *   · 校验 `switch_layout` 时**豁免**"目标不存在"（这三个名字合法，指面板而非布局）；
+ *   · 校验 `switch_layout` / `switch_layout_once` 时**豁免**"目标不存在"（这三个名字合法，指面板而非布局）；
  *   · 布局**新建 / 复制 / 重命名**时**直接拦下**并说明原因 —— 否则用户能造出一份
  *     永远打不开的布局，且要到手机上才发现。 */
 FE.RESERVED_LAYOUT_NAMES = ['symbols', 'emoji', 'kaomoji'];
@@ -564,6 +564,9 @@ FE.actionDisplay = function (a) {
     case 'text': return '文本 “' + a.text + '”';
     case 'commit': return '上屏 “' + a.text + '”';
     case 'switch_layout': return '切换布局 ' + a.layout;
+    /* 临时层：切过去，下一次有效输入后自动回到原布局（SKILL.md「switch_layout_once」）。
+     * 摘要必须和 switch_layout 分开读，否则用户看不出这一层是会自己弹回来的。 */
+    case 'switch_layout_once': return '临时切换布局 ' + a.layout;
     case 'app': return '命令 ' + a.command + (a.argument ? ' ' + a.argument : '');
     default: return '动作 ' + JSON.stringify(a);
   }
@@ -1146,12 +1149,15 @@ function validateAction(action, where, err, profile) {
     }
   } else if (t === 'text' || t === 'commit') {
     if (typeof action.text !== 'string') err(where + ' 的 ' + t + ' 动作缺少字符串 text');
-  } else if (t === 'switch_layout') {
-    if (typeof action.layout !== 'string' || !action.layout) err(where + ' 的 switch_layout 动作缺少 layout');
+  } else if (t === 'switch_layout' || t === 'switch_layout_once') {
+    /* 两种切换共用同一套字段与判据：switch_layout_once 只是多一层「下次有效输入后
+     * 自动返回原布局」的语义（SKILL.md:1289-1300），目标解析与保留名豁免完全相同。
+     * 用 t 拼错误文案，报错时才看得出是哪一种写错了。 */
+    if (typeof action.layout !== 'string' || !action.layout) err(where + ' 的 ' + t + ' 动作缺少 layout');
     /* symbols/emoji/kaomoji 既是 app 命令名，实测也可作为 switch_layout 目标
      * （多个官方示例如此使用），因此豁免"目标不存在"检查。 */
     else if (profile && isPlainObject(profile.layouts) && !profile.layouts[action.layout] && FE.RESERVED_LAYOUT_NAMES.indexOf(action.layout) < 0) {
-      err(where + ' 的 switch_layout 目标不存在: ' + action.layout);
+      err(where + ' 的 ' + t + ' 目标不存在: ' + action.layout);
     }
   } else if (t === 'app') {
     if (typeof action.command !== 'string' || !action.command) err(where + ' 的 app 动作缺少 command');
@@ -2225,7 +2231,7 @@ function outgoingRefsOf(profile, kind, name) {
   }
 
   /* ⚠️ **动作没有外向引用 —— 不要为它加分支**：动作对象是单一直接动作
-   * （type/key/modifier/text/switch_layout/app），结构上没有 action/actions/macro
+   * （type/key/modifier/text/switch_layout/switch_layout_once/app），结构上没有 action/actions/macro
    * 这类"指他"字段，所以动作只能被引用、不可能引用别人（用户明确指出的领域规则）。
    * 硬给它跑一遍只会得到空数组，让弹窗对动作显示一句「它没有引用任何条目」的噪音。
    * 有外向引用的是：按键定义（手势里引用动作/宏）与宏（步骤里引用动作）。 */
@@ -6588,7 +6594,11 @@ function initToolbar() {
         var L = state.profile.layouts[ln];
         (Array.isArray(L.variants) ? L.variants : []).forEach(function (v) { if (v && v.layout === old) v.layout = name; });
       });
-      walkAllActions(function (a) { if (a && a.type === 'switch_layout' && a.layout === old) a.layout = name; });
+      /* 两种切换都要跟着改名：只改 switch_layout 会让 switch_layout_once 的引用
+       * 指向一个已经不存在的旧名字，保存后变成"目标不存在"的错误。 */
+      walkAllActions(function (a) {
+        if (a && (a.type === 'switch_layout' || a.type === 'switch_layout_once') && a.layout === old) a.layout = name;
+      });
       state.layoutName = name;
     });
   });

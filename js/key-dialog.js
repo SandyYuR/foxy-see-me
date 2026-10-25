@@ -902,14 +902,16 @@ FE.buildActionEditor = function (spec, opts) {
   var typeSel = h('select', { class: 'mini-select' });
   var typeLabels = {
     key: '按键 key', modifier: '修饰 modifier', text: '文本 text', commit: '上屏 commit',
-    switch_layout: '切换布局 switch_layout', app: '应用命令 app', macro: '宏调用 macro'
+    switch_layout: '切换布局 switch_layout',
+    switch_layout_once: '临时切换布局 switch_layout_once',
+    app: '应用命令 app', macro: '宏调用 macro'
   };
   /* 选项顺序：引用形态优先（宏步骤最常用），随后是直接动作 */
   var ordered = [];
   if (allowRef) ordered.push(['ref', '引用动作名']);
   ordered.push(['', '（无动作）']);
   ordered.push(['key', typeLabels.key]);
-  ['modifier', 'text', 'commit', 'switch_layout', 'app', 'macro'].forEach(function (k) {
+  ['modifier', 'text', 'commit', 'switch_layout', 'switch_layout_once', 'app', 'macro'].forEach(function (k) {
     if (excluded.indexOf(k) < 0) ordered.push([k, typeLabels[k]]);
   });
   ordered.forEach(function (pair) {
@@ -1002,7 +1004,7 @@ FE.buildActionEditor = function (spec, opts) {
       textInp = h('input', { type: 'text', class: 'mini-input wide', value: spec && spec.text != null ? String(spec.text) : '', placeholder: '文本内容' });
       fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '方式'), textTypeSel));
       fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '内容'), textInp));
-    } else if (t === 'switch_layout') {
+    } else if (t === 'switch_layout' || t === 'switch_layout_once') {
       var dlId = 'dl-layouts-' + (++dlLayoutSeq);
       layoutInp = h('input', { type: 'text', class: 'mini-input wide', list: dlId, value: spec && spec.layout != null ? String(spec.layout) : '', placeholder: '布局名（如 numpad；symbols/emoji/kaomoji 为内置面板）' });
       var dl = h('datalist', { id: dlId });
@@ -1010,7 +1012,11 @@ FE.buildActionEditor = function (spec, opts) {
       ['symbols', 'emoji', 'kaomoji'].forEach(function (n) { dl.appendChild(h('option', { value: n })); });
       fields.appendChild(dl);
       fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '目标布局'), layoutInp));
-      fields.appendChild(h('div', { class: 'dialog-hint' }, '符号 / Emoji / 颜文字也可用「app」动作的 symbols / emoji / kaomoji 命令打开。'));
+      fields.appendChild(h('div', { class: 'dialog-hint' }, t === 'switch_layout_once'
+        /* 临时层的语义只在 App 端生效，编辑器无法预览「下一次输入后自动返回」，
+         * 所以这里必须把规则写清楚，别让用户以为它和普通切换一样会一直留着。 */
+        ? '临时层：切到该布局后，下一次有效输入（按键、宏、选词或上屏文本）完成即自动回到原布局；再次切换、唤起键盘或回到基础布局会取消这次返回。'
+        : '符号 / Emoji / 颜文字也可用「app」动作的 symbols / emoji / kaomoji 命令打开。'));
     } else if (t === 'app') {
       cmdSel = h('select', { class: 'mini-select wide' });
       FE.APP_COMMANDS.forEach(function (c) {
@@ -1054,9 +1060,10 @@ FE.buildActionEditor = function (spec, opts) {
       if (!textInp.value) return null;
       return { type: textTypeSel ? textTypeSel.value : t, text: textInp.value };
     }
-    if (t === 'switch_layout') {
+    if (t === 'switch_layout' || t === 'switch_layout_once') {
       if (!layoutInp.value.trim()) return null;
-      return { type: 'switch_layout', layout: layoutInp.value.trim() };
+      /* 原样写回用户选的那个类型：把 once 悄悄降级成普通切换会让「临时层」失效。 */
+      return { type: t, layout: layoutInp.value.trim() };
     }
     if (t === 'app') {
       if (!cmdSel.value) return null;

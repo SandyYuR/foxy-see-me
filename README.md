@@ -35,7 +35,7 @@ Android/data/com.fxliang.foxy/files/foxy/frontend/layouts/
 - 键盘编辑：调整按键、手势（含 `drag` 连续拖动）、自定义图标、颜色、圆角、水平/垂直间距和引用关系。
 - 网格与分体预览：按实际键节点渲染，适配窄屏与长文本。
 - 弹出菜单编辑：布局与 popup 分别导入、编辑和导出。
-- 动作与宏编辑：使用图形化动作控件，保留不能安全转换的原始 JSON。
+- 动作与宏编辑：使用图形化动作控件（含 `switch_layout_once` 临时层），保留不能安全转换的原始 JSON。
 - 引用索引与使用数：查看定义被哪些键、动作和宏引用，并点击定位。
 - 多文件布局包：合并布局、`definitions.json` 和 popup，导出时恢复未改动的共享定义。
 - 主题文件编辑：支持 `foxy.keyboard-theme` 文件与预览颜色优先级；新增 `symbolTabHighlightTextColor` / `symbolTabHighlightColor`（未设置时分别回退 `toolTextColor` / `candidateHighlightColor`）。
@@ -61,7 +61,8 @@ Android/data/com.fxliang.foxy/files/foxy/frontend/layouts/
 - 键的 `icon` 除内置的 backspace / shift / enter / return 外，还可以引用顶层 `icons` 映射里的名字，或直接写 `svg:` / `xml:` 内联载荷。
 - 变体条件支持 `option` / `value` / `options` 与 `all_of` / `any_of` / `none_of` 组合；编辑器不知道活动 schema 声明了哪些开关，只能把条件里出现过的选项名做成预览开关。
 - 符号、emoji、颜文字外部文件需要在 Foxy 设置的符号布局中显式选中，同名文件不会自动覆盖内置数据。
-- `symbols`、`emoji`、`kaomoji` 作为 `switch_layout` 目标时会被识别为符号面板，因此不要把这三个名字用作自定义布局名。
+- `symbols`、`emoji`、`kaomoji` 作为 `switch_layout` / `switch_layout_once` 目标时会被识别为符号面板，因此不要把这三个名字用作自定义布局名。
+- `switch_layout_once` 是临时层：切到目标布局后，下一次有效输入（按键、宏、选词或上屏文本）完成即自动回到切换前的布局；再次切换会替换返回目标，唤起键盘或回到基础布局则取消这次返回。它的字段与 `switch_layout` 相同，编辑器只负责写对类型，不模拟返回时机。
 
 ## 开发与测试
 

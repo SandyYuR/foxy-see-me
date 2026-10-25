@@ -13,8 +13,10 @@
  *   A 新建宏 → 按键对话框 → 手势 → 切到「宏调用」→ 不碰下拉 → 保存
  *   B 新建宏 → 同上但先选「直接动作」再切「宏调用」→ 不碰下拉 → 保存
  *   C 切到「宏调用」后显式换成第二个宏 → 保存
- * 每条路径都检查：不弹提示框、手势摘要回显宏名、profile 里落的是 {macro: name}、
- * 关掉重开同一个键仍回显同一个宏。
+ *   D 动作编辑器里把类型改成 switch_layout_once 并填目标布局 → 保存（写回必须
+ *     保留 once 类型，不能被降级成 switch_layout）
+ * 每条路径都检查：不弹提示框、手势摘要回显、profile 里落的是期望的对象、
+ * 关掉重开同一个键仍回显同一个值。
  */
 'use strict';
 
@@ -119,7 +121,14 @@ function ok(cond, label, actual) {
     '  setMode: function(v){ var s = window.__smoke.dlg().querySelectorAll("select")[0]; s.value = v; s.dispatchEvent(new Event("change",{bubbles:true})); },',
     '  macroSel: function(){ var s = window.__smoke.dlg().querySelectorAll("select"); return s.length > 1 ? s[1] : null; },',
     '  pickMacro: function(name){ var s = window.__smoke.macroSel(); s.value = name; s.dispatchEvent(new Event("change",{bubbles:true})); },',
-    '  macroRefs: function(){ var hits=[]; function w(v,p){ if(!v||typeof v!=="object")return; if(v.macro){ hits.push(p+"="+v.macro); return; } for(var k in v){ if(Object.prototype.hasOwnProperty.call(v,k)) w(v[k],p+"."+k); } } w(FE.state.profile,"profile"); return hits; }',
+    '  macroRefs: function(){ var hits=[]; function w(v,p){ if(!v||typeof v!=="object")return; if(v.macro){ hits.push(p+"="+v.macro); return; } for(var k in v){ if(Object.prototype.hasOwnProperty.call(v,k)) w(v[k],p+"."+k); } } w(FE.state.profile,"profile"); return hits; },',
+    '  actSel: function(){ var d=window.__smoke.dlg(); return d ? d.querySelector(".action-editor select.mini-select") : null; },',
+    '  setActType: function(v){ var s=window.__smoke.actSel(); s.value=v; s.dispatchEvent(new Event("change",{bubbles:true})); },',
+    '  actHint: function(){ var d=window.__smoke.dlg(); var e=d && d.querySelector(".action-editor .dialog-hint"); return e ? (e.textContent||"").trim() : null; },',
+    '  setLayout: function(v){ var d=window.__smoke.dlg(); var i=d.querySelector(".action-editor input.mini-input"); i.value=v; i.dispatchEvent(new Event("change",{bubbles:true})); },',
+    '  layoutVal: function(){ var d=window.__smoke.dlg(); var i=d && d.querySelector(".action-editor input.mini-input"); return i ? i.value : null; },',
+    '  typeVal: function(){ var s=window.__smoke.actSel(); return s ? s.value : null; },',
+    '  typeRefs: function(t){ var hits=[]; function w(v,p){ if(!v||typeof v!=="object")return; if(v.type===t){ hits.push(p+"|"+v.layout); return; } for(var k in v){ if(Object.prototype.hasOwnProperty.call(v,k)) w(v[k],p+"."+k); } } w(FE.state.profile,"profile"); return hits; }',
     '};',
     'return true; })()'
   ].join('\n'));
@@ -227,6 +236,41 @@ function ok(cond, label, actual) {
   ok((await ev('window.__smoke.row("点击 tap")') || '').indexOf('smoke_b') >= 0,
     '重开第三个键回显 smoke_b', await ev('window.__smoke.row("点击 tap")'));
 
+
+  console.log('\n== D 动作编辑器写 switch_layout_once 必须保留 once 类型 ==');
+  const targetLayout = await ev('Object.keys(FE.state.profile.layouts||{})[0]');
+  ok(!!targetLayout, 'profile 里至少有一个布局可作为目标', targetLayout);
+  /* 默认 profile 本身就带 switch_layout（numpad / symbols / emoji / kaomoji），
+   * 所以「没被降级」只能比数量变化，不能断言绝对为 0。 */
+  const basePlain = (await ev('window.__smoke.typeRefs("switch_layout")')).length;
+  await resetDialogs();
+  await openKeyTap(3);
+  await ev('window.__smoke.setMode("direct")');
+  await sleep(150);
+  await ev('window.__smoke.setActType("switch_layout_once")');
+  await sleep(150);
+  ok(await ev('window.__smoke.typeVal()') === 'switch_layout_once', '类型下拉停在 switch_layout_once', await ev('window.__smoke.typeVal()'));
+  ok(((await ev('window.__smoke.actHint()')) || '').indexOf('临时层') >= 0, '字段区显示临时层提示', await ev('window.__smoke.actHint()'));
+  await ev('window.__smoke.setLayout(' + JSON.stringify(String(targetLayout)) + ')');
+  await sleep(120);
+  await saveGesture();
+  ok(await ev('window.__smoke.alertText()') === null, '合法临时层不被校验拦下', await ev('window.__smoke.alertText()'));
+  ok(await ev('window.__smoke.n()') === 1, '手势对话框已保存并关闭', await ev('window.__smoke.n()'));
+  ok((await ev('window.__smoke.row("点击 tap")') || '').indexOf('临时切换布局') >= 0,
+    'tap 行摘要显示「临时切换布局」', await ev('window.__smoke.row("点击 tap")'));
+  await saveKey();
+  ok(await ev('window.__smoke.alertText()') === null, '保存按键不弹提示框', await ev('window.__smoke.alertText()'));
+  let onceRefs = await ev('window.__smoke.typeRefs("switch_layout_once")');
+  ok(onceRefs.length === 1 && onceRefs[0].indexOf('|' + targetLayout) > 0,
+    'profile 里落的是 {type:"switch_layout_once"} 且没有被降级', onceRefs);
+  const nowPlain = (await ev('window.__smoke.typeRefs("switch_layout")')).length;
+  ok(nowPlain === basePlain, '没有多写出一份 switch_layout', { before: basePlain, after: nowPlain });
+  await ev('document.querySelectorAll(".kb-key")[3].click()');
+  await sleep(250);
+  await ev('window.__smoke.btn(window.__smoke.dlg(), "编辑…").click()');
+  await sleep(200);
+  ok(await ev('window.__smoke.typeVal()') === 'switch_layout_once', '重开后类型仍是 switch_layout_once', await ev('window.__smoke.typeVal()'));
+  ok(await ev('window.__smoke.layoutVal()') === targetLayout, '重开后布局名回显', await ev('window.__smoke.layoutVal()'));
   ws.close();
   try { proc.kill(); } catch (e) { /* ignore */ }
   try { fs.rmSync(userDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }

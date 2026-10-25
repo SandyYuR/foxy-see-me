@@ -572,6 +572,29 @@ const swMissing = FE.normalizeProfile({ layouts: { default: { sections: [{ type:
   { label: 'x', tap: { type: 'switch_layout', layout: 'no_such_layout' } }
 ]] }] } } });
 ok(FE.validateProfile(swMissing).errors.some(e => e.indexOf('no_such_layout') >= 0), 'switch_layout 目标不存在被检出');
+/* switch_layout_once（SKILL.md 临时层）：字段与 switch_layout 相同，目标解析与保留名豁免复用；
+ * 但绝不能落进「不支持的动作 type」。 */
+const oncePanel = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'rows', rows: [[
+  { label: 'x', tap: { type: 'switch_layout_once', layout: 'numpad' } }
+]] }] }, numpad: { sections: [{ type: 'rows', rows: [[{ ref: 'rime.a' }]] }] } } });
+eq(FE.validateProfile(oncePanel).errors.length, 0, 'switch_layout_once 指向存在的布局不报错');
+eq(FE.actionDisplay({ type: 'switch_layout_once', layout: 'numpad' }), '临时切换布局 numpad',
+  'switch_layout_once 摘要与普通切换区分开');
+const onceMissing = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'rows', rows: [[
+  { label: 'x', tap: { type: 'switch_layout_once', layout: 'no_such_layout' } }
+]] }] } } });
+ok(FE.validateProfile(onceMissing).errors.some(e => e.indexOf('switch_layout_once') >= 0 && e.indexOf('no_such_layout') >= 0),
+  'switch_layout_once 目标不存在被检出且报错里点名 once');
+const onceNoLayout = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'rows', rows: [[
+  { label: 'x', tap: { type: 'switch_layout_once' } }
+]] }] } } });
+ok(FE.validateProfile(onceNoLayout).errors.some(e => e.indexOf('switch_layout_once') >= 0 && e.indexOf('layout') >= 0),
+  'switch_layout_once 缺 layout 被检出');
+const onceReserved = FE.normalizeProfile({ layouts: { default: { sections: [{ type: 'rows', rows: [[
+  { label: 'x', tap: { type: 'switch_layout_once', layout: 'symbols' } }
+]] }] } } });
+ok(FE.validateProfile(onceReserved).errors.every(e => e.indexOf('switch_layout_once') < 0),
+  'switch_layout_once 同样豁免 symbols/emoji/kaomoji 三个保留名');
 
 /* text_editor 结构约束：恰好一个 rows 区段、恰好一行 */
 const teTooMany = FE.normalizeProfile({

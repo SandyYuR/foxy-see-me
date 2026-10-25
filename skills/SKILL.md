@@ -965,6 +965,7 @@ key
 modifier
 text / commit
 switch_layout
+switch_layout_once
 app
 ```
 
@@ -1288,6 +1289,17 @@ For ordinary named keyboard layouts, use `switch_layout` with an explicit
 `layout` value. `symbols`, `emoji`, and `kaomoji` open built-in symbol panels,
 not named layouts from the current profile.
 
+Use `switch_layout_once` for a temporary layer: the keyboard switches to the
+named layout, then automatically returns to the previous layout after the next
+effective input (a key stroke, macro, candidate selection, or committed text).
+Switching again with `switch_layout` or `switch_layout_once` replaces the
+pending return target, and showing the keyboard or resetting to the base layout
+cancels it:
+
+```json
+{ "type": "switch_layout_once", "layout": "numpad" }
+```
+
 For printable keys, labels normally follow the active Shift state. A single
 uppercase label such as `"label": "Q"` is fixed and remains uppercase in both
 Shift states. This only changes the displayed label; the input action still
@@ -1402,6 +1414,10 @@ Use one of these exact direct action shapes:
 
 ```json
 { "type": "switch_layout", "layout": "numpad" }
+```
+
+```json
+{ "type": "switch_layout_once", "layout": "numpad" }
 ```
 
 ```json
