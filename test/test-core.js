@@ -23,6 +23,9 @@ load('default-profile.js');
 load('app.js');
 load('folder-import.js');
 load('key-dialog.js');
+load('edit-session.js');
+load('gesture-editor.js');
+load('key-editor.js');
 load('macro-editor.js');
 load('popup-editor.js');
 load('theme-editor.js');
@@ -31,6 +34,8 @@ load('symbol-editor.js');
 load('symbol-preview.js');
 load('font-preview.js');
 load('toolbar-preview.js');
+load('workspace.js');
+load('workspace-reset.js');
 
 const FE = global.FE;
 let passed = 0, failed = 0;

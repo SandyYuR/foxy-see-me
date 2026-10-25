@@ -540,7 +540,7 @@ var h = FE.h, clearEl = FE.clearEl, $ = FE.$;
 /* 字段名的中文注释（只为可读性；字段名本身以基线为准，不做本地化改名） */
 var FIELD_DOC = {
   keyboardColor: '键盘总背景',
-  altKeyboardColor: '启用键边框时的替代底色（key_border_enabled=true 用它）',
+  altKeyboardColor: '开启按键边框时的键盘背景',
   candidateBarColor: '候选栏 / 工具栏容器底色',
   keyTextColor: '按键主文字（默认）',
   keyHintTextColor: '按键提示文字（默认）',
@@ -564,7 +564,7 @@ var FIELD_DOC = {
   preeditBackgroundColor: '预编辑背景',
   popupTextColor: '按键弹出浮层文字',
   popupBackgroundColor: '按键弹出浮层背景',
-  popupBorderColor: '弹出浮层边框（App 端未见消费点）',
+  popupBorderColor: '弹出浮层边框（当前版本不显示）',
   voiceWaveColor: '语音波形色',
   accentColor: '强调色（工具栏选中态）'
 };
@@ -750,20 +750,18 @@ function renderThemeColors() {
   clearEl(host);
   if (!FE.isPlainObject(tp())) {
     host.appendChild(h('div', { class: 'th-slot-hint' },
-      '尚未导入主题。预览按编辑器原有配色显示（未导入主题时预览行为与从前完全一致）。'));
+      '尚未导入主题，当前使用 Foxy 默认配色。'));
     host.appendChild(h('button', {
       type: 'button', class: 'mini-button primary',
       onclick: function () {
         FE.loadThemeProfileText(FE.serializeThemeProfile(FE.themeNewProfile()));
-        setThemeStatus('已新建主题（以内置默认色为初值，四个方向提示色留空以继承 keyHintTextColor）', 'ok');
+        setThemeStatus('已按 Foxy 默认配色新建主题。', 'ok');
       }
     }, '以内置默认色新建主题'));
     return;
   }
   host.appendChild(h('div', { class: 'th-slot-hint' },
-    '正在编辑槽位 ', h('code', null, state.themeSlot || 'light'),
-    '（', h('code', null, (state.themeSlot || 'light') === 'light' ? 'light' : 'dark'),
-    ' 与“深色外观”无绑定语义，两套槽位相互独立）。留空的字段表示“回落 / 继承”。'));
+    '正在编辑'+(state.themeSlot==='dark'?'深色':'浅色')+'配色。留空使用默认或继承颜色。'));
   var grid = h('div', { class: 'th-color-grid' });
   FE.THEME_COLOR_FIELDS.forEach(function (f) {
     var gs = slotGetSet(f);
@@ -784,7 +782,7 @@ function renderThemeKeyTypes() {
   var s = slotObj();
   var open = FE.ensureOpenSet('openThemeGroups');
   host.appendChild(h('div', { class: 'th-slot-hint' },
-    '键类型配色优先于该槽位的 28 色全局默认，但**低于**布局里每个按键自己的 colors（基线 §1.5）。'));
+    '这里设置同类按键的配色；单独为某个键设置的颜色优先生效。'));
   FE.THEME_KEY_TYPE_NAMES.forEach(function (group) {
     var grp = FE.isPlainObject(s.keyTypes) ? s.keyTypes[group] : null;
     var block = h('div', { class: 'th-keytype-block' });
@@ -793,7 +791,7 @@ function renderThemeKeyTypes() {
       h('code', null, group),
       h('span', { class: 'th-keytype-missing' },
         grp ? ('已定义 ' + FE.THEME_KEYTYPE_FIELDS.filter(function (f) { return grp[f] != null; }).length + ' / 10 个字段')
-          : '未定义 —— 该类按键回落全局 28 色'));
+          : '未设置，使用整体配色'));
     det.appendChild(summary);
     det.addEventListener('toggle', function () { open[group] = !!det.open; });
     if (!grp) {
@@ -856,6 +854,8 @@ function renderThemeValidation() {
 
 /* ---------------- 渲染：JSON 卡片 ---------------- */
 var themeJsonDirty = false;
+FE.readThemeJsonDraft=function(){var e=$('th-json');return themeJsonDirty&&e?e.value:null;};
+FE.restoreThemeJsonDraft=function(text){var e=$('th-json');if(typeof text==='string'&&e){e.value=text;themeJsonDirty=true;}};
 function renderThemeJson() {
   var ta = $('th-json');
   if (!ta) return;
@@ -1002,7 +1002,8 @@ function exportTheme() {
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   }
-  setThemeStatus('已导出 ' + outName, 'ok');
+  if(FE.noteFileExport)FE.noteFileExport('theme');
+  setThemeStatus('已生成下载 ' + outName, 'ok');
 }
 
 /* ---------------- 初始化 ---------------- */
@@ -1101,12 +1102,12 @@ function initThemeTab() {
     var refreshNameHint = function () {
       var v = FE.isPlainObject(tp()) && typeof tp().name === 'string' ? tp().name : '';
       if (v.trim() === '') {
-        nameHint.textContent = '（name 为空 —— App 不会扫描该主题；文件名将兜底为 theme.json）';
+        nameHint.textContent = '请填写主题名称，Foxy 才能识别该主题。';
         return;
       }
       var fn = FE.themeFileNameFor(v);
       nameHint.textContent = '导出文件名：' + fn +
-        (fn === v.trim() + '.json' ? '' : '（name 含需转义字符，文件名已按 App 规则转义）');
+        (fn === v.trim() + '.json' ? '' : '（已自动处理文件名中的特殊字符）');
     };
     refreshNameHint();
     FE.refreshThemeNameHint = refreshNameHint;

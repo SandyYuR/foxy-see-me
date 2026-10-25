@@ -247,13 +247,12 @@
       if (!registryAvailable() && !registered) {
         /* 环境不支持 @font-face：预览看不到字形，但覆盖度提示仍然要说清「实机会怎样」，
          * 否则作者会以为字体没生效。 */
-        msg = '已读到 ' + name + '，但当前环境不支持 @font-face 预览；' +
+        msg = '已读到 ' + name + '，但当前浏览器无法预览此字体；' +
           (coverage
             ? '该字体覆盖 ' + coverage.size + ' 个码位。' + coverageNote(report)
             : '也无法解析覆盖度。');
       } else if (!coverage) {
-        msg = '已载入 ' + name + '（无法解析字体的 cmap 覆盖度，预览按字体自身字形渲染；' +
-          '实机缺字时回退系统字体）。';
+        msg = '已载入 ' + name + '，但无法解析缺字情况；Foxy 会用系统字体补充缺字。';
       } else {
         /* 全图标布局（水彩布局就属于这种：46 个键里 33 个带 icon，剩下那个是空格）
          * 与有文字的布局分开措辞：前者没有"缺字"可言，后者要说清实机回落行为。 */
@@ -271,8 +270,7 @@
   function coverageNote(report) {
     if (!report || !report.ok) return '';
     if (!report.chars.length) {
-      return '当前布局的可见键都用图标、没有需要字形的文字，所以预览里看不出字体差异是正常的；' +
-        '换成带文字标签的键（或看符号面板）才会用到这份字体。';
+      return '当前布局没有文字标签，换到带文字的布局可查看字体效果。';
     }
     return '当前布局用到 ' + report.chars.length + ' 个不同字符，其中 ' + report.covered.length +
       ' 个有字形' +

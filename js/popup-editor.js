@@ -579,7 +579,7 @@ function performCandDrop(from, target) {
 FE.performCandDrop = performCandDrop;
 
 /* ---------------- 候选编辑对话框 ---------------- */
-function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
+function openCandidateDialog(P, schemaName, pk, st, ci, cand, cached) {
   var isNew = ci < 0;
   var kind0 = isNew ? 'text' : FE.popupCandidateKind(cand);
   /* 可比较快照（纯读取，不触发校验弹窗）：类型 + 各分支的编辑内容。
@@ -605,6 +605,7 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
     wide: true,
     onBeforeClose: guard.onBeforeClose
   });
+  modal.el.__draftSnapshot=function(){return {kind:'popup-candidate',schema:schemaName,pk:pk,st:st,ci:ci,cand:cand,fields:FE.readEditorFields(modal.body)};};
   var draft = { kind: kind0, text: '', label: '', actionObj: null, actionName: '', macro: '', ref: '', actionsArr: null, extra: {} };
   if (!isNew) {
     if (kind0 === 'text') draft.text = String(cand);
@@ -682,6 +683,7 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
 
   modal.body.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '类型'), kindSel));
   modal.body.appendChild(area);
+  if(cached)FE.restoreEditorFields(modal.body,cached.fields);
 
   if (!isNew) {
     modal.toolbar.appendChild(h('button', {
@@ -744,6 +746,14 @@ function openCandidateDialog(P, schemaName, pk, st, ci, cand) {
   }, '保存'));
 }
 
+FE.restorePopupCandidate=function(saved){
+  var profile=pp(),schema=profile.schemas[saved.schema];
+  if(!schema)return false;
+  var values=popupStateArray(schema[saved.pk],saved.st);
+  var current=saved.ci<0?null:values&&values[saved.ci];
+  if(FE.stableJson(current)!==FE.stableJson(saved.cand))return false;
+  openCandidateDialog(profile,saved.schema,saved.pk,saved.st,saved.ci,current,saved);return true;
+};
 /* ---------------- 气泡预览 ---------------- */
 function renderPopupPreview() {
   var host = $('popup-preview');
@@ -977,6 +987,8 @@ function findMockEff(pk) {
 
 /* ---------------- JSON 视图 ---------------- */
 var popupJsonDirty = false;
+FE.readPopupJsonDraft=function(){var e=$('popup-json');return popupJsonDirty&&e?e.value:null;};
+FE.restorePopupJsonDraft=function(text){var e=$('popup-json');if(typeof text==='string'&&e){e.value=text;popupJsonDirty=true;}};
 function renderPopupJson() {
   var ta = $('popup-json');
   if (!ta) return;
@@ -1075,7 +1087,8 @@ function initPopupTab() {
     document.body.appendChild(a);
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-    setPopupStatus('已导出 ' + a.download, 'ok');
+    if(FE.noteFileExport)FE.noteFileExport('popup');
+    setPopupStatus('已生成下载 ' + a.download, 'ok');
   });
 
   /* 示例（弹出菜单类） */

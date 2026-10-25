@@ -64,6 +64,19 @@ var state = {
   theme: 'light',
   includeType: true,
   sel: null,              // 选中按键 {s, r, k}
+  editSession: null,      // 当前按键编辑会话；草稿不写入 Foxy 文档
+  editorController: null, // 挂载的编辑器及离开守卫，不序列化 DOM
+  inspectorOpen: true,    // 面板外壳独立于按键选择；默认显示空面板
+  suspendedEdits: [],     // 模式变化或取消选择时暂存的未应用按键草稿
+  recoveredEdit: null,    // 刷新后待用户恢复的未应用会话
+  saveStatus: 'idle',     // idle / saved / error，浏览器存储结果
+  savedAt: null,
+  exportBaselines: {},    // 各文件最近生成下载的序列化值，不含预览状态
+  recoveredWorkspace: null, // 当前页签、未应用文本与编辑表单的恢复数据
+  recoveredForms: [],    // 无法自动重开的高级窗口输入，保留为可复制的本地恢复记录
+  cacheRestoring: false, // 恢复过程中不覆盖持久化草稿
+  recoveredJson: null,    // 未应用 JSON 文本，独立于已应用 profile
+  documentRevision: 0,    // 提交/撤销后递增，防止会话向旧位置写回
   validation: { errors: [], warnings: [] },
   compiled: null,         // 预览的编译产物（FE.compileLayout 结果，随时可重建）
   history: [],
@@ -178,6 +191,7 @@ var state = {
 FE.state = state;
 
 function setSplitModeState(value) {
+  if(state.splitMode!==!!value&&FE.suspendKeyEditor)FE.suspendKeyEditor();
   state.splitMode = !!value;
   if (state.splitMode) state.landscapeMode = false;
   var sp = typeof $ === 'function' ? $('pt-split') : null;
@@ -187,6 +201,7 @@ function setSplitModeState(value) {
   return state.splitMode;
 }
 function setLandscapeModeState(value) {
+  if(state.landscapeMode!==!!value&&FE.suspendKeyEditor)FE.suspendKeyEditor();
   state.landscapeMode = !!value;
   if (state.landscapeMode) state.splitMode = false;
   var sp = typeof $ === 'function' ? $('pt-split') : null;
@@ -2569,6 +2584,8 @@ if (typeof document === 'undefined' || typeof window === 'undefined' ||
 
 var LS_KEY = 'foxy-layout-editor-draft-v1';
 var SITE_THEME_KEY = 'foxy-editor-site-theme';   /* 网页配色：auto / light / dark，默认 auto */
+FE.DRAFT_STORAGE_KEY=LS_KEY;
+FE.SITE_THEME_STORAGE_KEY=SITE_THEME_KEY;
 var $ = function (id) { return document.getElementById(id); };
 
 /* ---------------- 网页配色（整站明暗主题） ----------------
@@ -2668,6 +2685,7 @@ function pushHistory() {
   state.future = [];
 }
 function mutate(fn) {
+  if (state.editorController && !state.editorController.committing && FE.leaveKeyEditor) { FE.leaveKeyEditor(function(){mutate(fn);}); return; }
   pushHistory();
   fn();
   afterChange();
@@ -2729,16 +2747,19 @@ function restoreSnapshot(s) {
   return true;
 }
 function undo() {
+  if (state.editorController && FE.leaveKeyEditor) { FE.leaveKeyEditor(undo); return; }
   if (!state.history.length) return;
   state.future.push(snapshot());
   restoreSnapshot(state.history.pop());
 }
 function redo() {
+  if (state.editorController && FE.leaveKeyEditor) { FE.leaveKeyEditor(redo); return; }
   if (!state.future.length) return;
   state.history.push(snapshot());
   restoreSnapshot(state.future.pop());
 }
 function afterChange() {
+  state.documentRevision++;
   state.validation = FE.validateProfile(state.profile);
   invalidateRefIndex();
   autosave();
@@ -2846,9 +2867,15 @@ FE.captureGridScroll = captureGridScroll;
 FE.restoreGridScroll = restoreGridScroll;
 
 function autosave() {
+  if(state.cacheRestoring) return;
   try {
     localStorage.setItem(LS_KEY, JSON.stringify({
       profile: state.profile, layoutName: state.layoutName, fileName: state.fileName,
+      pendingEdit: FE.serializeEditSession ? FE.serializeEditSession() : state.recoveredEdit,
+      workspace: FE.captureWorkspace ? FE.captureWorkspace() : state.recoveredWorkspace,
+      folderDefs:state.folderDefs,folderLayoutPath:state.folderLayoutPath,folderPlan:state.folderPlan,
+      pendingJson: state.jsonDirty && $('json-editor') ? $('json-editor').value : null,
+      exportBaselines: state.exportBaselines,
       popupProfile: state.popupProfile || null, popupFileName: state.popupFileName,
       /* 主题随草稿一起存。存 null 表示"未导入"，恢复时仍为 null。 */
       themeProfile: state.themeProfile || null, themeFileName: state.themeFileName,
@@ -2881,7 +2908,10 @@ function autosave() {
       previewToolbar: state.previewToolbar !== false,
       toolbarIcons: state.toolbarIcons || null
     }));
-  } catch (e) { /* 忽略存储失败 */ }
+    state.saveStatus = 'saved';
+    state.savedAt = Date.now();
+  } catch (e) { state.saveStatus = 'error'; }
+  if (FE.renderSaveStatus) FE.renderSaveStatus();
 }
 
 function applyProfileText(text, opts) {
@@ -3190,6 +3220,7 @@ function scheduleJsonCheck() {
 
 /* 切换标签页（供导入失败时跳转到 JSON 页等场景复用） */
 function activateTab(id) {
+  if (state.editorController && FE.leaveKeyEditor) { FE.leaveKeyEditor(function(){activateTab(id);}); return; }
   document.querySelectorAll('.tab').forEach(function (b) {
     var on = b.dataset.tab === id;
     b.classList.toggle('active', on);
@@ -3240,6 +3271,7 @@ function syncPreviewPanelChrome() {
   }
   var grp = $('pt-state-group');
   if (grp) grp.hidden = isSym;
+  if ($('preview-state-controls')) $('preview-state-controls').hidden = isSym;
   /* 几何滑杆组（高度/三个外观滑杆）：符号页隐藏；深浅下拉不在这一层里，故保留。 */
   var sliders = $('pt-geom-sliders');
   if (sliders) sliders.hidden = isSym;
@@ -3756,7 +3788,8 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
     : null;
   // 全链路只用一个 unit（竖屏口径）：行高、字号、图标、提示全部由此算。
   // 分体的"变宽"只靠容器 kb-split + flex 拉伸，绝不在这里乘系数。
-  var el = h('div', {
+  var el = h(item.previewOnly || item.spacer ? 'div' : 'button', {
+    type:'button', 'aria-label': item.label || (item.placement && item.placement.ref) || '编辑按键',
     class: 'kb-key' + (item.keyType ? ' kt-' + String(item.keyType).toLowerCase() : '') +
       (item.isBroken ? ' kb-key-broken' : '') +
       (item.previewOnly ? ' kb-key-preview-only' : '') +
@@ -3884,12 +3917,9 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
   if (!item.previewOnly) {
     el.addEventListener('click', function (e) {
       e.stopPropagation();
-      state.sel = { s: item.s, r: item.r, k: item.k };
-      renderPreview();
-      renderLayoutTab();
-      if (FE.openKeyDialog) {
-        FE.openKeyDialog({ mode: 'placement', placement: item.placement, location: { s: item.s, r: item.r, k: item.k } });
-      }
+      if (FE.openKeyInspector) FE.openKeyInspector({ mode:'placement', layoutName:state.compiled && state.compiled.resolvedName || state.layoutName,
+        split:state.splitMode, location:{s:item.s,r:item.r,k:item.k} });
+      else if (FE.openKeyDialog) FE.openKeyDialog({mode:'placement',placement:item.placement,location:{s:item.s,r:item.r,k:item.k}});
     });
   }
   return el;
@@ -4197,6 +4227,8 @@ function renderCompiledInto(host, compiled, unit) {
 function renderPreview() {
   var host = $('preview-kb');
   if (!host) return;
+  if(FE.reconcileInspectorSelection)FE.reconcileInspectorSelection();
+  if(FE.scheduleInspectorMeasure)FE.scheduleInspectorMeasure();
   /* 外壳（标题 / 键盘状态开关组 / 角标图例 / 布局 pill）先与当前页签对齐。
    * ⚠️ 必须放在**渲染入口**而不是只在 activateTab 里：renderAll / 窗口 resize /
    * details 展开 等路径都会直接调 renderPreview，若只在切页时同步，
@@ -4326,7 +4358,7 @@ function renderPreview() {
    * 与按键同一把尺子 —— 否则窗口变形时工具栏与键盘会大小脱节。 */
   if (FE.renderPreviewToolbar && toolbarHost) FE.renderPreviewToolbar(toolbarHost, unit);
   /* 一次性编译：引用解析与手势摘要在编译期完成，渲染只读结果 */
-  var compiled = FE.compileLayout(state.profile, state.layoutName, {
+  var compiled = FE.compileLayout(FE.editPreviewProfile ? FE.editPreviewProfile() : state.profile, state.layoutName, {
     split: !textEditorMode && state.splitMode, status: state.status
   });
   state.compiled = compiled;
@@ -4460,6 +4492,7 @@ function issueLocatable(it) {
  * 校验详情，出错就该是红的）。「使用数」弹窗复用本函数时要显式传 'sel' 黄 ——
  * 那只是"带你到用过它的那个键"，不是出错（见 holdFlash 的注释）。 */
 function locateIssue(it, variant) {
+  if(state.editorController&&FE.leaveKeyEditor){FE.leaveKeyEditor(function(){locateIssue(it,variant);});return;}
   if (!it) return;
   if (it.defKind && it.defName) { jumpToDef(it.defKind, it.defName, { error: true }); return; }
   if (it.layout && state.profile && isPlainObject(state.profile.layouts) && state.profile.layouts[it.layout]) {
@@ -4685,9 +4718,8 @@ function renderLayoutTabsPills() {
     host.appendChild(h('button', {
       class: 'pill' + (n === state.layoutName ? ' active' : ''),
       onclick: function () {
-        state.layoutName = n;
-        state.sel = null;
-        renderAll();
+        function select(){state.layoutName=n;state.sel=null;renderAll();}
+        if(FE.leaveKeyEditor)FE.leaveKeyEditor(select);else select();
       }
     }, n));
   });
@@ -5112,9 +5144,12 @@ function moveDragGhost(g, x, y) {
  *   onDrop(target)                                     松手时执行实际数据变更
  *   onStart()                                          进入拖动时（可选） */
 function attachPointerDrag(el, opts) {
-  el.style.touchAction = 'none';
+  var handle = h('span', {class:'drag-handle','aria-hidden':'true',title:'拖动排列'}, '⠿');
+  el.appendChild(handle);
+  el.style.touchAction = 'pan-y';
   el.addEventListener('pointerdown', function (e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.pointerType === 'touch' && e.target !== handle) return;
     var startX = e.clientX, startY = e.clientY, pid = e.pointerId;
     var started = false, ghost = null;
     function onMove(ev) {
@@ -5132,6 +5167,7 @@ function attachPointerDrag(el, opts) {
       clearAllDropMarks();
       var t = opts.dropTarget(ev.clientX, ev.clientY);
       if (t && t.el && t.markClass) t.el.classList.add(t.markClass);
+      if (opts.preview) opts.preview(t);
     }
     function onUp(ev) {
       if (ev.pointerId !== pid) return;
@@ -5145,6 +5181,7 @@ function attachPointerDrag(el, opts) {
       finish();
     }
     function finish() {
+      if (opts.preview) opts.preview(null);
       document.removeEventListener('pointermove', onMove, true);
       document.removeEventListener('pointerup', onUp, true);
       document.removeEventListener('pointercancel', onCancel, true);
@@ -5222,6 +5259,9 @@ function gridDropTarget(x, y, si) {
 
 function performGridDrop(si, gi, target) {
   if (!target) return;
+  var plan = FE.planGridDrop ? FE.planGridDrop(curSections()[si], gi, target) : {ok:true,changed:true};
+  if (!plan.ok) { if (plan.reason) setOpStatus(plan.reason, 'warn'); return; }
+  if (!plan.changed) return;
   mutate(function () {
     var section = curSections()[si];
     if (!isPlainObject(section) || !Array.isArray(section.keys)) return;
@@ -5273,10 +5313,8 @@ function keyChip(item) {
     title: itemTooltip(item, state.status.shift),
     onclick: function () {
       if (pointerDragSuppressClick()) return;   /* 刚拖动完，不当作点击 */
-      state.sel = loc;
-      renderPreview();
-      renderSectionsEditor();
-      if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'placement', placement: placement, location: loc });
+      if (FE.openStructureKeyDialog) FE.openStructureKeyDialog({mode:'placement',location:loc});
+      else if (FE.openKeyDialog) FE.openKeyDialog({mode:'placement',placement:placement,location:loc});
     }
   });
   applyEditorKeyColors(chip, item);
@@ -5536,13 +5574,12 @@ function gridEditor(section, si, csec) {
           (function (gi) {
             cell.addEventListener('click', function () {
               if (pointerDragSuppressClick()) return;   /* 刚拖动完，不当作点击 */
-              state.sel = { s: si, r: null, k: gi };
-              renderPreview();
-              renderSectionsEditor();
-              if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'placement', placement: keysArr[gi], location: { s: si, r: null, k: gi }, grid: true });
+              if (FE.openStructureKeyDialog) FE.openStructureKeyDialog({mode:'placement',location:{s:si,r:null,k:gi},grid:true});
+              else if (FE.openKeyDialog) FE.openKeyDialog({mode:'placement',placement:keysArr[gi],location:{s:si,r:null,k:gi},grid:true});
             });
             attachPointerDrag(cell, {
               dropTarget: function (px, py) { return gridDropTarget(px, py, si); },
+              preview: function(target) { if(FE.previewGridDrop)FE.previewGridDrop(si,gi,target); },
               onDrop: function (target) { performGridDrop(si, gi, target); }
             });
           })(info.gi);
@@ -5692,7 +5729,8 @@ function renderKeysTab() {
     var used = usageOf(refIdx, 'key', n);
 
     function openEditor() {
-      if (FE.openKeyDialog) FE.openKeyDialog({ mode: 'definition', name: n });
+      if (FE.openKeyInspector) FE.openKeyInspector({mode:'definition',name:n});
+      else if (FE.openKeyDialog) FE.openKeyDialog({mode:'definition',name:n});
     }
     /* 整行可点即进入编辑（与「动作与宏」一致的交互）——**不再单设「编辑」按钮**。
      * · 点击落在行内按钮（使用/删除）上时不触发 → clickedInteractive 排除；
@@ -6322,6 +6360,7 @@ function renderAll() {
   renderActionsTab();
   renderJsonTab();
   renderOps();
+  if (FE.renderSaveStatus) FE.renderSaveStatus();
   updateUndoButtons();
   if (FE.renderPopupTab) FE.renderPopupTab();
   /* 主题页与符号页（各自模块未加载时静默跳过，与 popup 同一套守卫写法） */
@@ -6541,9 +6580,9 @@ FE.reservedLayoutNameGuard = reservedLayoutNameGuard;
 function initToolbar() {
   /* 布局选择 */
   $('layout-select').addEventListener('change', function () {
-    state.layoutName = this.value || null;
-    state.sel = null;
-    renderAll();
+    var name=this.value; this.value=state.layoutName;
+    function select(){state.layoutName=name||null;state.sel=null;renderAll();}
+    if(FE.leaveKeyEditor) FE.leaveKeyEditor(select); else select();
   });
   $('layout-add').addEventListener('click', async function () {
     var name = await FE.uiPrompt({
@@ -6809,9 +6848,8 @@ function initToolbar() {
     setOpStatus('已切换到包内布局 ' + sel.value, 'ok');
   });
   $('op-export').addEventListener('click', function () {
-    var res = exportLayoutText();
-    downloadJson(res.text, state.fileName || 'foxy-layout.json');
-    setOpStatus(res.note, 'ok');
+    function run(){var res=exportLayoutText();downloadJson(res.text,state.fileName||'foxy-layout.json');if(FE.noteFileExport)FE.noteFileExport('layout');setOpStatus('已生成下载：'+(state.fileName||'foxy-layout.json'),'ok');}
+    if(FE.guardLayoutExport)FE.guardLayoutExport(run);else run();
   });
   $('op-export-defs').addEventListener('click', function () {
     if (!state.folderDefs) { setOpStatus('当前不是文件夹导入，没有可导出的 definitions.json', 'warn'); return; }
@@ -6934,6 +6972,7 @@ function initToolbar() {
   jsonTa.addEventListener('input', function () {
     state.jsonDirty = true;
     scheduleJsonCheck();
+    autosave();
   });
 
   /* 高度覆盖（一次性绑定，值由 renderLayoutSettings 同步） */
@@ -7412,6 +7451,7 @@ FE.clearAllDropMarks = clearAllDropMarks;
 FE.pointerDragSuppressClick = pointerDragSuppressClick;
 
 function boot() {
+  state.cacheRestoring=true;
   initTabs();
   initSiteTheme();   /* 网页配色先落类，避免首屏闪一下错误的主题 */
   initToolbar();
@@ -7422,6 +7462,11 @@ function boot() {
       var d = JSON.parse(draft);
       if (d && isPlainObject(d.profile)) {
         state.profile = FE.normalizeProfile(d.profile);
+        state.recoveredWorkspace=d.workspace||null;
+        state.folderDefs=d.folderDefs||null;state.folderLayoutPath=d.folderLayoutPath||null;state.folderPlan=d.folderPlan||null;
+        state.recoveredEdit = d.pendingEdit || null;
+        state.recoveredJson = typeof d.pendingJson === 'string' ? d.pendingJson : null;
+        state.exportBaselines = isPlainObject(d.exportBaselines) ? d.exportBaselines : {};
         state.fileName = d.fileName || 'foxy-layout.json';
         state.layoutName = (d.layoutName && d.profile.layouts[d.layoutName]) ? d.layoutName
           : (d.profile.layouts['default'] ? 'default' : Object.keys(d.profile.layouts)[0] || null);
@@ -7528,6 +7573,7 @@ function boot() {
   syncPreviewPanelChrome();
   renderAll();
   setOpStatus('就绪。修改会实时渲染并自动保存到浏览器。', 'ok');
+  state.cacheRestoring=false;
 }
 
 boot();

@@ -321,6 +321,8 @@ var h = FE.h, clearEl = FE.clearEl, $ = FE.$;
 
 var DEFAULT_FILES = { symbols: 'symbols.json', emoji: 'emoji.json', kaomoji: 'kaomoji.json' };
 var symJsonDirty = false;
+FE.readSymbolJsonDraft=function(){var e=$('sym-json');return symJsonDirty&&e?e.value:null;};
+FE.restoreSymbolJsonDraft=function(text){var e=$('sym-json');if(typeof text==='string'&&e){e.value=text;symJsonDirty=true;}};
 var symInited = false;
 var pathHintEl = null;
 
@@ -452,14 +454,9 @@ function renderSymPathHint() {
   clearEl(pathHintEl);
   var meta = FE.symbolKindMeta(state.symbolKind);
   var box = h('div');
-  box.appendChild(h('div', null,
-    '文件请放置于 ',
-    h('code', null, '<外部存储>/foxy/frontend/' + meta.dir + '/<名>.json'),
-    '（精确路径：Android/data/com.fxliang.foxy/files/foxy/frontend/' + meta.dir + '/）'));
-  box.appendChild(h('div', null,
-    '⚠️ 需在「设置 → 符号布局」里**选中**该 catalog 才生效；内置符号走 APK assets，' +
-    '放一份同名文件**不会**自动覆盖内置。文件名需 > 5 字符且不含路径分隔符才会被列为候选（' +
-    '当前导出名：' + symFileName() + '）。'));
+  box.appendChild(h('div', null, '导出后放入 ',
+    h('code', null, 'foxy/frontend/' + meta.dir + '/'), '，再在 Foxy「设置 → 符号布局」中选中。'));
+  box.appendChild(h('div', null, '当前文件：'+symFileName()+'。同名文件不会自动替换内置内容。'));
   pathHintEl.appendChild(box);
 }
 
@@ -560,7 +557,7 @@ function buildSymGroupEditor(gi, g, displayName) {
   var fb = ['zh', 'zh-Hant', 'zh-Hant-TW', 'zh-TW', 'en'].map(function (lang) {
     return lang + ' → ' + (FE.symbolGroupLabel(g, lang) || '（空）');
   }).join('　·　');
-  host.appendChild(h('div', { class: 'status dim' }, 'App 端显示名（按语言回退链）：' + fb));
+  host.appendChild(h('div', { class: 'status dim' }, '各语言显示名称：' + fb));
 
   /* --- 条目网格 --- */
   var all = Array.isArray(g.symbols) ? g.symbols : [];
@@ -592,7 +589,7 @@ function buildSymGroupEditor(gi, g, displayName) {
     var cell = h('div', {
       class: 'sym-cell' + (k === selIdx ? ' sym-cell-sel' : ''),
       style: cellStyle(k === selIdx),
-      title: (multi ? '' : '格高固定 40dp，过长会等比缩小：') + text
+      title: (multi ? '' : '长文本会缩小显示：') + text
     }, text === '' ? '（空）' : text);
     cell.addEventListener('click', function () { select(k); });
     cells.push(cell);
@@ -635,7 +632,7 @@ function buildSymGroupEditor(gi, g, displayName) {
       style: { display: 'flex', alignItems: 'center', justifyContent: 'center',
                height: '40px', border: '1px dashed var(--border)', borderRadius: '6px',
                cursor: 'pointer', fontSize: '12px' },
-      title: '为免一次建出上千个格子卡住浏览器，默认只画前 ' + CAP + ' 条'
+      title: '当前显示前 ' + CAP + ' 条'
     }, '+ 还有 ' + rest + ' 条（点这里全部显示）');
     more.addEventListener('click', function () {
       showAll[displayName] = true;
@@ -662,8 +659,8 @@ function buildSymGroupEditor(gi, g, displayName) {
    * 这里按实机行为表述，免得用户以为"少几个字能看到"。 */
   host.appendChild(h('div', { class: 'status dim' },
     multi
-      ? 'multiLine = true：预览为每行 1 格、高度自适应（App 端行高 WRAP_CONTENT，不缩小）。'
-      : 'multiLine = false：预览为每行 6 格、固定 40dp 高（App 端如此）—— 多字符条目在手机上会被**等比缩小**到很小、可读性差（不是裁掉），建议开启 multiLine。'));
+      ? '每行显示一项，适合长文本和颜文字。'
+      : '每行显示多项，长文本会缩小。看不清时可开启“每行显示一项”。'));
 
   editBtn.addEventListener('click', async function () {
     if (selIdx < 0) return;
@@ -699,7 +696,7 @@ function buildSymGroupEditor(gi, g, displayName) {
   });
   function addEntry() { insertEntry(all.length, '添加到本组末尾'); }
   async function insertEntry(at, message) {
-    var v = await FE.uiPrompt({ title: '添加条目', message: message + '（可多字符；颜文字这类请让 multiLine 保持开启）',
+    var v = await FE.uiPrompt({ title: '添加条目', message: message + '（支持长文本，建议开启“每行显示一项”）',
       placeholder: '如 （＾▽＾）', required: true });
     if (v == null) return;
     state.symbolSelEntry = { group: displayName, index: at };
@@ -815,7 +812,8 @@ function symExport() {
     try { URL.revokeObjectURL(a.href); } catch (e) { /* 忽略 */ }
     if (a.remove) a.remove();
   }, 500);
-  setSymStatus('已导出 ' + name + '（' + meta.label + '）。放到 ' +
+  if(FE.noteFileExport)FE.noteFileExport(state.symbolKind);
+  setSymStatus('已生成下载 ' + name + '（' + meta.label + '）。放到 ' +
     '<外部存储>/foxy/frontend/' + meta.dir + '/ 后，需在「设置 → 符号布局」里选中才生效。', 'ok');
 }
 

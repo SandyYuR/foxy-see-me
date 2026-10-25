@@ -21,7 +21,8 @@
   --mono: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
   /* 中央操作区（内容列）的几何：顶栏与 main 共用，浮动工具也靠它对齐。
    * 改宽度/内边距时请只改这两个变量 —— 浮动按钮的"贴边"完全依赖它们。 */
-  --content-max: 1298px;
+  --content-max: 1362.9px;
+  --inspector-width: 409.5px;
   --content-pad-x: 20px;
 }
 
@@ -1015,7 +1016,7 @@ html.site-light .st-split { color: #2e8b57; }
 .gedit-key.chip-sel { outline: 2px solid var(--sel); outline-offset: 1px; }
 .gedit-key.chip-broken { outline: 2px dashed var(--err); outline-offset: 1px; }
 .gedit-key:hover { filter: brightness(1.15); }
-.gedit-key { touch-action: none; }
+.gedit-key { touch-action: pan-y; }
 .gedit-cell.gedit-drop { outline: 2px solid var(--accent); outline-offset: -2px; background: rgba(76, 141, 255, 0.18); }
 .gedit-label { font-size: 15px; font-weight: 600; line-height: 1.2; }
 .gedit-sub { font-size: 10px; color: #b9bec6; font-family: var(--mono); max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1628,4 +1629,111 @@ dialog.editor-dialog::backdrop { background: rgba(5, 6, 8, 0.6); backdrop-filter
   /* 对话框接近全屏，操作区按钮更大 */
   dialog.editor-dialog, dialog.editor-dialog.wide { width: calc(100vw - 16px); max-width: calc(100vw - 16px); }
   .dialog-toolbar button, .dialog-toolbar .mini-button { padding: 10px 16px; }
+}
+
+/* Editing workspace: document-specific file commands stay in their original tabs. */
+.topbar-title { flex: 1; }
+.topbar-main { position: relative; padding-bottom: 26px; align-items: flex-start; }
+.topbar-subline { position: absolute; inset: auto 0 0; display: flex; gap: 18px; align-items: baseline; }
+.topbar-subline h2 { flex: 1; min-width: 0; margin: 0; }
+.draft-save-status { color: var(--ok); font-size: 12px; white-space: nowrap; margin-left: auto; }
+.draft-save-status.error { color: var(--err); white-space: normal; }
+html.site-light .draft-save-status:not(.error) { color: #19783a; }
+@media (prefers-color-scheme: light) { html.site-auto .draft-save-status:not(.error) { color: #19783a; } }
+.editing-workspace { display: grid; grid-template-columns: minmax(0,1fr); gap: 16px; align-items: start; margin-bottom: 18px; }
+.editing-workspace.has-inspector { grid-template-columns: minmax(0,1fr) var(--inspector-width); }
+.editing-workspace .preview-panel { min-width: 0; margin-bottom: 0; }
+.preview-toolbar { align-items: flex-start; flex-wrap: wrap; }
+.preview-control-group { min-width: 0; flex: 0 1 auto; }
+.preview-control-group > summary { cursor: pointer; padding: 6px 10px; color: var(--text); font-size: 13px; }
+.preview-control-group > summary span { color: var(--text-dim); font-size: 11px; }
+.preview-control-group[open] { flex-basis: 100%; }
+.preview-control-group .preview-toggles { padding: 8px 10px; }
+.preview-legend-details > summary { cursor: pointer; color: var(--text-dim); font-size: 12px; padding: 6px 14px; }
+.key-inspector { min-width: 0; min-height: 0; position: relative; border: 1px solid var(--border); border-radius: 12px; background: var(--card); display: flex; flex-direction: column; height: var(--inspector-height, 600px); overflow: hidden; }
+.key-inspector[hidden] { display: none; }
+.key-inspector.is-empty .inspector-body { padding-top: 8px; }
+.inspector-empty-section { border-bottom: 1px solid var(--border); padding: 12px 4px; }
+.inspector-empty-section > summary { color: var(--text-dim); cursor: not-allowed; user-select: none; }
+.inspector-empty-section > summary::marker { color: var(--text-dim); }
+.inspector-empty-section button { border: 0; background: transparent; color: inherit; font: inherit; padding: 0; opacity: .65; cursor: not-allowed; }
+.workspace-draft-actions { margin-left: auto; display: inline-flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+.workspace-draft-actions .draft-save-status { margin-left: 0; }
+.workspace-reset-button { font-size: 11px; padding: 2px 7px; white-space: nowrap; }
+.inspector-heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.inspector-heading h3 { margin: 0; font-size: 16px; }
+.inspector-context { padding: 10px 14px 4px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.scope-notice { color: var(--accent); margin: 5px 0; }
+.inspector-key-nav { display: flex; gap: 6px; margin-top: 6px; }
+.inspector-draft-status { font-size: 12px; padding: 4px 14px 10px; color: var(--text-dim); }
+.inspector-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 10px; overscroll-behavior: contain; }
+.inspector-body .inner-card { margin: 6px 0; }
+.inspector-body .inner-card-body { margin: 0 8px 10px; }
+.inspector-body .form-row { min-width: 0; }
+.inspector-body .form-inline { flex-wrap: wrap; }
+.inspector-body .mini-input, .inspector-body .mini-select { max-width: 100%; min-width: 0; }
+.inspector-body .form-grid-2 { grid-template-columns: minmax(0,1fr); }
+.inspector-body .form-row > .mini-label { min-width: 60px; }
+.inspector-body .form-row > .mini-input { flex: 1; }
+.inspector-body .field-origin { margin: 6px 0; }
+.key-advanced-fields > summary { color: var(--text-dim); cursor: pointer; font-size: 12px; padding: 8px 0; }
+.inspector-actions { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 8px; padding: 12px; border-top: 1px solid var(--border); }
+.inspector-errors:empty { display: none; }
+.inspector-errors { padding: 8px 14px; }
+.gesture-directions { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 5px; margin-bottom: 12px; }
+.gesture-direction { min-width: 0; padding: 8px 4px; white-space: normal; text-align: center; font-size: 12px; }
+.gesture-direction[data-slot="swipe.up"] { grid-column: 2; }
+.gesture-direction[data-slot="swipe.left"] { grid-column: 1; }
+.gesture-direction[data-slot="swipe.down"] { grid-column: 2; }
+.gesture-direction[data-slot="longPress"] { grid-column: 1; }
+.gesture-direction[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: #fff; }
+.gesture-direction-summary { display: block; font-size: 11px; overflow-wrap: anywhere; opacity: .8; margin-top: 3px; }
+.gesture-more { margin: 6px 0 12px; }
+.gesture-more > summary { font-size: 12px; color: var(--text-dim); padding: 5px 0; cursor: pointer; }
+.gesture-secondary { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px; margin-top: 8px; }
+.inline-gesture-body .toolbar { margin-bottom: 8px; }
+.inline-gesture-body .gesture-area { min-width: 0; }
+.file-save-status { font-size: 12px; color: var(--text-dim); margin: 6px 0; }
+button.kb-key { padding: 0; border: 0; border-radius: inherit; font-weight: inherit; font-family: inherit; line-height: normal; text-transform: none; }
+button.kb-key:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.drag-handle { display: none; touch-action: none; cursor: grab; }
+.grid-drop-preview { pointer-events: none; border: 2px solid var(--ok); background: rgba(72,194,106,.15); z-index: 4; }
+.grid-drop-preview.invalid { border-color: var(--err); background: rgba(240,80,80,.15); }
+@media (max-width: 980px) {
+  .editing-workspace.has-inspector { grid-template-columns: minmax(0,1fr); }
+  .key-inspector { position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 100; height: min(90dvh,900px); max-height: 90dvh; border-radius: 16px 16px 0 0; box-shadow: 0 -12px 60px rgba(0,0,0,.4); }
+  .key-inspector.is-empty { position: relative; left: auto; right: auto; bottom: auto; z-index: auto; height: auto; max-height: none; border-radius: 12px; box-shadow: none; }
+  .inspector-heading { padding: 8px 12px; }
+  .inspector-context { padding: 6px 12px; }
+  .inspector-actions { padding-bottom: max(12px,env(safe-area-inset-bottom)); }
+  .inspector-body .form-grid-2 { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 640px) {
+  .topbar-main { padding-bottom: 24px; gap: 6px; }
+  .editor-format-note { display: none; }
+  .topbar-title { flex-basis: 100%; }
+  .topbar-title h1 { white-space: nowrap; }
+  .topbar-actions { max-width: 100%; flex-wrap: wrap; gap: 4px; }
+  .topbar-actions .mini-button { padding: 8px 10px; }
+  .topbar-subline { gap: 8px; align-items: flex-end; }
+  .topbar-subline h2 { font-size: 10px; line-height: 1.5; max-width: 55%; }
+  .workspace-draft-actions { max-width: 62%; gap: 3px 6px; }
+  .draft-save-status { font-size: 11px; max-width: 100%; white-space: normal; text-align: right; line-height: 1.5; }
+  .workspace-reset-button { font-size: 11px; padding: 2px 6px; }
+  .topbar-subline h2 { max-width: 37%; }
+  .preview-toolbar { gap: 2px 8px; }
+  .layout-tabs { flex-basis: 100%; }
+  .preview-control-group > summary { padding: 7px 3px; font-size: 12px; }
+  .preview-control-group > summary span { display: none; }
+  .inspector-body .mini-input, .inspector-body .mini-select { font-size: 16px; }
+  .inspector-body .form-grid-2 { grid-template-columns: minmax(0,1fr); }
+  .inspector-context .mini-button, .inspector-key-nav .mini-button { padding: 6px 8px; font-size: 12px; }
+  .inspector-body details.card > summary { padding: 8px 10px; }
+  .inspector-body .form-row { margin-top: 5px; margin-bottom: 5px; }
+  .gesture-direction { min-height: 48px; padding: 6px; }
+  .inspector-actions button { min-height: 44px; }
+}
+@media (pointer: coarse) {
+  .chip, .gedit-key { position: relative; }
+  .drag-handle { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; min-height: 32px; flex-shrink: 0; color: var(--text-dim); }
 }

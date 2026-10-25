@@ -110,7 +110,8 @@ function ok(cond, label, actual) {
     await sleep(200);
   }
 
-  /* 页面内助手：只做 DOM 查询与点击，不改编辑器内部状态 */
+  /* 兼容对话框冒烟；新属性面板的真实交互由 workspace-smoke.js 覆盖。 */
+  await ev("window.openCompatibilityKey=function(index){var items=[];FE.eachCompiledKey(FE.state.compiled,function(k){if(k)items.push(k);});var k=items[index];FE.openKeyDialog({mode:'placement',placement:k.placement,location:{s:k.s,r:k.r,k:k.k},grid:k.r==null});}");
   await ev([
     '(function(){',
     'window.__smoke = {',
@@ -140,7 +141,7 @@ function ok(cond, label, actual) {
       '; i.dispatchEvent(new Event("input",{bubbles:true})); document.getElementById("macros-add").click(); return true; })()');
   }
   async function openKeyTap(idx) {
-    await ev('document.querySelectorAll(".kb-key")[' + idx + '].click()');
+    await ev('window.openCompatibilityKey(' + idx + ')');
     await sleep(200);
     await ev('window.__smoke.btn(window.__smoke.dlg(), "编辑…").click()');
     await sleep(200);
@@ -192,7 +193,7 @@ function ok(cond, label, actual) {
   let refs = await ev('window.__smoke.macroRefs()');
   ok(refs.length === 1 && refs[0].indexOf('=smoke_a') > 0, 'profile 里落的是 {macro:"smoke_a"}', refs);
 
-  await ev('document.querySelectorAll(".kb-key")[0].click()');
+  await ev('window.openCompatibilityKey(0)');
   await sleep(250);
   ok((await ev('window.__smoke.row("点击 tap")') || '').indexOf('smoke_a') >= 0,
     '重开该键仍回显 smoke_a', await ev('window.__smoke.row("点击 tap")'));
@@ -212,7 +213,7 @@ function ok(cond, label, actual) {
   await saveKey();
   refs = await ev('window.__smoke.macroRefs()');
   ok(refs.length === 2, '两条路径各自落盘一份引用', refs);
-  await ev('document.querySelectorAll(".kb-key")[1].click()');
+  await ev('window.openCompatibilityKey(1)');
   await sleep(250);
   ok((await ev('window.__smoke.row("点击 tap")') || '').indexOf('smoke_a') >= 0,
     '重开第二个键回显 smoke_a', await ev('window.__smoke.row("点击 tap")'));
@@ -233,7 +234,7 @@ function ok(cond, label, actual) {
   refs = await ev('window.__smoke.macroRefs()');
   const bRef = refs.filter(r => r.indexOf('=smoke_b') > 0);
   ok(bRef.length === 1, 'profile 里落的是 {macro:"smoke_b"}', refs);
-  await ev('document.querySelectorAll(".kb-key")[2].click()');
+  await ev('window.openCompatibilityKey(2)');
   await sleep(250);
   ok((await ev('window.__smoke.row("点击 tap")') || '').indexOf('smoke_b') >= 0,
     '重开第三个键回显 smoke_b', await ev('window.__smoke.row("点击 tap")'));
@@ -267,7 +268,7 @@ function ok(cond, label, actual) {
     'profile 里落的是 {type:"switch_layout_once"} 且没有被降级', onceRefs);
   const nowPlain = (await ev('window.__smoke.typeRefs("switch_layout")')).length;
   ok(nowPlain === basePlain, '没有多写出一份 switch_layout', { before: basePlain, after: nowPlain });
-  await ev('document.querySelectorAll(".kb-key")[3].click()');
+  await ev('window.openCompatibilityKey(3)');
   await sleep(250);
   await ev('window.__smoke.btn(window.__smoke.dlg(), "编辑…").click()');
   await sleep(200);

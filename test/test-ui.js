@@ -61,6 +61,9 @@ load('examples-bundle.js');
 load('app.js');
 load('folder-import.js');
 load('key-dialog.js');
+load('edit-session.js');
+load('gesture-editor.js');
+load('key-editor.js');
 load('macro-editor.js');
 load('popup-editor.js');
 load('theme-editor.js');
@@ -69,6 +72,8 @@ load('symbol-editor.js');
 load('symbol-preview.js');
 load('font-preview.js');
 load('toolbar-preview.js');
+load('workspace.js');
+load('workspace-reset.js');
 
 const FE = global.FE;
 const $ = (id) => documentStub.getElementById(id);
@@ -255,8 +260,8 @@ FE.mutate(() => { delete FE.state.profile.keys['zz.test']; });
 console.log('== 点击预览按键 → 对话框 ==');
 documentStub._openDialogs.length = 0;
 q('.kb-key')[0].click();
-ok(documentStub._openDialogs.length === 1, '按键编辑对话框打开');
-const dlg = documentStub._openDialogs[0];
+ok(!$('key-inspector').hidden && documentStub._openDialogs.length===0, '预览点击打开属性面板，不弹对话框');
+const dlg = $('key-inspector');
 ok(dlg.textContent.indexOf('基本信息') >= 0, '对话框含基本信息');
 ok(dlg.textContent.indexOf('qwerty.q') >= 0 || dlg.textContent.indexOf('rime.q') >= 0, '对话框显示引用');
 ok(dlg.textContent.indexOf('手势') >= 0, '对话框含手势区');
@@ -278,9 +283,9 @@ ok(dlg.textContent.indexOf('手势') >= 0, '对话框含手势区');
 const labelInput = dlg.querySelectorAll('input').find(i => i.getAttribute('type') === 'text');
 labelInput.value = '啾';
 labelInput._fire('change');
-const saveBtn = dlg.querySelectorAll('.dialog-toolbar .primary')[0];
+const saveBtn = dlg.querySelectorAll('.inspector-actions .primary')[0];
 saveBtn.click();
-ok(!dlg.open, '保存后对话框关闭');
+ok(!dlg.hidden && dlg.classList.contains('is-empty'), '应用后保留空属性面板');
 const savedPlacement = FE.state.profile.layouts.default.sections[0].rows[0][0];
 eq(savedPlacement.label, '啾', '放置 label 已写入 profile');
 ok(q('.kb-label', q('.kb-key')[0])[0].textContent === '啾', '预览实时显示新标签');
@@ -293,7 +298,7 @@ documentStub._openDialogs.length = 0;
 
 console.log('== 点击编辑器 chip → 对话框 ==');
 q('#layout-sections .chip')[0].click();
-ok(documentStub._openDialogs.length === 1, 'chip 对话框打开');
+ok(documentStub._openDialogs.length === 1, '下方 chip 打开原有大属性对话框');
 documentStub._openDialogs[0].close();
 documentStub._openDialogs.length = 0;
 
@@ -1330,8 +1335,8 @@ ok(allKeyRows[allKeyRows.length - 1] === newKeyRow, '新条目追加在列表末
 /* 用户之后自己点整行进编辑 */
 documentStub._openDialogs.length = 0;
 newKeyRow._fire('click');
-ok(dialogCount() === 1, '新建后用户点整行才进编辑（不再自动弹）');
-documentStub._openDialogs[0].close();
+ok(!$('key-inspector').hidden, '新建后用户点整行才进入属性面板');
+FE.leaveKeyEditor(function(){});
 
 /* scrollToDefItem 的行为契约 */
 ok(typeof FE.scrollToDefItem === 'function', '暴露 scrollToDefItem');
@@ -1898,8 +1903,8 @@ console.log('== 颜色行全链路回显（当前生效色 + 来源 + 跳转主�
       'popupBackgroundColor 显示当前生效值');
     /* popupBorderColor：App 端未找到消费点（spec §7.3）—— 只如实标注，不画边框 */
     const borderNote = pinfo[0].querySelectorAll('.popup-border-note')[0];
-    ok(!!borderNote && borderNote.textContent.indexOf('未找到消费点') >= 0,
-      'popupBorderColor 如实标注「未找到消费点」（不假装生效）');
+    ok(!!borderNote && borderNote.textContent.indexOf('当前版本不显示气泡边框') >= 0,
+      'popupBorderColor 用简短文案说明当前不显示边框');
   }
   documentStub._openDialogs.length = 0;
 
@@ -2330,8 +2335,8 @@ await sleep(350);
     (textEditorLastRow.heightUnits * textEditorUnit * textEditorHeightK).toFixed(2), '底部编辑行沿用普通键盘最后一行高度');
   documentStub._openDialogs.length = 0;
   q('.kb-text-editor-bottom .kb-key')[0].click();
-  eq(documentStub._openDialogs.length, 1, '有效 text_editor 底部按键仍可打开布局编辑对话框');
-  if (documentStub._openDialogs.length) documentStub._openDialogs[documentStub._openDialogs.length - 1].close();
+  ok(!$('key-inspector').hidden, '有效 text_editor 底部按键打开属性面板');
+  FE.leaveKeyEditor(function(){});
   documentStub._openDialogs.length = 0;
   FE.state.landscapeMode = true;
   $('pt-landscape').checked = true;
@@ -2838,30 +2843,12 @@ await sleep(350);
   tabs[0]._fire('click');
   documentStub._openDialogs.length = 0;
   q('.kb-key')[0].click(); /* split2.json 首键 qwerty.q 自带 popupKey=q */
-  const pdlg = documentStub._openDialogs[0];
+  const pdlg = $('key-inspector');
   ok(pdlg.querySelectorAll('.popup-section').length === 1, '有 popupKey 时 section 存在');
-  const pSubs = pdlg.querySelectorAll('.popup-section .popup-cand');
-  const qExp = (FE.state.popupProfile.schemas.default.q.normal || []).length +
-    ((FE.state.popupProfile.schemas.default.q.shifted || []).length);
-  ok(pSubs.length === qExp && qExp >= 10,
-    'section 渲染出对应键的全部候选（实际 ' + pSubs.length + '，期望 ' + qExp + '）');
-  ok(pdlg.querySelectorAll('.popup-section .popup-state-row').length === 2, 'section 含常规/Shift 两行');
-  /* section 内添加候选 → 写回 popupProfile → 撤销弹回 */
-  pdlg.querySelectorAll('.popup-section .chip-add')[0].click();
-  const pcDlg = documentStub._openDialogs[documentStub._openDialogs.length - 1];
-  ok(pcDlg.textContent.indexOf('候选') >= 0, 'section 内可打开候选编辑对话框');
-  const pcInp = pcDlg.querySelectorAll('input').find(i => i.getAttribute('type') === 'text');
-  pcInp.value = 'qtest';
-  pcInp._fire('input');
-  pcDlg.querySelectorAll('.dialog-toolbar .primary')[0].click();
-  ok(!pcDlg.open, '候选保存后关闭');
-  const qArr = FE.state.popupProfile.schemas.default.q.normal;
-  ok(qArr[qArr.length - 1] === 'qtest', 'section 内添加候选写回 profile');
-  $('top-undo').click();
-  ok(FE.state.popupProfile.schemas.default.q.normal.indexOf('qtest') < 0, '撤销弹回 section 内添加');
-  /* 主对话框保存后 popupKey 修改能同步到 section（重建表单） */
-  pdlg.close();
-  documentStub._openDialogs.length = 0;
+  eq(pdlg.querySelectorAll('.popup-section .popup-cand').length,0,'可取消的按键面板不嵌入立即提交的候选编辑器');
+  const beforePopup=JSON.stringify(FE.state.popupProfile);
+  FE.leaveKeyEditor(function(){});
+  eq(JSON.stringify(FE.state.popupProfile),beforePopup,'取消按键面板不会改变独立 popup 文档');
 
   /* 手势对话框的「编辑弹出菜单候选 →」跳转 */
   console.log('== 手势对话框 → 弹出菜单跳转 ==');
@@ -3195,10 +3182,9 @@ await sleep(350);
   tabs[0]._fire('click');
   documentStub._openDialogs.length = 0;
   q('.kb-key').find(k => String(k.getAttribute('title') || '').indexOf('qwerty.q') >= 0).click();
-  const linkDlg = documentStub._openDialogs[0];
-  const linkCands = linkDlg.querySelectorAll('.popup-section .popup-cand').map(c => c.textContent);
-  const tabCands = q('#popup-keys .popup-cand').slice(0, linkCands.length).map(c => c.textContent);
-  eq(linkCands.slice(0, 3), tabCands.slice(0, 3), '对话框与页签候选内容一致（同源联动）');
+  const linkDlg = $('key-inspector');
+  eq(linkDlg.querySelectorAll('.popup-section .popup-cand').length,0,'候选排序只在 popup 模块编辑，按键面板不重复提供立即提交控件');
+  FE.leaveKeyEditor(function(){});
 
   console.log('== 顶栏撤销/重做按钮 ==');
   FE.applyProfileText(FE.DEFAULT_PROFILE_TEXT, {});
@@ -3523,8 +3509,8 @@ await sleep(350);
   /* 整行可点 → 打开按键编辑对话框 */
   documentStub._openDialogs.length = 0;
   rowKa._fire('click');
-  ok(documentStub._openDialogs.length === 1, '点整行进入按键编辑对话框');
-  documentStub._openDialogs[0].close();
+  ok(!$('key-inspector').hidden, '点整行进入按键属性面板');
+  FE.leaveKeyEditor(function(){});
 
   /* 行内**没有**「编辑」按钮：整行点击就是编辑入口（用户明确要求，别加回来） */
   const rowBtnTexts = rowKa.querySelectorAll('button').map(b => b.textContent);
@@ -3537,8 +3523,8 @@ await sleep(350);
   ok(rowKa.getAttribute('role') == null, '行上不使用 role=button（避免 ARIA 嵌套错误）');
   documentStub._openDialogs.length = 0;
   rowKa._fire('keydown', { key: 'Enter' });
-  ok(documentStub._openDialogs.length === 1, '行聚焦后回车进入编辑');
-  documentStub._openDialogs[0].close();
+  ok(!$('key-inspector').hidden, '行聚焦后回车进入编辑');
+  FE.leaveKeyEditor(function(){});
   /* 焦点在子按钮上按回车不应代劳整行，否则一次回车触发两处 */
   documentStub._openDialogs.length = 0;
   rowKa._fire('keydown', { key: 'Enter', target: rowKa.querySelectorAll('button')[0] });
@@ -5956,8 +5942,8 @@ console.log('== 工具栏/字体：样式与页面结构 ==');
   ok(htmlSrc.indexOf('键盘上方的工具栏') >= 0, '主题页说明已改为「画键盘 + 键盘上方的工具栏」');
   ok(htmlSrc.indexOf('展开更多按钮') < 0,
     '过期说明「展开更多按钮」已删除（行尾没有展开键了）');
-  ok(htmlSrc.indexOf('拖动') >= 0 && htmlSrc.indexOf('渐隐') >= 0,
-    '主题页说明已写明工具栏装不下靠拖动、两端渐隐');
+  ok(htmlSrc.indexOf('工具栏可横向滑动查看') >= 0,
+    '主题页用简短文案说明工具栏可以横向滑动');
   ok(htmlSrc.indexOf('只画<b>一个字</b>') < 0 && htmlSrc.indexOf('所以预览也取首字') < 0,
     '过期说明「实机只画一个字 / 预览取首字」已删除');
   ok(htmlSrc.indexOf('不含 App 的候选栏 / 工具栏') < 0, '过期说明「不含候选栏/工具栏」已删除');

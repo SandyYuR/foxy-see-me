@@ -684,7 +684,7 @@ function buildSkeleton() {
         el('select', { id: 'th-example' }),
         el('button', { id: 'th-load-example' })),
       el('div', { class: 'form-row form-inline' },
-        el('label', { class: 'mini-label' }, '主题名 name'),
+        el('label', { class: 'mini-label' }, '主题名称'),
         el('input', { id: 'th-name', type: 'text', class: 'mini-input' })),
       el('div', { class: 'form-row form-inline' },
         el('label', { class: 'mini-label' }, '作者 author'),
@@ -695,10 +695,10 @@ function buildSkeleton() {
       el('summary', null, '主题校验'),
       el('div', { id: 'th-validation', class: 'status' })),
     el('details', { class: 'card', open: 'open' },
-      el('summary', null, '槽位全局配色（28 个字段）'),
+      el('summary', null, '整体配色'),
       el('div', { id: 'th-colors' })),
     el('details', { class: 'card', open: 'open' },
-      el('summary', null, '键类型配色 keyTypes（LETTER / FUNCTION / ACTION）'),
+      el('summary', null, '按键分类配色'),
       el('div', { id: 'th-keytypes' })),
     el('details', { class: 'card', open: 'open' },
       el('summary', null, '主题 JSON（实时同步；可直接编辑后“应用”）'),
@@ -759,7 +759,14 @@ function buildSkeleton() {
       el('textarea', { id: 'sym-json', class: 'json-editor' }),
       el('div', { id: 'sym-json-status', class: 'status' })));
 
-  main.append(previewPanel, tabs, tabLayout, tabKeys, tabActions, tabPopup, tabTheme, tabSymbols);
+  const workspace=el('div',{id:'editing-workspace',class:'editing-workspace'},previewPanel,el('aside',{id:'key-inspector',class:'key-inspector is-empty'}));
+  main.append(el('div',{id:'draft-recovery',hidden:'hidden'}),workspace,tabs,tabLayout,tabKeys,tabActions,tabPopup,tabTheme,tabSymbols);
+  opCard.appendChild(el('div',{id:'layout-file-status'}));
+  layoutJsonCard.open=true;layoutJsonCard.id='layout-json-card';
+  const stateControls=el('details',{id:'preview-state-controls',class:'preview-control-group'},el('summary',null,'状态模拟'));
+  stateControls.appendChild(pToolbar.querySelector('.preview-toggles'));pToolbar.appendChild(stateControls);
+  const appearanceControls=el('details',{class:'preview-control-group'},el('summary',null,'预览外观'));
+  appearanceControls.appendChild(pToolbar.querySelector('.preview-toggles-geom'));pToolbar.appendChild(appearanceControls);
   /* 顶栏：标题（项目名 + 其后的仓库图标按钮）+ 右侧网页配色三图标按钮与常驻撤销/重做（与 index.html 保持同步） */
   const header = el('header', { class: 'topbar' });
   header.appendChild(el('div', { class: 'topbar-main' },
@@ -775,7 +782,7 @@ function buildSkeleton() {
           href: 'https://github.com/SandyYuR/foxy-see-me',
           target: '_blank', rel: 'noopener noreferrer'
         }, 'GitHub')),
-      el('h2', null, 'Foxy 键盘布局可视化编辑器')),
+      el('div',{class:'topbar-subline'},el('h2', null, 'Foxy 键盘布局可视化编辑器'),el('div',{class:'workspace-draft-actions'},el('span',{id:'draft-save-status',class:'draft-save-status'}),el('button',{id:'workspace-reset',class:'workspace-reset-button'},'还原默认'),el('button',{id:'workspace-reset-undo',class:'workspace-reset-button',hidden:'hidden'},'撤回还原')))),
     el('div', { class: 'topbar-actions' },
       el('div', { class: 'site-theme-group' },
         el('button', { id: 'site-theme-auto', class: 'mini-button icon-only site-theme-btn active' }),
