@@ -595,6 +595,13 @@ const onceReserved = FE.normalizeProfile({ layouts: { default: { sections: [{ ty
 ]] }] } } });
 ok(FE.validateProfile(onceReserved).errors.every(e => e.indexOf('switch_layout_once') < 0),
   'switch_layout_once 同样豁免 symbols/emoji/kaomoji 三个保留名');
+/* 端到端往返：导出（FE.serializeProfile）→ JSON.parse → 重新规范化 → 校验。
+ * 锁住「不改 schema 不会挡住保存/加载」——整条链路只经自研校验，once 不被任何一环改写。 */
+const onceExported = FE.serializeProfile(oncePanel, true);
+const onceReloaded = FE.normalizeProfile(JSON.parse(onceExported));
+eq(onceReloaded.layouts.default.sections[0].rows[0][0].tap.type, 'switch_layout_once',
+  '导出文本重新载入后仍是 switch_layout_once（不被降级成 switch_layout）');
+eq(FE.validateProfile(onceReloaded).errors.length, 0, '导出往返后的 switch_layout_once 仍校验通过');
 
 /* text_editor 结构约束：恰好一个 rows 区段、恰好一行 */
 const teTooMany = FE.normalizeProfile({

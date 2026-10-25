@@ -57,7 +57,7 @@
 | 四修饰键阶段 | 2026-10-21 实测 | `modifier` 从 SHIFT / CTRL 扩到 SHIFT / CTRL / ALT / META，补齐键/override/变体的 `modifier` 字段校验，预览加 Ctrl / Alt / Meta 修饰键模拟；core 739、UI 1472。 |
 | 宏引用选取阶段 | 2026-10-25 实测 | 修复手势对话框「来源切到宏调用后不碰下拉就保存」被误判成未选宏的问题，动作名同构修正；顺手补齐 `FE.snapshotGuard` 按来源过滤快照。core 814、UI 1651。 |
 | 临时布局阶段 | 2026-10-24 skill 更新（`switch_layout_once`）实测 | 动作类型新增临时层 `switch_layout_once`：动作摘要、校验、布局重命名引用改写、动作编辑器选项与取值全部覆盖；`skills/*.schema.json` 的上游枚举未含该类型，故未改 schema。core 819、UI 1658。 |
-| 当前阶段 | 本次文档重组前后实测 | core 819、UI 1658、颜色解析 111、主题颜色 295、真实文件体检 46 个示例且 0 错误。 |
+| 当前阶段 | 本次文档重组前后实测 | core 821、UI 1658、颜色解析 111、主题颜色 295、真实文件体检 46 个示例且 0 错误。 |
 
 ## 2. 长期有效的决策记录
 
@@ -470,13 +470,17 @@ jscolor 的颜色值和 CSS/JSON 顺序不同。项目保留它的字节序约�
 
 上游 `SKILL.md` 在动作类型列表里新增了 `switch_layout_once`（字段与 `switch_layout` 完全相同，只有 `layout`），语义是临时层：切到目标布局后，下一次有效输入（按键、宏、选词或上屏文本）完成即自动回到切换前的布局；再次用 `switch_layout` 或 `switch_layout_once` 切换会替换待返回目标，唤起键盘或回到基础布局则取消这次返回。
 
-**编辑器需要覆盖的四处**：`FE.actionDisplay` 的摘要（`临时切换布局 <layout>`，与 `切换布局` 区分开）、`checkAction` 的校验分支（原来会落到「使用了不支持的动作 type」把合法数据判成非法）、布局重命名时 `walkAllActions` 的引用改写（原来只改 `switch_layout`，`once` 的 `layout` 会指向旧名）、以及 `FE.buildActionEditor` 的类型选项表与 `getValue`（`getValue` 必须保留原 `type`，不能因为没有专门分支就降级成 `switch_layout`）。`FE.RESERVED_LAYOUT_NAMES` 的 `symbols` / `emoji` / `kaomoji` 豁免对两者共用。
+**编辑器需要覆盖的四处**：`FE.actionDisplay` 的摘要（`临时切换布局 <layout>`，与 `切换布局` 区分开）、`FE.validateAction` 的校验分支（`js/app.js:1124`，原来会落到「使用了不支持的动作 type」把合法数据判成非法）、布局重命名时 `walkAllActions` 的引用改写（原来只改 `switch_layout`，`once` 的 `layout` 会指向旧名）、以及 `FE.buildActionEditor` 的类型选项表与 `getValue`（`getValue` 必须保留原 `type`，不能因为没有专门分支就降级成 `switch_layout`）。`FE.RESERVED_LAYOUT_NAMES` 的 `symbols` / `emoji` / `kaomoji` 豁免对两者共用。
 
-**没有改 schema**。`skills/*.schema.json` 是上游产物，这一轮上游并没有更新它们，`foxy-keyboard-layout.schema.json` 的 `$defs.action.properties.type` 枚举里仍只有 `key` / `modifier` / `text` / `commit` / `switch_layout` / `app`。按 D7「校验对齐 Foxy 解析器，不自行发明规则」，编辑器不为新类型扩枚举；`SKILL.md` 是直接整份同步上游版本的。`test/conformance-adapter.js` 也只把 `switch_layout` 映射到 App 端的 `{type:'app', action:'switch_layout'}`，`once` 没有对应字段，因此未改，46 项检查照旧全过。
+**没有改 schema**。`skills/*.schema.json` 是上游产物，这一轮上游并没有更新它们，`foxy-keyboard-layout.schema.json` 的 `$defs.action.properties.type` 枚举里仍只有 `key` / `modifier` / `text` / `commit` / `switch_layout` / `app`。按 D7「校验对齐 Foxy 解析器，不自行发明规则」，编辑器不为新类型扩枚举；`SKILL.md` 是直接整份同步上游版本的。
+
+**为什么 schema 没扩枚举不会挡住保存/加载**：编辑器里没有 schema 驱动的校验链。`index.html` 不加载任何 `*.schema.json`（`schema` 字样只出现在弹出菜单编辑器的 `#popup-schema` 下拉与 `schemas` 分组，以及第 542 行的一句文案），`js/` 下没有 ajv、没有 `fetch` / `XMLHttpRequest`、没有 `$ref` 解析；`schema` 命中全部是弹出菜单的 `schemas` 分组与注释。校验入口是自研的 `js/app.js:1124 function validateAction(action, where, err, profile)`，经 `js/app.js:1174 FE.validateAction = validateAction` 导出，由 `js/app.js:1265 FE.validateProfile` 汇总，三处状态写入 `state.validation = FE.validateProfile(state.profile)`（`js/app.js:2742` / `:6039` / `:7520`）。所以含 `switch_layout_once` 的文件在编辑器内保存与重新加载都只走 `FE.validateProfile`，不会被 schema 判非法。`test/conformance-adapter.js` 也只把 `switch_layout` 映射到 App 端的 `{type:'app', action:'switch_layout'}`，`once` 没有对应字段，因此未改，46 项检查照旧全过。
 
 **测试与文档**。`test/test-core.js` 新增 5 条（合法目标不报错、摘要文案、目标不存在时点名 `switch_layout_once`、缺 `layout` 被检出、保留名豁免）；`test/test-ui.js` 新增布局重命名时 `tap` 与 `longPress.action` 的 `layout` 同步改写、以及动作编辑器里类型预选、字段区「临时层」提示、`getValue` 往返、空状态切到 `once` 时输入框为空且 `getValue` 为 `null`。README 的「格式与范围」和功能列表、`AGENT.md` 第 5 节的语义规则都补了这条。
 
 真实浏览器侧给 `tools/macro-ref-smoke.js` 加了 D 段：在按键对话框里把手势改成「直接动作」→ 类型选 `switch_layout_once` → 填目标布局 → 保存，断言字段区出现「临时层」提示、校验不拦、tap 行摘要显示「临时切换布局」、profile 里落的是 `{type:'switch_layout_once', layout: …}`、没有多写出一份 `switch_layout`、重开后类型与布局名都能回显。注意默认 profile 自带若干 `switch_layout`（numpad / symbols / emoji / kaomoji），所以「没被降级」只能比较保存前后的数量，不能断言绝对为 0。
+
+E 段是端到端导出往返：拦下 `window.Blob` 拿到「导出 JSON」按钮真正写进下载文件的那段文本，断言里面 `"type": "switch_layout_once"` 原样保留、目标布局名正确；再把这段文本喂回 `FE.applyProfileText`（等同导入文件），断言仍只有一处 `switch_layout_once`、且 `FE.state.validation.errors` 为空。这条把「不改 schema 会不会挡住保存/加载」从源码推断变成实测：整条链路只经 `FE.serializeProfile` → `JSON.parse` → `FE.normalizeProfile` → `FE.validateProfile`，没有任何 schema 参与。
 
 ## 7. 验证基线与文档维护记录
 
@@ -491,7 +495,7 @@ node test/test-ui.js
 
 当前 AGENT 开头记录的基线是：
 
-- core：819 通过，0 失败；
+- core：821 通过，0 失败；
 - UI：1658 通过，0 失败；
 - 颜色解析：`node test/test-color-source.js`，111 通过；
 - 主题颜色：`node test/test-theme-colors.js`，295 通过；
@@ -516,7 +520,7 @@ node test/test-color-source.js
 node tools/macro-ref-smoke.js
 ```
 
-它覆盖 A「切到宏调用后不碰下拉直接保存」、B「先直接动作再切宏调用」、C「切后显式换第二个宏」、D「动作编辑器写 `switch_layout_once` 必须保留 once 类型」四条路径。
+它覆盖 A「切到宏调用后不碰下拉直接保存」、B「先直接动作再切宏调用」、C「切后显式换第二个宏」、D「动作编辑器写 `switch_layout_once` 必须保留 once 类型」、E「导出的 JSON 能原样载回、once 不被降级、校验通过」五条路径。
 
 如果改过示例、Schema 对齐、解析或导出，再运行：
 
@@ -548,7 +552,7 @@ node tools/check-agent-sync.js
 → 798 core + 1577 UI（2026-10-22 工具栏预览、符号字体预览、图标选择器与符号面板选中色）
 → 799 core + 1590 UI（2026-10-22 工具栏并入键盘面板、展开态返回行、keyboard_tools 图标）
 → 814 core + 1651 UI（2026-10-25 宏调用 / 动作名「显示即已选」修复与回归测试）
-→ 819 core + 1658 UI（2026-10-24 skill 更新 `switch_layout_once` 临时层对齐后的当前基线）
+→ 821 core + 1658 UI（2026-10-24 skill 更新 `switch_layout_once` 临时层对齐 + 导出往返实测后的当前基线）
 ```
 
 另有一段旧的 AGENT 末尾仍写着：core 531、UI 1062、示例 20（16 布局 + 4 popup）。它是文档未同步时留下的历史基线，不能覆盖文件顶部和标准工作流中的当前数字。重组文档时保留这条说明，是为了让以后看到旧提交或旧截图的人知道数字差异来自文档漂移，而不是测试随机变化。

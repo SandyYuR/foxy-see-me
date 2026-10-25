@@ -36,7 +36,7 @@ node test/test-core.js
 node test/test-ui.js
 ```
 
-当前基线是 core 819、UI 1658，两个套件都必须 0 失败。Foxy 数据契约门禁：
+当前基线是 core 821、UI 1658，两个套件都必须 0 失败。Foxy 数据契约门禁：
 
 ```bash
 node test/conformance-adapter.js   # conformance v1 共 46 项检查，必须全过
@@ -47,7 +47,7 @@ node test/conformance-adapter.js   # conformance v1 共 46 项检查，必须全
 涉及对话框控件、下拉选中态或保存写回时，DOM 桩之外还要跑真实浏览器冒烟（本机 Edge / Chrome headless + CDP，零依赖）：
 
 ```bash
-node tools/macro-ref-smoke.js   # 宏调用 / 动作名「显示即已选」两条入口路径都写对 {macro: 名称}；动作编辑器写 switch_layout_once 不被降级成 switch_layout
+node tools/macro-ref-smoke.js   # 宏调用 / 动作名「显示即已选」两条入口路径都写对 {macro: 名称}；动作编辑器写 switch_layout_once 不被降级成 switch_layout；导出的 JSON 能原样载回（once 保留、校验零错误）
 ```
 
 按改动范围追加：
@@ -81,7 +81,7 @@ node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 - `modifier` 是 SHIFT / CTRL / ALT / META 四值枚举（大小写不敏感），既是 `key.action` 里 `type: "modifier"` 的 `modifier`，也是键/override/变体上的 `modifier` 字段；后者显式 `null` 表示「这个位置不是修饰键」。取值来源只有 `FE.MODIFIERS` + `FE.canonicalModifierName`（另有 `FE.isModifierName`），不要另抄一份数组。
 - 声明了 `modifier` 的键长按会隐式锁定该修饰键，不写 `longPress` 也成立；写了显式 `hold` 手势则关闭该回退。没有 `modifier` 的原始键（如 `rime.Alt_L`）长按只发本键、不参与锁定。编辑器不建模按压时长，因此这条语义不产生校验规则（`hold` 与 `longPress` 仍互斥报错），只在键对话框给提示。
 - 预览的修饰键模拟表是 `state.status.modifiers`（四值布尔）；`status.shift` 是历史字段，决定 `shiftedLabel` / 弹出候选，并作为 SHIFT 的镜像。判定某键是否进入 `modifierActive` 一律走 `FE.keyStateOpts` + `FE.statusModifierOn`，不要在任何渲染处写死 `'SHIFT'`。
-- `switch_layout_once` 与 `switch_layout` 字段完全相同（`layout`），语义是临时层：下一次有效输入后自动回到切换前的布局。凡是按 `switch_layout` 分支处理动作的地方都要同时覆盖它——`FE.actionDisplay` 摘要、`checkAction` 校验、布局重命名时的 `walkAllActions` 引用改写、`FE.buildActionEditor` 的类型选项与 `getValue`（返回时保留原 type，不要降级成 `switch_layout`）。动作类型白名单只有 `js/app.js` 的兜底报错与 `js/key-dialog.js` 的类型选项表两处。注意 `skills/*.schema.json` 是上游产物，其 `type` enum 尚未包含 `switch_layout_once`，不要自行扩枚举。
+- `switch_layout_once` 与 `switch_layout` 字段完全相同（`layout`），语义是临时层：下一次有效输入后自动回到切换前的布局。凡是按 `switch_layout` 分支处理动作的地方都要同时覆盖它——`FE.actionDisplay` 摘要、`FE.validateAction` 校验（`js/app.js:1124` 内部函数，导出名是 `FE.validateAction`，不是 `checkAction`）、布局重命名时的 `walkAllActions` 引用改写、`FE.buildActionEditor` 的类型选项与 `getValue`（返回时保留原 type，不要降级成 `switch_layout`）。动作类型白名单只有 `js/app.js` 的兜底报错与 `js/key-dialog.js` 的类型选项表两处。注意 `skills/*.schema.json` 是上游产物，其 `type` enum 尚未包含 `switch_layout_once`，不要自行扩枚举。这样不会挡住保存/加载：编辑器没有 schema 驱动的校验链（不加载 `*.schema.json`、无 ajv / fetch / `$ref` 解析），校验一律走自研的 `FE.validateAction`（`js/app.js:1124`）与 `FE.validateProfile`（`js/app.js:1265`）。
 - 键的 `icon` 只有 backspace / shift / enter / return 是内置名；其余名字先查 profile 顶层 `icons`，再看是否 `svg:` / `xml:` 内联载荷；查不到就不画图标（回落文本），不要报错。
 - `FE.validateProfile` 的 `errors` / `warnings` 字符串数组是兼容 API，不能删除或改类型。
 - `issues` 是与旧数组等长的结构化结果，保留 `level`、`message`、`path`、`code` 和点击定位坐标。

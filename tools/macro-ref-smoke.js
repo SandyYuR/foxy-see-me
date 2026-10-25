@@ -15,6 +15,8 @@
  *   C 切到「宏调用」后显式换成第二个宏 → 保存
  *   D 动作编辑器里把类型改成 switch_layout_once 并填目标布局 → 保存（写回必须
  *     保留 once 类型，不能被降级成 switch_layout）
+ *   E 点「导出 JSON」拿到真实下载文本 → 再喂回 FE.applyProfileText：once 原样
+ *     保留、目标布局名正确、重新载入后校验零错误（证明整条链路不依赖 schema）
  * 每条路径都检查：不弹提示框、手势摘要回显、profile 里落的是期望的对象、
  * 关掉重开同一个键仍回显同一个值。
  */
@@ -271,6 +273,35 @@ function ok(cond, label, actual) {
   await sleep(200);
   ok(await ev('window.__smoke.typeVal()') === 'switch_layout_once', '重开后类型仍是 switch_layout_once', await ev('window.__smoke.typeVal()'));
   ok(await ev('window.__smoke.layoutVal()') === targetLayout, '重开后布局名回显', await ev('window.__smoke.layoutVal()'));
+
+
+  console.log('\n== E 导出的 JSON 能原样载回：once 不被降级、校验通过 ==');
+  await resetDialogs();
+  /* 拦 Blob 拿到「导出 JSON」按钮真正写进下载文件的那段文本 */
+  await ev([
+    '(function(){',
+    'var Orig = window.Blob;',
+    'window.__smoke.capture = null;',
+    'window.Blob = function(parts, opts){ try { window.__smoke.capture = (parts || []).join(""); } catch(e) {} return new Orig(parts, opts); };',
+    'return true; })()'
+  ].join('\n'));
+  await ev('document.getElementById("op-export").click()');
+  await sleep(300);
+  const exportedText = await ev('window.__smoke.capture');
+  ok(typeof exportedText === 'string' && exportedText.length > 0, '「导出 JSON」产出了文本', exportedText ? exportedText.length : exportedText);
+  ok((exportedText || '').indexOf('"type": "switch_layout_once"') >= 0, '导出文本里 switch_layout_once 原样保留',
+    (exportedText || '').split('\n').filter(function (l) { return l.indexOf('switch_layout') >= 0; }));
+  ok((exportedText || '').indexOf('"layout": ' + JSON.stringify(String(targetLayout))) >= 0 ||
+    (exportedText || '').indexOf('"layout":' + ' ' + JSON.stringify(String(targetLayout))) >= 0,
+    '导出文本里临时层的目标布局名正确', targetLayout);
+  /* 把导出文本重新喂回编辑器（等同导入文件），确认整条链路不靠 schema 也放行 */
+  await ev('window.__smoke.reload = FE.applyProfileText(' + JSON.stringify(exportedText) + ')' );
+  await sleep(250);
+  ok(await ev('window.__smoke.reload') === true, '导出文本能被重新载入');
+  const reloadedRefs = await ev('window.__smoke.typeRefs("switch_layout_once")');
+  ok(reloadedRefs.length === 1, '重新载入后仍有且仅有一处 switch_layout_once', reloadedRefs);
+  ok((await ev('FE.state.validation.errors')).length === 0, '重新载入后校验零错误（不依赖 schema 枚举）',
+    await ev('FE.state.validation.errors'));
   ws.close();
   try { proc.kill(); } catch (e) { /* ignore */ }
   try { fs.rmSync(userDir, { recursive: true, force: true }); } catch (e) { /* ignore */ }
