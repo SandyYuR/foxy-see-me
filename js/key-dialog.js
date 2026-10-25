@@ -1101,8 +1101,11 @@ FE.openGestureDialog = function (opts) {
     return {
       mode: modeSel.value,
       ref: refName,
-      actionName: actionName,
-      macro: macroName,
+      /* 动作名 / 宏只在各自来源下才算改动：两者是"下拉显示即已选"的控件，
+       * 重建字段区时会自动回写首项，若不按来源过滤，切过去再切回来会被
+       * 误判成"有未保存改动"，关闭时白弹一次确认。 */
+      actionName: modeSel.value === 'action-name' ? actionName : null,
+      macro: modeSel.value === 'macro' ? macroName : null,
       label: labelInp.value,
       hint: hintInp.value,
       popup: popupSel.value,
@@ -1361,6 +1364,10 @@ FE.openGestureDialog = function (opts) {
 
   function buildArea() {
     clearEl(area);
+    /* 下拉控件每次重建，旧引用立刻作废：保存时只认当前这次渲染出来的控件，
+     * 否则会读到上一个来源遗留的下拉（显示与保存对不上）。 */
+    area._actSel = null;
+    area._macroSel = null;
     var m = modeSel.value;
     if (m === 'ref') {
       var show = h('button', {
@@ -1383,26 +1390,40 @@ FE.openGestureDialog = function (opts) {
     } else if (m === 'action-name') {
       var sel = h('select', { class: 'mini-select wide' });
       var acts = state.profile.actions || {};
-      var has = false;
-      Object.keys(acts).forEach(function (n) {
-        has = true;
+      var actNames = Object.keys(acts);
+      /* 下拉一渲染出来就必然显示某一项（首项），所以内部状态必须跟着显示走：
+       * 否则"看起来已经选了"、保存时却判为空，用户会撞上「请选择动作」而无从下手。
+       * 回写首项等价于"默认选中第一个"，与 buildActionEditor 里动作名下拉一致。 */
+      if (!actionName && actNames.length) actionName = actNames[0];
+      actNames.forEach(function (n) {
         sel.appendChild(h('option', { value: n, selected: actionName === n }, n + ' · ' + FE.actionDisplay(acts[n])));
       });
-      if (!has) sel.appendChild(h('option', { value: '' }, '（尚无动作定义）'));
+      if (!actNames.length) sel.appendChild(h('option', { value: '' }, '（尚无动作定义，请先在「动作与宏」页新增）'));
+      /* 历史数据可能引用已删除的动作：补一项"未定义"，既不悄悄替换成别的
+       * 动作，也不让下拉显示成空（与 buildActionEditor 的 ref 下拉同构）。 */
+      if (actionName && actNames.indexOf(actionName) < 0) {
+        sel.appendChild(h('option', { value: actionName, selected: true }, actionName + '（未在当前文件中定义）'));
+      }
       sel.addEventListener('change', function () { actionName = sel.value; });
       if (actionName) sel.value = actionName;
+      area._actSel = sel;
       area.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '动作'), sel));
     } else if (m === 'macro') {
       var msel = h('select', { class: 'mini-select wide' });
       var macros = state.profile.macros || {};
-      var hasm = false;
-      Object.keys(macros).forEach(function (n) {
-        hasm = true;
+      var macroNames = Object.keys(macros);
+      /* 同 action-name：显示首项就回写首项，避免"显示已选、状态为空"。 */
+      if (!macroName && macroNames.length) macroName = macroNames[0];
+      macroNames.forEach(function (n) {
         msel.appendChild(h('option', { value: n, selected: macroName === n }, n));
       });
-      if (!hasm) msel.appendChild(h('option', { value: '' }, '（尚无宏定义）'));
+      if (!macroNames.length) msel.appendChild(h('option', { value: '' }, '（尚无宏定义，请先在「动作与宏」页新建）'));
+      if (macroName && macroNames.indexOf(macroName) < 0) {
+        msel.appendChild(h('option', { value: macroName, selected: true }, macroName + '（未在当前文件中定义）'));
+      }
       msel.addEventListener('change', function () { macroName = msel.value; });
       if (macroName) msel.value = macroName;
+      area._macroSel = msel;
       area.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '宏'), msel));
     } else if (m === 'direct' && !isHold && !isDrag) {
       var ed = FE.buildActionEditor(directSpec);
@@ -1498,10 +1519,24 @@ FE.openGestureDialog = function (opts) {
             value = Object.assign({ ref: refName }, dg);
           }
         } else if (m === 'action-name') {
-          if (!actionName) { FE.uiAlert('请选择动作'); return; }
+          /* 保存以"下拉此刻显示的那一项"为准：DOM 是用户看到的真相，
+           * 内部变量只是它的镜像（change 事件在部分操作路径上不一定会触发）。 */
+          if (area._actSel) actionName = area._actSel.value || null;
+          if (!actionName) {
+            FE.uiAlert(Object.keys(state.profile.actions || {}).length
+              ? '请选择动作'
+              : '还没有任何动作定义：请先到「动作与宏」页新建一个动作');
+            return;
+          }
           value = Object.keys(extras).length ? Object.assign({ action: actionName }, extras) : actionName;
         } else if (m === 'macro') {
-          if (!macroName) { FE.uiAlert('请选择宏'); return; }
+          if (area._macroSel) macroName = area._macroSel.value || null;
+          if (!macroName) {
+            FE.uiAlert(Object.keys(state.profile.macros || {}).length
+              ? '请选择宏'
+              : '还没有任何宏：请先到「动作与宏」页新建一个宏');
+            return;
+          }
           value = Object.assign({ macro: macroName }, extras);
         } else if (isDrag) {
           value = collectDragValue(extras, !!refName);

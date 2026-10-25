@@ -55,7 +55,8 @@
 | 网格与设备验证阶段 | 记录为 2026-09-29 的 `16键.json` 实测 | 修正 numpad 网格轨道、文字溢出、rowHeights 和真实移动端触摸/滚动方面的问题。 |
 | 对齐新版 skill 阶段 | 2026-10-20 实测 | 补上自定义图标（顶层 `icons`）、`drag` 连续拖动手势、`variants` 三态条件（`option` / `value` / `options` / `all_of` / `any_of` / `none_of`）与两个新 app 命令；core 715、UI 1461。 |
 | 四修饰键阶段 | 2026-10-21 实测 | `modifier` 从 SHIFT / CTRL 扩到 SHIFT / CTRL / ALT / META，补齐键/override/变体的 `modifier` 字段校验，预览加 Ctrl / Alt / Meta 修饰键模拟；core 739、UI 1472。 |
-| 当前阶段 | 本次文档重组前后实测 | core 739、UI 1472、颜色解析 96、真实文件体检 46 个示例且 0 错误。 |
+| 宏引用选取阶段 | 2026-10-25 实测 | 修复手势对话框「来源切到宏调用后不碰下拉就保存」被误判成未选宏的问题，动作名同构修正；顺手补齐 `FE.snapshotGuard` 按来源过滤快照。core 814、UI 1651。 |
+| 当前阶段 | 本次文档重组前后实测 | core 814、UI 1651、颜色解析 111、主题颜色 295、真实文件体检 46 个示例且 0 错误。 |
 
 ## 2. 长期有效的决策记录
 
@@ -452,6 +453,18 @@ jscolor 的颜色值和 CSS/JSON 顺序不同。项目保留它的字节序约�
 
 **踩坑**。`color-source.js` 在 `index.html` 里排在 `app.js` **之后**加载，所以 app.js 用到 `FE.keyStateOpts` 的地方必须保留内联 fallback，否则首次渲染时函数还不存在；两处逻辑必须同步改，否则会出现「预览开关点了但颜色只对部分键生效」。新增预览开关还要同步 `test/dom-stub.js` 的状态组桩，否则 UI 测试里 `$('#pt-alt')` 是 null。
 
+### 6.8 手势对话框：下拉「显示即已选」
+
+用户报障：新建一个宏、在手势里引用它，点保存弹「请选择宏」保存不了；而先选「直接动作」再切「宏调用」就能正常引用并保存。
+
+**根因是显示与内部状态脱节，不是校验过严**。`FE.openGestureDialog` 的来源下拉切到「宏调用」时，`buildArea()` 会重建字段区并渲染出宏下拉；`<select>` 在没有 option 带 `selected` 时会显示第一项，但内部变量 `macroName` 只在用户真的操作下拉、触发 `change` 时才被赋值。于是「下拉显示 mymacro、`macroName` 仍是 `null`」→ 点保存命中 `if (!macroName) { FE.uiAlert('请选择宏'); return; }`。用户描述的「先直接动作再切宏调用能成功」，是因为那条路径里下拉被重建/选中过、触发过 `change`；单纯切来源不触发。`action-name` 分支同构（对应「请选择动作」）。
+
+**修法是在渲染处回写首项，并让保存以 DOM 为准**：`buildArea()` 开头先作废旧控件引用（`area._actSel = null; area._macroSel = null;`）；两个分支各加 `if (!macroName && macroNames.length) macroName = macroNames[0];`，把下拉存进 `area._macroSel` / `area._actSel`；保存分支改成 `if (area._macroSel) macroName = area._macroSel.value || null;`，即「用户看到的选中项就是保存出去的值」。同时区分两种失败文案：真没选 →「请选择宏 / 请选择动作」，一个都没有 →「还没有任何宏：请先到「动作与宏」页新建一个宏」并指路；历史数据引用到已删除的宏/动作时补一项 `<name>（未在当前文件中定义）` 并原样保留，不悄悄替换成别的项。
+
+**顺带修的守卫误报**。`FE.snapshotGuard` 的快照原来无条件带上 `actionName` 与 `macro`，而重建字段区现在会自动回写首项，于是「切过去再切回来」会被判成有未保存改动、关闭时白弹确认框。快照改为按当前来源过滤：`actionName: modeSel.value === 'action-name' ? actionName : null`、`macro: modeSel.value === 'macro' ? macroName : null`。
+
+**验证**。回归测试放在 `test/test-ui.js` 的「手势对话框：来源切换后『显示即已选』（宏 / 动作名）」一节，覆盖切来源不碰下拉直接保存、`direct→macro` 结果一致、显式换项、两种提示文案、失效引用、切来源后直接关闭不弹确认、以及「按键对话框 → tap 手势 → 保存 → profile 里出现 `{macro:'mymacro'}` → 重开摘要回显」的端到端。把 `key-dialog.js` 回退到旧版跑同一套件会挂 11 条，说明测试确实咬住了这个 bug。真实浏览器侧新增 `tools/macro-ref-smoke.js`（本机 Edge / Chrome 的 headless + CDP，`Runtime.evaluate` 驱动真实点击与 `change`，零 npm 依赖），覆盖 A「切到宏调用后不碰下拉直接保存」、B「先直接动作再切宏调用」、C「切后显式换第二个宏」三条路径，每条都检查不弹提示框、手势摘要回显、`FE.state.profile` 里的 `{macro: 名称}` 与关掉重开后的回显。用旧版 `key-dialog.js` 跑它固定挂 12 项（含 `提示请选择宏好`），说明冒烟脚本咬得住这个 bug；顺带暴露的第二个缺陷是旧版 `FE.snapshotGuard` 在切来源后会弹「放弃改动？」，即本轮一并修掉的守卫误报。断言写的是「对话框数回到预期」而不是「摘要文字恰为某值」，因为首跑时用 `.kb-key[0]` 取样拿到的未必是被编辑的那个键，`Q` 这类占位摘要会把真结论淹没。
+
 ## 7. 验证基线与文档维护记录
 
 ### 7.1 当前验证命令
@@ -465,9 +478,11 @@ node test/test-ui.js
 
 当前 AGENT 开头记录的基线是：
 
-- core：799 通过，0 失败；
-- UI：1590 通过，0 失败；
+- core：814 通过，0 失败；
+- UI：1651 通过，0 失败；
 - 颜色解析：`node test/test-color-source.js`，111 通过；
+- 主题颜色：`node test/test-theme-colors.js`，295 通过；
+- 数据契约：`node test/conformance-adapter.js`，46 项检查全过；
 - 真实文件：`node test/check-real-files.js`，46 个示例，0 个错误。
 
 如果改过 `examples/`，先运行：
@@ -480,6 +495,12 @@ node tools/build-examples.js
 
 ```bash
 node test/test-color-source.js
+```
+
+如果改过对话框控件、下拉选中态或保存写回，再运行真实浏览器冒烟（本机有 Edge 或 Chrome 即可，不需要装 playwright）：
+
+```bash
+node tools/macro-ref-smoke.js
 ```
 
 如果改过示例、Schema 对齐、解析或导出，再运行：
@@ -511,6 +532,7 @@ node tools/check-agent-sync.js
 → 739 core + 1472 UI（2026-10-21 四修饰键后的基线）
 → 798 core + 1577 UI（2026-10-22 工具栏预览、符号字体预览、图标选择器与符号面板选中色）
 → 799 core + 1590 UI（2026-10-22 工具栏并入键盘面板、展开态返回行、keyboard_tools 图标）
+→ 814 core + 1651 UI（2026-10-25 宏调用 / 动作名「显示即已选」修复与回归测试）
 ```
 
 另有一段旧的 AGENT 末尾仍写着：core 531、UI 1062、示例 20（16 布局 + 4 popup）。它是文档未同步时留下的历史基线，不能覆盖文件顶部和标准工作流中的当前数字。重组文档时保留这条说明，是为了让以后看到旧提交或旧截图的人知道数字差异来自文档漂移，而不是测试随机变化。

@@ -388,6 +388,120 @@ ok(gdlg.textContent.indexOf('上滑') >= 0, '标题正确');
 gdlg.close();
 documentStub._openDialogs.length = 0;
 
+console.log('== 手势对话框：来源切换后「显示即已选」（宏 / 动作名） ==');
+/* 历史 bug：把来源切到「宏调用」后，下拉已经显示第一个宏，但内部状态仍为空，
+ * 点保存命中「请选择宏」——用户看着明明选好了却存不了。
+ * 修法：字段区一渲染就把首项回写进状态，并且保存以「下拉此刻显示的值」为准。
+ * 这里按用户的真实操作顺序断言：只切来源、不碰下拉，也必须能存下去。 */
+FE.state.profile.macros = { mymacro: [{ type: 'key', key: 'A' }], other: [{ type: 'key', key: 'B' }] };
+FE.state.profile.actions = { act: { type: 'key', key: 'A' } };
+function saveGestureFrom(mode, touchSelect) {
+  var saved = 'UNSET';
+  documentStub._openDialogs.length = 0;
+  FE.openGestureDialog({ slot: 'tap', gesture: null, onChange: function (v) { saved = v; } });
+  var d = lastDialog();
+  var ms = d.querySelectorAll('select')[0];
+  ms.value = mode;
+  ms._fire('change');
+  if (touchSelect) touchSelect(d);
+  d.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  return { saved: saved, dlg: d };
+}
+
+/* ① 直接切到 macro，不点下拉：必须存下第一个宏，且不弹提示 */
+var rMacro = saveGestureFrom('macro');
+eq(rMacro.saved, { macro: 'mymacro' }, '切到宏调用后不碰下拉也能保存首项宏');
+eq(dialogCount(), 0, '保存成功时不弹任何提示框');
+
+/* ② 走「直接动作 → 宏调用」这条用户说能成功的路径，结果必须与 ① 完全一致 */
+var rMacro2 = saveGestureFrom('macro', function (d) {
+  var ms = d.querySelectorAll('select')[0];
+  ms.value = 'direct'; ms._fire('change');
+  ms.value = 'macro'; ms._fire('change');
+});
+eq(rMacro2.saved, { macro: 'mymacro' }, '「直接动作 → 宏调用」与直接切宏调用结果一致');
+
+/* ③ 真的换了宏：显式选第二项要能生效（回写首项不能把用户的选择覆盖掉） */
+var rMacro3 = saveGestureFrom('macro', function (d) {
+  var msel = d.querySelectorAll('select')[1];
+  msel.value = 'other'; msel._fire('change');
+});
+eq(rMacro3.saved, { macro: 'other' }, '显式选择其它宏时以用户选择为准');
+
+/* ④ 动作名来源同构：切过去不点下拉也能保存 */
+var rAct = saveGestureFrom('action-name');
+eq(rAct.saved, 'act', '切到动作名称后不碰下拉也能保存首项动作');
+eq(dialogCount(), 0, '动作名保存成功时不弹提示框');
+
+/* ⑤ 真的没有任何宏 / 动作时，提示要说清「缺什么、去哪补」，不能只说「请选择」 */
+FE.state.profile.macros = {};
+var rNoMacro = saveGestureFrom('macro');
+eq(rNoMacro.saved, 'UNSET', '没有宏时保存被拦下');
+var noMacroText = await uiReadAlert();
+ok(noMacroText && noMacroText.indexOf('还没有任何宏') >= 0, '无宏提示说明「还没有任何宏」');
+ok(noMacroText && noMacroText.indexOf('动作与宏') >= 0, '无宏提示指路「动作与宏」页');
+FE.state.profile.actions = {};
+var rNoAct = saveGestureFrom('action-name');
+eq(rNoAct.saved, 'UNSET', '没有动作时保存被拦下');
+var noActText = await uiReadAlert();
+ok(noActText && noActText.indexOf('还没有任何动作定义') >= 0, '无动作提示说明「还没有任何动作定义」');
+FE.state.profile.macros = { mymacro: [{ type: 'key', key: 'A' }] };
+FE.state.profile.actions = { act: { type: 'key', key: 'A' } };
+
+/* ⑥ 历史数据引用了已删除的宏：下拉要显示成「未定义」并保住原值，不静默替换 */
+var rGone = saveGestureFrom('macro', function (d) {
+  var msel = d.querySelectorAll('select')[1];
+  ok(msel.textContent.indexOf('未在当前文件中定义') < 0, '没有失效引用时不显示「未定义」项');
+});
+documentStub._openDialogs.length = 0;
+var goneSaved = 'UNSET';
+FE.openGestureDialog({ slot: 'tap', gesture: { macro: 'deletedmacro' }, onChange: function (v) { goneSaved = v; } });
+{
+  var gd2 = lastDialog();
+  var gsel = gd2.querySelectorAll('select')[1];
+  eq(gsel.value, 'deletedmacro', '已删除的宏仍显示为当前值（不被首项顶替）');
+  ok(gd2.textContent.indexOf('未在当前文件中定义') >= 0, '已删除的宏标注「未在当前文件中定义」');
+  gd2.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  eq(goneSaved, { macro: 'deletedmacro' }, '失效引用原样保存，不静默换成别的宏');
+}
+
+/* ⑦ 切到宏再切回其它来源，不该被判定成「有未保存改动」 */
+documentStub._openDialogs.length = 0;
+FE.openGestureDialog({ slot: 'tap', gesture: null, onChange: function () {} });
+{
+  var gd3 = lastDialog();
+  var ms3 = gd3.querySelectorAll('select')[0];
+  ms3.value = 'macro'; ms3._fire('change');
+  ms3.value = 'inherit'; ms3._fire('change');
+  gd3._fire('click', { target: gd3 });
+  ok(!gd3.open, '只切来源（无实际改动）时点遮罩直接关闭');
+  eq(dialogCount(), 0, '只切来源不弹「未保存」确认框');
+}
+
+/* ⑧ 端到端：保存下来的宏引用要真的进 profile，重开对话框能回显同一个宏 */
+documentStub._openDialogs.length = 0;
+FE.state.profile.keys['qwerty.q'] = { ref: 'rime.q' };
+FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+{
+  var kdM = lastDialog();
+  var tapBtn = kdM.querySelectorAll('button').filter(function (b) { return b.textContent === '编辑…'; })[0];
+  tapBtn.click();
+  var gdM = lastDialog();
+  var modeM = gdM.querySelectorAll('select')[0];
+  modeM.value = 'macro'; modeM._fire('change');
+  gdM.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  kdM.querySelectorAll('.dialog-toolbar .primary')[0].click();
+  eq(FE.state.profile.keys['qwerty.q'].tap, { macro: 'mymacro' }, '按键对话框保存后 profile 里写入宏引用');
+}
+documentStub._openDialogs.length = 0;
+FE.openKeyDialog({ mode: 'definition', name: 'qwerty.q' });
+{
+  var kdM2 = lastDialog();
+  ok(kdM2.textContent.indexOf('mymacro') >= 0, '重开按键对话框能看到宏引用摘要');
+  kdM2.close();
+}
+documentStub._openDialogs.length = 0;
+
 /* 所有编辑类弹框都必须接上守卫：漏接一个，那个弹框就又会静默丢弃改动。
  * 这里只做「接线存在性」的冒烟检查，逐项行为在主对话框那组断言里覆盖。 */
 console.log('== 守卫已接入各编辑弹框（冒烟） ==');

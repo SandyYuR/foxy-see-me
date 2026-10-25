@@ -36,13 +36,19 @@ node test/test-core.js
 node test/test-ui.js
 ```
 
-当前基线是 core 799、UI 1590，两个套件都必须 0 失败。Foxy 数据契约门禁：
+当前基线是 core 814、UI 1651，两个套件都必须 0 失败。Foxy 数据契约门禁：
 
 ```bash
 node test/conformance-adapter.js   # conformance v1 共 46 项检查，必须全过
 ```
 
 `conformance/` 是 Foxy 作者提供的可执行数据契约（`conformance/README.md`）：给定输入 JSON，Foxy 端的编译结果必须与 `cases/<case>/expected.json` 逐字段一致。它是 Foxy 语义的权威判据，`skills/SKILL.md` 与它冲突时以契约为准。改过解析、变体、手势、网格或校验逻辑后必须重跑。
+
+涉及对话框控件、下拉选中态或保存写回时，DOM 桩之外还要跑真实浏览器冒烟（本机 Edge / Chrome headless + CDP，零依赖）：
+
+```bash
+node tools/macro-ref-smoke.js   # 宏调用 / 动作名「显示即已选」：两条入口路径都写对 {macro: 名称}
+```
 
 按改动范围追加：
 
@@ -100,6 +106,9 @@ node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 - 控件局部修改走 `opts.commit` / `commitActionEdits()`，只静默写回、压历史、重校验和刷新 JSON；结构变化才走 `mutate()`。
 - `beginGesture()` / `endGesture()` 将连续取色合并为一次历史；颜色行的 apply 必须幂等。
 - jscolor 的 Foxy `#AARRGGBB` 写 CSS 前转为 CSS `#RRGGBBAA`；颜色控件重建后重新安装 picker。
+- 「界面上看起来已选中的」必须等于「保存出去的值」：下拉一渲染就必然显示某项，所以重建字段区的函数要在渲染时把首项回写进内部状态（`if (!macroName && names.length) macroName = names[0];`），保存时以 DOM 显示值为准（`area._macroSel.value`）。只在 `change` 里更新内部变量会造成「显示已选、状态为空」，用户撞上「请选择宏」却无从下手；宏调用与动作名两条来源都要按此写，`js/popup-editor.js` 的 `sel.value = draft.actionName || acts[0] || ''; draft.actionName = sel.value;` 是同一范式。
+- 手势对话框重建字段区前先作废旧控件引用（`area._actSel = null; area._macroSel = null;`）；`FE.snapshotGuard` 快照要按当前来源过滤（`modeSel.value === 'macro' ? macroName : null`），否则切过去再切回来会被判成有未保存改动。
+
 
 ## 8. 文件、引用和示例
 
@@ -140,7 +149,7 @@ cd foxy-editor
 node test/test-core.js
 node test/test-ui.js
 node test/conformance-adapter.js
-# 按改动范围运行 build-examples.js、test-color-source.js、check-real-files.js
+# 按改动范围运行 build-examples.js、test-color-source.js、check-real-files.js、tools/macro-ref-smoke.js
 # 修改 AGENT.md 后同步并校验两份副本
 node tools/check-agent-sync.js --write
 node tools/check-agent-sync.js
