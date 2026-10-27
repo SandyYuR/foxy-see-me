@@ -24,6 +24,13 @@ FE.buildKeyEditor = function (opts) {
       var ov = draft.override;
       delete draft.override;
       var direct = FE.deepClone(draft);
+      // A map reset followed by a direct map cannot be flattened into one map:
+      // doing so would reintroduce directions/colors from the referenced key.
+      // Keep these reset boundaries when reopening a key after partial paste.
+      var resets = {};
+      ['swipe', 'drag', 'hintTextSize', 'colors'].forEach(function(field) {
+        if (ov[field] === null) resets[field] = null;
+      });
       var flat = {};
       /* 与 FE.evalPlacement 保持同一顺序：override 普通字段先合并，
        * 再合并直接字段；mergePatch 会保留 swipe/hintTextSize/colors 的
@@ -44,6 +51,7 @@ FE.buildKeyEditor = function (opts) {
         return v;
       }).concat(FE.deepClone(directVariants));
       if (flattenedVariants.length) flat.variants = flattenedVariants;
+      if (Object.keys(resets).length) flat.override = resets;
       draft = flat;
     }
   } else {

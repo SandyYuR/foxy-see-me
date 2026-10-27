@@ -34,6 +34,7 @@ load('symbol-editor.js');
 load('symbol-preview.js');
 load('font-preview.js');
 load('toolbar-preview.js');
+load('batch-editor.js');
 load('workspace.js');
 load('workspace-reset.js');
 

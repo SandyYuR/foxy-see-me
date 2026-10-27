@@ -6,7 +6,7 @@ buildSkeleton();global.window=global;global.document=documentStub;global.localSt
 global.addEventListener=()=>{};global.removeEventListener=()=>{};
 global.requestAnimationFrame=fn=>{fn();return 0;};global.cancelAnimationFrame=()=>{};
 global.Event=function(type,options){return Object.assign(makeEvent(type,null),options||{});};
-for(const name of ['data','default-profile','examples-bundle','app','folder-import','key-dialog','edit-session','gesture-editor','key-editor','macro-editor','popup-editor','theme-editor','color-source','symbol-editor','symbol-preview','font-preview','toolbar-preview','workspace','workspace-reset']){
+for(const name of ['data','default-profile','examples-bundle','app','folder-import','key-dialog','edit-session','gesture-editor','key-editor','macro-editor','popup-editor','theme-editor','color-source','symbol-editor','symbol-preview','font-preview','toolbar-preview','batch-editor','workspace','workspace-reset']){
   vm.runInThisContext(fs.readFileSync(path.join(__dirname,'..','js',name+'.js'),'utf8'),{filename:name+'.js'});
 }
 const FE=global.FE;let checks=0;

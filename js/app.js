@@ -64,6 +64,12 @@ var state = {
   theme: 'light',
   includeType: true,
   sel: null,              // 选中按键 {s, r, k}
+  batchMode: false,       // 显式多选模式，手机与桌面共用；仅本次页面会话
+  batchKeys: [],          // 同一布局片段的放置坐标，不修改共享定义
+  batchTarget: null,      // {layoutName, split}：批量操作的作用范围
+  batchContext: null,     // 选择时的文档版本与预览范围，改变后清除旧坐标
+  keyClipboard: null,     // 当前文件内复制的外观/附加手势，不使用系统剪贴板
+  batchMessage: '',       // 批量操作反馈，不导出或缓存
   editSession: null,      // 当前按键编辑会话；草稿不写入 Foxy 文档
   editorController: null, // 挂载的编辑器及离开守卫，不序列化 DOM
   inspectorOpen: true,    // 面板外壳独立于按键选择；默认显示空面板
@@ -2929,6 +2935,7 @@ function applyProfileText(text, opts) {
   }
   p = FE.normalizeProfile(p);
   state.profile = p;
+  if (FE.resetBatchEditor) FE.resetBatchEditor();
   /* 单文件导入 / 示例 / JSON 页应用：均为「自包含单文件」语义，
    * 清掉文件夹导入上下文与补全提示，避免导出时按旧包剥离定义而错拆、提示残留。 */
   state.folderPlan = null;
@@ -3244,6 +3251,9 @@ function activateTab(id) {
   if (wasSym !== isSym) {
     syncPreviewPanelChrome();
     renderPreview();
+  }
+  if (prevTab !== id && FE.syncBatchContext && FE.refreshBatchSelection) {
+    FE.syncBatchContext(); FE.refreshBatchSelection();
   }
 }
 FE.activateTab = activateTab;
@@ -3915,8 +3925,12 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
 
 
   if (!item.previewOnly) {
+    if (FE.markBatchKey) FE.markBatchKey(el, {layoutName: state.compiled && state.compiled.resolvedName || state.layoutName,
+      split: state.splitMode, location: {s:item.s,r:item.r,k:item.k}});
     el.addEventListener('click', function (e) {
       e.stopPropagation();
+      if (FE.handleBatchKeyClick && FE.handleBatchKeyClick({layoutName:state.compiled && state.compiled.resolvedName || state.layoutName,
+        split:state.splitMode,location:{s:item.s,r:item.r,k:item.k}}, e)) return;
       if (FE.openKeyInspector) FE.openKeyInspector({ mode:'placement', layoutName:state.compiled && state.compiled.resolvedName || state.layoutName,
         split:state.splitMode, location:{s:item.s,r:item.r,k:item.k} });
       else if (FE.openKeyDialog) FE.openKeyDialog({mode:'placement',placement:item.placement,location:{s:item.s,r:item.r,k:item.k}});
@@ -4238,6 +4252,8 @@ function renderCompiledInto(host, compiled, unit) {
 }
 
 function renderPreview() {
+  if (FE.syncBatchContext) FE.syncBatchContext();
+  if (FE.renderBatchTools) FE.renderBatchTools();
   var host = $('preview-kb');
   if (!host) return;
   if(FE.reconcileInspectorSelection)FE.reconcileInspectorSelection();
@@ -5045,6 +5061,7 @@ function rowEditor(section, si, ri, crow) {
     h('label', { class: 'mini-label' }, '总权重',
       numInput(isObj && raw.totalWeight != null ? raw.totalWeight : '', function (v) { setRowProp('totalWeight', v === '' ? null : parseFloat(v)); }, 'weight:auto 时必填')),
     h('span', { class: 'section-tools' },
+      h('button', { class: 'mini-button', title: '在下方插入此行的副本', onclick: function () { if(FE.duplicateRow)FE.duplicateRow(si,ri); } }, '复制整行'),
       h('button', { class: 'icon-button', title: '上移行', onclick: function () { moveRow(si, ri, -1); } }, '↑'),
       h('button', { class: 'icon-button', title: '下移行', onclick: function () { moveRow(si, ri, 1); } }, '↓'),
       h('button', { class: 'icon-button danger', title: '删除行', onclick: function () { mutate(function () { section.rows.splice(ri, 1); }); } }, '✕')
@@ -5162,6 +5179,7 @@ function attachPointerDrag(el, opts) {
   el.appendChild(handle);
   el.style.touchAction = 'pan-y';
   el.addEventListener('pointerdown', function (e) {
+    if (state.batchMode || e.ctrlKey || e.metaKey) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (e.pointerType === 'touch' && e.target !== handle) return;
     var startX = e.clientX, startY = e.clientY, pid = e.pointerId;
@@ -5325,13 +5343,15 @@ function keyChip(item) {
       (isSel(loc.s, loc.r, loc.k) ? ' chip-sel' : '') +
       (item.isBroken ? ' chip-broken' : ''),
     title: itemTooltip(item, state.status.shift),
-    onclick: function () {
+    onclick: function (e) {
       if (pointerDragSuppressClick()) return;   /* 刚拖动完，不当作点击 */
+      if (FE.handleBatchKeyClick && FE.handleBatchKeyClick({layoutName:state.layoutName,split:state.splitMode,location:loc},e)) return;
       if (FE.openStructureKeyDialog) FE.openStructureKeyDialog({mode:'placement',location:loc});
       else if (FE.openKeyDialog) FE.openKeyDialog({mode:'placement',placement:placement,location:loc});
     }
   });
   applyEditorKeyColors(chip, item);
+  if (FE.markBatchKey) FE.markBatchKey(chip, {layoutName:state.layoutName,split:state.splitMode,location:loc});
   chip.__chipLoc = { s: loc.s, r: loc.r, k: loc.k };
   chip.appendChild(h('span', { class: 'chip-label' }, String(label).slice(0, 6)));
   chip.appendChild(h('span', { class: 'chip-sub' }, placement && placement.ref ? placement.ref : '内联'));
@@ -5586,8 +5606,10 @@ function gridEditor(section, si, csec) {
           if (cs > 1 || rs > 1) cell.appendChild(h('span', { class: 'gedit-span' }, cs + '×' + rs));
           cell.__gridKey = { si: si, gi: info.gi };
           (function (gi) {
-            cell.addEventListener('click', function () {
+            if (FE.markBatchKey) FE.markBatchKey(cell, {layoutName:state.layoutName,split:state.splitMode,location:{s:si,r:null,k:gi}});
+            cell.addEventListener('click', function (e) {
               if (pointerDragSuppressClick()) return;   /* 刚拖动完，不当作点击 */
+              if (FE.handleBatchKeyClick && FE.handleBatchKeyClick({layoutName:state.layoutName,split:state.splitMode,location:{s:si,r:null,k:gi}},e)) return;
               if (FE.openStructureKeyDialog) FE.openStructureKeyDialog({mode:'placement',location:{s:si,r:null,k:gi},grid:true});
               else if (FE.openKeyDialog) FE.openKeyDialog({mode:'placement',placement:keysArr[gi],location:{s:si,r:null,k:gi},grid:true});
             });
@@ -6496,6 +6518,7 @@ function loadFromFolderPlan(plan, layoutPath) {
     FE.loadPopupProfileText(built.popupMatch.entry.text, built.popupMatch.entry.name);
   }
   state.profile = FE.normalizeProfile(built.profile);
+  if (FE.resetBatchEditor) FE.resetBatchEditor();
   state.folderPlan = plan;
   state.folderDefs = plan.definitions ? plan.definitions.data : null;
   state.folderLayoutPath = built.entry.path;

@@ -517,7 +517,8 @@ function buildSkeleton() {
       el('div', { id: 'preview-toolbar', class: 'kbt', hidden: 'hidden' })));
   const pLegend = el('div', { class: 'preview-legend' },
     '角标说明：右上蓝色 = 长按提示 · 右上橙色 = 按住提示 · 底中 ⌄ = 长按弹出菜单 · 红色虚线框 = 引用无法解析 · 黄色框 = 选中按键');
-  previewPanel.append(pToolbar, pStage, pLegend, el('div', { id: 'preview-meta', class: 'status' }));
+  previewPanel.append(pToolbar, pStage, pLegend, el('div', { id: 'preview-meta', class: 'status' }),
+    el('div', { id: 'batch-key-tools', class: 'batch-key-tools', 'aria-label': '批量编辑按键' }));
 
   /* 标签栏：6 个按钮（布局编辑 / 按键定义 / 动作与宏 / 弹出菜单 / 主题 / 符号面板）。
    * 弹出菜单、主题、符号面板是另外几类文档，视觉上有分隔（各自带专用类）。
