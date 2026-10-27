@@ -1079,16 +1079,19 @@ function initPopupTab() {
     reader.readAsText(file, 'utf-8');
   });
   $('popup-export').addEventListener('click', function () {
-    var text = FE.serializePopupProfile(pp());
-    var blob = new Blob([text], { type: 'application/json;charset=utf-8' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = state.popupFileName || 'popups.json';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-    if(FE.noteFileExport)FE.noteFileExport('popup');
-    setPopupStatus('已生成下载 ' + a.download, 'ok');
+    function run() {
+      var text = FE.serializePopupProfile(pp());
+      var blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = state.popupFileName || 'popups.json';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+      if(FE.noteFileExport)FE.noteFileExport('popup');
+      setPopupStatus('已生成下载 ' + a.download, 'ok');
+    }
+    if (FE.guardFileExport) FE.guardFileExport('popup', run); else run();
   });
 
   /* 示例（弹出菜单类） */

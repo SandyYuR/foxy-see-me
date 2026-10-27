@@ -37,6 +37,17 @@ check(FE.state.profile.layouts.default.sections[0].rows[0][1].label===undefined,
 check(FE.state.history.length===history+1,'one edit adds one undo entry');
 FE.state.editSession=null;document.getElementById('top-undo').click();
 check(JSON.stringify(FE.state.profile)===before,'undo restores transaction');
+fixture();
+session=FE.createKeySession({mode:'placement',location},{ref:'a'});
+const moveBefore=JSON.stringify(FE.state.profile), moveHistory=FE.state.history.length;
+session.draft.label='moved';
+check(session.move(0,1),'stage move to next column');
+check(JSON.stringify(FE.state.profile)===moveBefore&&FE.state.history.length===moveHistory,'staged move leaves document and undo history unchanged');
+check(session.profile().layouts.default.sections[0].rows[0][1].label==='moved','draft profile moves the edited key');
+check(session.apply().ok&&FE.state.history.length===moveHistory+1,'move and field edit commit as one transaction');
+document.getElementById('top-undo').click();
+check(JSON.stringify(FE.state.profile)===moveBefore,'one undo restores both position and content without changing row representation');
+fixture();
 session=FE.createKeySession({mode:'placement',location},{ref:'a'});session.draft.label='stale';
 FE.mutate(()=>{FE.state.profile.author='changed elsewhere';});
 check(!session.apply().ok,'stale document revision cannot overwrite');

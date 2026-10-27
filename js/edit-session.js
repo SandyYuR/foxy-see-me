@@ -13,6 +13,25 @@ function container(profile, target) {
   return Array.isArray(row) ? row : row && row.keys;
 }
 FE.sessionContainer = container;
+// Move only inside an explicit draft profile; keep array/object row forms intact.
+function moveInProfile(profile, target, location, dr, dk) {
+  if (!location || location.r == null) return null;
+  var keys = container(profile, Object.assign({}, target, {location: location}));
+  if (!keys || !keys[location.k]) return null;
+  var next = Object.assign({}, location);
+  if (dk) {
+    next.k += dk;
+    if (next.k < 0 || next.k >= keys.length) return null;
+    var item = keys[location.k]; keys[location.k] = keys[next.k]; keys[next.k] = item;
+  } else if (dr) {
+    next.r += dr;
+    var dest = container(profile, Object.assign({}, target, {location: next}));
+    if (!dest) return null;
+    next.k = dest.length;
+    dest.push(keys.splice(location.k, 1)[0]);
+  } else return null;
+  return next;
+}
 FE.readEditorFields = function(root) {
   return Array.prototype.map.call(root.querySelectorAll('input,select,textarea'),function(e){
     return {tag:e.tagName,type:e.type||'',value:e.value,checked:!!e.checked};
@@ -34,16 +53,43 @@ FE.createKeySession = function (opts, draft) {
   var source = target.mode === 'definition' ? state.profile.keys[target.name]
     : (container(state.profile, target) || [])[target.location.k];
   var session = { target: target, original: FE.deepClone(source), baseline: FE.deepClone(draft),
-    draft: draft, name: target.name, revision: state.documentRevision, fileName: state.fileName };
-  session.dirty = function () { return !!session.pendingText || !same(session.draft, session.baseline) || session.name !== target.name; };
+    draft: draft, name: target.name, revision: state.documentRevision, fileName: state.fileName,
+    moves: [], location: FE.deepClone(target.location), remove: false, saveAs: null };
+  session.dirty = function () { return !!session.pendingText || session.moves.length > 0 || session.remove || !!session.saveAs || !same(session.draft, session.baseline) || session.name !== target.name; };
   session.profile = function () {
     var p = FE.deepClone(state.profile);
-    if (target.mode === 'definition') p.keys[target.name] = FE.deepClone(session.draft);
+    if (target.mode === 'definition') {
+      p.keys[target.name] = FE.deepClone(session.draft);
+      if (session.name !== target.name) FE.renameKeyDef(target.name, session.name, p);
+    }
     else {
       var c = container(p, target);
-      if (c && c[target.location.k] != null) c[target.location.k] = FE.deepClone(session.draft);
+      if (c && c[target.location.k] != null) {
+        c[target.location.k] = FE.deepClone(session.draft);
+        var location = FE.deepClone(target.location);
+        session.moves.forEach(function(move) {
+          location = moveInProfile(p, target, location, move.dr, move.dk) || location;
+        });
+        c = container(p, Object.assign({}, target, {location: location}));
+        if (session.remove) c.splice(location.k, 1);
+        else if (session.saveAs) {
+          var definition = FE.deepClone(session.draft), replacement = {ref: session.saveAs};
+          ['column', 'row', 'columnSpan', 'rowSpan'].forEach(function(field) {
+            if (definition[field] != null) replacement[field] = definition[field];
+            delete definition[field];
+          });
+          p.keys[session.saveAs] = definition;
+          c[location.k] = replacement;
+        }
+      }
     }
     return p;
+  };
+  session.move = function(dr, dk) {
+    var next = moveInProfile(session.profile(), target, session.location, dr, dk);
+    if (!next) return false;
+    session.moves.push({dr: dr, dk: dk}); session.location = next;
+    return true;
   };
   session.validate = function () {
     if (session.revision !== state.documentRevision || session.fileName !== state.fileName)
@@ -53,6 +99,7 @@ FE.createKeySession = function (opts, draft) {
       if (!session.name || !session.name.trim()) return ['名称不能为空'];
       if (session.name !== target.name && state.profile.keys[session.name]) return ['按键定义已存在: ' + session.name];
     }
+    if (session.saveAs && state.profile.keys[session.saveAs]) return ['按键定义已存在: ' + session.saveAs];
     // Only new errors block an edit: unrelated pre-existing errors remain repairable.
     var before = FE.validateProfile(state.profile).errors.slice();
     return FE.validateProfile(session.profile()).errors.filter(function (e) {
@@ -63,12 +110,8 @@ FE.createKeySession = function (opts, draft) {
     var errors = session.validate();
     if (errors.length) return { ok: false, errors: errors };
     if (!session.dirty()) return { ok: true, changed: false };
-    FE.mutate(function () {
-      if (target.mode === 'definition') {
-        if (session.name !== target.name) FE.renameKeyDef(target.name, session.name);
-        state.profile.keys[session.name] = FE.deepClone(session.draft);
-      } else container(state.profile, target)[target.location.k] = FE.deepClone(session.draft);
-    });
+    var profile = session.profile();
+    FE.mutate(function () { state.profile = profile; });
     return { ok: true, changed: true };
   };
   return session;

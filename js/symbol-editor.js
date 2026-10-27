@@ -870,7 +870,9 @@ function initSymbolsTab() {
   });
 
   /* 导出：文件名按类别默认（symbols.json / emoji.json / kaomoji.json） */
-  on('sym-export', 'click', function () { symExport(); });
+  on('sym-export', 'click', function () {
+    if (FE.guardFileExport) FE.guardFileExport(state.symbolKind, symExport); else symExport();
+  });
 
   /* 示例入口：**优先用 examples/ 里的真实符号文件**（由 build-examples.js 打进
    * FE.SYMBOL_EXAMPLE_FILES），没有才回退到内置极小样例。

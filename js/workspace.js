@@ -95,6 +95,21 @@ function closeEditor(options) {
     var target=document.querySelector(controller.returnFocus);
     if(target && target.focus) target.focus({preventScroll:true});
   }
+  if (controller && controller.listOrigin && typeof requestAnimationFrame === 'function') {
+    var origin = controller.listOrigin, name = controller.editor.session.name;
+    requestAnimationFrame(function() {
+      if (state.editorController || state.activeTab !== origin.tab) return;
+      if (FE.cancelScrollRestore) FE.cancelScrollRestore();
+      if (typeof window.scrollTo === 'function') window.scrollTo(0, origin.scrollY);
+      var rows = document.querySelectorAll('#keys-list .def-row-click');
+      Array.prototype.some.call(rows, function(row) {
+        var label = row.querySelector('.def-name');
+        if (!label || label.textContent !== name) return false;
+        if (row.focus) row.focus({preventScroll: true});
+        return true;
+      });
+    });
+  }
 }
 FE.suspendKeyEditor=function(){closeEditor({preserve:true,refresh:false});};
 FE.clearKeySelection=function(){closeEditor({preserve:true});};
@@ -173,8 +188,11 @@ function mount(opts) {
   var context=h('div',{class:'inspector-context'}), status=h('div',{class:'inspector-draft-status',role:'status','aria-live':'polite'});
   var body=h('div',{class:'inspector-body'}), toolbar=h('div',{class:'inspector-actions'});
   var errors=h('div',{class:'inspector-errors status error',role:'alert'});
-  host.append(context,status,body,errors,toolbar);
+  var sample = h('div', {class: 'inspector-sample'},
+    h('div', {class: 'inspector-sample-key'}), h('span', null, '当前键 · 草稿预览'));
+  host.append(context,status,sample,body,errors,toolbar);
   var c={committing:false,confirming:false,returnFocus:'.kb-key-sel',hasInvalidGesture:false};
+  if (opts.fromDefinitionList) c.listOrigin = {tab: state.activeTab, scrollY: window.scrollY || 0};
   var previewTimer=null;
   function changed(session) {
     if(state.editorController!==c)return;
@@ -236,9 +254,33 @@ function mount(opts) {
   toolbar.appendChild(h('button',{type:'button',class:'primary',onclick:function(){if(c.apply())closeEditor();}},'应用'));
   changed(c.editor.session);refreshPreview();
   FE.scheduleInspectorMeasure();
+  if (opts.fromDefinitionList && heading.scrollIntoView) {
+    var rect = heading.getBoundingClientRect();
+    if (rect.top < 0 || rect.bottom > window.innerHeight) {
+      if (FE.cancelScrollRestore) FE.cancelScrollRestore();
+      heading.scrollIntoView({block: 'start'});
+    }
+  }
   if(heading.focus)heading.focus({preventScroll:true});
 }
 
+FE.refreshInspectorSample = function() {
+  var controller = state.editorController;
+  var host = $('key-inspector'), sample = host && host.querySelector('.inspector-sample-key');
+  if (!controller || !sample) return;
+  if (typeof window.matchMedia !== 'function' || !window.matchMedia('(max-width: 980px)').matches) {
+    clearEl(sample); return;
+  }
+  var session = controller.editor.session;
+  if (FE.renderKeySample) FE.renderKeySample(sample, session.draft, session.profile());
+};
+function fileEditor(kind) {
+  if (kind === 'layout') return {id: 'json-editor', read: function() {return state.jsonDirty ? $('json-editor').value : null;}, apply: FE.applyProfileText};
+  if (kind === 'popup') return {id: 'popup-json', read: FE.readPopupJsonDraft, apply: FE.loadPopupProfileText};
+  if (kind === 'theme') return {id: 'th-json', read: FE.readThemeJsonDraft, apply: FE.loadThemeProfileText};
+  return {id: 'sym-json', read: function() {return kind === state.symbolKind && FE.readSymbolJsonDraft ? FE.readSymbolJsonDraft() : null;},
+    apply: function(text) {return FE.loadSymbolProfileText(text, kind);}};
+}
 function fileData() {
   var data=[['layout',state.fileName,FE.serializeProfile(state.profile,state.includeType),'layout-file-status']];
   if(state.popupProfile)data.push(['popup',state.popupFileName,JSON.stringify(state.popupProfile),'popup-file-status']);
@@ -256,25 +298,41 @@ FE.renderSaveStatus=function(){
       var parent=$(item[0]==='popup'?'popup-status':item[0]==='theme'?'th-status':'sym-status');
       if(parent&&parent.parentNode){element=h('div',{id:item[3],class:'file-save-status'});parent.parentNode.insertBefore(element,parent);}
     }
-    if(element)element.textContent=item[1]+' · '+(state.exportBaselines[item[0]]===item[2]?'与最近生成的下载一致':'修改尚未导出');
+    if (element) {
+      var editor = fileEditor(item[0]), pending = editor.read && editor.read() !== null;
+      element.textContent = item[1] + ' · ' + (pending ? '有未应用 JSON 草稿 · 已应用内容：' : '') +
+        (state.exportBaselines[item[0]]===item[2]?'与最近生成的下载一致':'修改尚未导出');
+    }
   });
 };
 FE.noteFileExport=function(kind){
   fileData().forEach(function(item){if(item[0]===kind)state.exportBaselines[kind]=item[2];});
   FE.autosaveDraft();
 };
-FE.guardLayoutExport=function(next){
+FE.guardFileExport=function(kind,next){
   FE.leaveKeyEditor(function(){
-    if(!state.jsonDirty){next();return;}
+    var editor = fileEditor(kind);
+    if(!editor.read || editor.read() === null){next();return;}
     var m=FE.openModal({title:'JSON 文本尚未应用'});
-    m.body.appendChild(h('p',null,'导出使用已应用的布局。请先应用 JSON，或明确选择导出当前已应用内容。'));
-    m.toolbar.appendChild(h('button',{type:'button',onclick:function(){m.close();var card=$('layout-json-card');if(card)card.open=true;$('json-editor').focus();}},'返回 JSON'));
+    m.body.appendChild(h('p',null,'此文件有尚未应用的 JSON。请先应用，或明确选择导出已应用内容。'));
+    var error = h('div', {class: 'status error', role: 'alert'});
+    m.body.appendChild(error);
+    m.toolbar.appendChild(h('button',{type:'button',onclick:function(){
+      m.close();
+      var input = $(editor.id), node = input;
+      while (node && node !== document.body) {if (node.tagName === 'DETAILS') node.open = true; node = node.parentNode;}
+      if (FE.cancelScrollRestore) FE.cancelScrollRestore();
+      if (input.scrollIntoView) input.scrollIntoView({block: 'center'});
+      input.focus();
+    }},'返回 JSON'));
     m.toolbar.appendChild(h('button',{type:'button',onclick:function(){m.close();next();}},'导出已应用内容'));
     m.toolbar.appendChild(h('button',{type:'button',class:'primary',onclick:function(){
-      if(FE.applyProfileText($('json-editor').value)){m.close();next();}
+      if(editor.apply($(editor.id).value)){m.close();next();}
+      else error.textContent = 'JSON 尚未应用，未生成下载。请返回 JSON 修正后重试。';
     }},'应用 JSON 并导出'));
   });
 };
+FE.guardLayoutExport=function(next){FE.guardFileExport('layout',next);};
 FE.previewGridDrop=function(si,gi,target){
   Array.prototype.forEach.call(document.querySelectorAll('.grid-drop-preview'),function(e){e.remove();});
   if(!target||!target.el)return;

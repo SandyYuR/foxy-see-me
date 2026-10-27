@@ -3929,6 +3929,19 @@ function isSel(s, r, k) {
   var sel = state.sel;
   return !!sel && sel.s === s && sel.r === r && sel.k === k;
 }
+// The inspector uses the same compiler and key renderer as the full keyboard.
+FE.renderKeySample = function(host, placement, profile) {
+  clearEl(host);
+  var scope = FE.scopeFrom(profile);
+  var compiled = FE.compileSections([{type: 'rows', rows: [[placement]]}], state.status, scope);
+  var item = compiled.sections[0].rows[0].keys[0];
+  var key = buildKeyEl(Object.assign({}, item, {previewOnly: true}), 42,
+    {scope: scope, fontCap: 24, faceW: 84, faceH: 68});
+  key.style.width = '84px'; key.style.height = '68px'; key.style.flexBasis = 'auto';
+  key.classList.remove('kb-key-sel');
+  host.className = 'inspector-sample-key kb-' + state.theme;
+  host.appendChild(key);
+};
 
 /* text_editor 是 App 中的独立编辑容器：上方固定触控板，底部只放布局提供的一行按键。 */
 function textEditorNormalMetrics(profile) {
@@ -4372,6 +4385,7 @@ function renderPreview() {
       state.splitMode ? '分体片段没有区段。' : '布局没有区段。'));
   }
   renderMeta();
+  if (FE.refreshInspectorSample) FE.refreshInspectorSample();
 }
 
 function renderMeta() {
@@ -5729,7 +5743,7 @@ function renderKeysTab() {
     var used = usageOf(refIdx, 'key', n);
 
     function openEditor() {
-      if (FE.openKeyInspector) FE.openKeyInspector({mode:'definition',name:n});
+      if (FE.openKeyInspector) FE.openKeyInspector({mode:'definition',name:n,fromDefinitionList:true});
       else if (FE.openKeyDialog) FE.openKeyDialog({mode:'definition',name:n});
     }
     /* 整行可点即进入编辑（与「动作与宏」一致的交互）——**不再单设「编辑」按钮**。

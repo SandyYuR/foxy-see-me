@@ -1034,7 +1034,9 @@ function initThemeTab() {
     };
     reader.readAsText(file, 'utf-8');
   });
-  $('th-export').addEventListener('click', exportTheme);
+  $('th-export').addEventListener('click', function() {
+    if (FE.guardFileExport) FE.guardFileExport('theme', exportTheme); else exportTheme();
+  });
 
   /* 示例 / 模板：内置默认主题（「新建」初值）+ examples/ 里的真实主题文件
    * （`主题配色/` 那 18 份已入库，与符号文件同一套做法 —— 打包器认 type 里的

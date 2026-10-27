@@ -4,9 +4,10 @@ var FE=window.FE, state=FE.state, h=FE.h, clearEl=FE.clearEl, openModal=FE.openM
 FE.buildKeyEditor = function (opts) {
   var hosted = !!opts.surface;
   var isPlacement = opts.mode === 'placement';
-  /* container 在操作时实时解析（移动按键可能改变行容器） */
-  function container() { return hosted && session ? FE.sessionContainer(state.profile, session.target) : FE.placementContainer(opts.location); }
-  if (isPlacement && !container()) return;
+  if (isPlacement && !FE.sessionContainer(state.profile, {
+    layoutName: opts.layoutName || state.layoutName,
+    split: opts.split == null ? state.splitMode : !!opts.split, location: opts.location
+  })) return;
 
   var draft;
   if (isPlacement) {
@@ -55,7 +56,7 @@ FE.buildKeyEditor = function (opts) {
     if (!isPlacement && nameInput) {
       return { def: draft, name: String(nameInput.value) };  // 定义模式改名也算改动
     }
-    return draft;
+    return {draft: draft, moves: session ? session.moves : []};
   });
   var modal = opts.surface || openModal({
     title: isPlacement
@@ -65,12 +66,22 @@ FE.buildKeyEditor = function (opts) {
     /* 点遮罩 / Esc / 「取消」前先问一句：有未保存改动就别静默丢弃 */
     onBeforeClose: guard.onBeforeClose
   });
-  var session = hosted ? FE.createKeySession(opts, draft) : null;
+  var session = FE.createKeySession(opts, draft);
   var activeGesture = null, gestureFlush = null, gestureEditor = null, pendingGesture = null;
   var rawEditor=null,rawBase=null;
   var formBuildSeq=0;
   var formHost = h('div');
   modal.body.appendChild(formHost);
+  var commitErrors = h('div', {class: 'status error key-commit-errors', role: 'alert'});
+  if (!hosted) modal.body.appendChild(commitErrors);
+  function commitDialog() {
+    draftChanged();
+    var result = session.apply();
+    commitErrors.textContent = result.ok ? '' : result.errors.join('；');
+    if (result.ok) modal.close();
+    else if (commitErrors.scrollIntoView) commitErrors.scrollIntoView({block: 'nearest'});
+    return result.ok;
+  }
 
   var nameInput = null;  // definition 模式下可改名
 
@@ -96,7 +107,7 @@ FE.buildKeyEditor = function (opts) {
       var summary=section.querySelector('summary');if(summary)openSections[summary.textContent]=section.open;
     });
     var pendingRaw=rawEditor&&rawEditor.value!==rawBase?rawEditor.value:null;
-    if(hosted&&nameInput&&session)session.name=nameInput.value;
+    if(nameInput)session.name=nameInput.value;
     FE.closeActiveColorPicker();   /* 重建前收起取色面板，避免留下悬空面板 */
     clearEl(formHost);
     gestureFlush = null;
@@ -107,7 +118,7 @@ FE.buildKeyEditor = function (opts) {
     var b = h('div', { class: 'inner-card-body' });
 
     if (!isPlacement) {
-      nameInput = h('input', { type: 'text', class: 'mini-input', value: hosted ? session.name || '' : opts.name || '', placeholder: '按键定义名称' });
+      nameInput = h('input', { type: 'text', class: 'mini-input', value: session.name || '', placeholder: '按键定义名称' });
       b.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '名称'), nameInput,
         h('span', { class: 'status' }, '（改名会自动更新所有引用）')));
     }
@@ -951,16 +962,8 @@ FE.buildKeyEditor = function (opts) {
           var n = saveAs.value.trim();
           if (!n) { FE.uiAlert('请输入按键定义名称'); return; }
           if (state.profile.keys[n]) { FE.uiAlert('按键定义已存在: ' + n); return; }
-          var def = FE.deepClone(draft);
-          ['column', 'row', 'columnSpan', 'rowSpan'].forEach(function (f) { delete def[f]; });
-          FE.mutate(function () {
-            state.profile.keys[n] = def;
-            var repl = {};
-            ['column', 'row', 'columnSpan', 'rowSpan'].forEach(function (f) { if (draft[f] != null) repl[f] = draft[f]; });
-            var cont = container();
-            if (cont) cont[opts.location.k] = Object.assign({ ref: n }, repl);
-          });
-          modal.close();
+          session.saveAs = n;
+          if (!commitDialog()) session.saveAs = null;
         }
       }, '另存为按键定义'));
     } else if (!isPlacement) {
@@ -980,14 +983,18 @@ FE.buildKeyEditor = function (opts) {
       var mcard = h('details', { class: 'card inner-card' });
       mcard.appendChild(h('summary', null, '位置'));
       var mb = h('div', { class: 'inner-card-body toolbar' });
+      var positionHint = h('div', {class: 'status', role: 'status'});
+      function showPosition() {
+        positionHint.textContent = '草稿位置：第 ' + (session.location.r + 1) + ' 行，第 ' + (session.location.k + 1) + ' 键。保存后生效，取消可放弃移动。';
+      }
+      showPosition();
       function moveBtn(label, dr, dk) {
         return h('button', {
           type: 'button', class: 'mini-button',
           onclick: function () {
-            FE.mutate(function () {
-              var nl = FE.movePlacement(opts.location, dr, dk);
-              if (nl) opts.location = nl;
-            });
+            draftChanged();
+            session.move(dr, dk);
+            showPosition();
           }
         }, label);
       }
@@ -995,6 +1002,7 @@ FE.buildKeyEditor = function (opts) {
       mb.appendChild(moveBtn('→ 右移', 0, 1));
       mb.appendChild(moveBtn('↑ 移到上一行', -1, 0));
       mb.appendChild(moveBtn('↓ 移到下一行', 1, 0));
+      mb.appendChild(positionHint);
       mcard.appendChild(mb);
       formHost.appendChild(mcard);
     }
@@ -1123,7 +1131,6 @@ FE.buildKeyEditor = function (opts) {
   /* 首轮表单建好后记下基线：此后任何改动都能被 onBeforeClose 看出来。
    * 放在 buildForm() 之后是因为定义模式下 nameInput 要到那时才存在。 */
   guard.reset();
-  var originalDraft = FE.stableJson(draft);
 
   if (hosted) {
     if (opts.pendingDraft) { draft=FE.deepClone(opts.pendingDraft); session.draft=draft; if (opts.pendingName) {session.name=opts.pendingName;nameInput=null;} buildForm(); }
@@ -1169,11 +1176,8 @@ FE.buildKeyEditor = function (opts) {
       onclick: async function () {
         var ok = await FE.uiConfirm('删除此按键？', { title: '删除按键', danger: true, okLabel: '删除' });
         if (!ok) return;
-        FE.mutate(function () {
-          var cont = container();
-          if (cont) cont.splice(opts.location.k, 1);
-        });
-        modal.close();
+        session.remove = true;
+        if (!commitDialog()) session.remove = false;
       }
     }, '删除按键'));
   }
@@ -1182,37 +1186,19 @@ FE.buildKeyEditor = function (opts) {
   modal.toolbar.appendChild(h('button', {
     type: 'button', class: 'primary',
     onclick: function () {
-      if (FE.stableJson(draft) === originalDraft && (isPlacement || !nameInput || nameInput.value === opts.name)) { modal.close(); return; }
-      if (isPlacement) {
-        FE.mutate(function () {
-          var cont = container();
-          if (cont) cont[opts.location.k] = FE.deepClone(draft);
-        });
-      } else {
-        var newName = nameInput ? nameInput.value.trim() : opts.name;
-        if (!newName) { FE.uiAlert('名称不能为空'); return; }
-        if (newName !== opts.name) {
-          if (state.profile.keys[newName]) { FE.uiAlert('按键定义已存在: ' + newName); return; }
-        }
-        FE.mutate(function () {
-          if (newName !== opts.name) {
-            renameKeyDef(opts.name, newName);
-          }
-          state.profile.keys[newName] = FE.deepClone(draft);
-        });
-      }
-      modal.close();
+      commitDialog();
     }
   }, '保存'));
 };
 
 /* 重命名按键定义并更新全部引用 */
-function renameKeyDef(oldN, newN) {
-  var keys = state.profile.keys;
+function renameKeyDef(oldN, newN, profile) {
+  profile = profile || state.profile;
+  var keys = profile.keys;
   var entries = Object.keys(keys).map(function (k) { return [k === oldN ? newN : k, keys[k]]; });
   var nk = {};
   entries.forEach(function (e) { nk[e[0]] = e[1]; });
-  state.profile.keys = nk;
+  profile.keys = nk;
 
   function updActionSpec(spec) {
     if (!FE.isPlainObject(spec)) return;
@@ -1258,8 +1244,8 @@ function renameKeyDef(oldN, newN) {
     });
   }
   Object.keys(nk).forEach(function (k) { updNode(nk[k]); });
-  Object.keys(state.profile.layouts || {}).forEach(function (ln) {
-    var L = state.profile.layouts[ln];
+  Object.keys(profile.layouts || {}).forEach(function (ln) {
+    var L = profile.layouts[ln];
     if (!FE.isPlainObject(L)) return;
     walkSections(L.sections);
     if (FE.isPlainObject(L.split)) walkSections(L.split.sections);
