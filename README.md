@@ -63,7 +63,7 @@ Android/data/com.fxliang.foxy/files/foxy/frontend/layouts/
 - [新版 App 对齐记录](docs/app-alignment-20f1709.md)：符号单行缩字、文件类型、编辑命令与主题新增字段的源码依据和验证。
 - [项目历史与决策记录](docs/history/project-history.md)：原始任务、长期决策、功能演进、修复背景、实测数据和测试基线。
 - [代理修改指南](AGENT.md)：代理改代码前必须遵守的硬约束和验证流程。
-- [格式规范与 Schema](skills/)：`SKILL.md`、布局 / popup / definitions 的 JSON Schema，以及 [Foxy JavaScript 插件指南](skills/Foxy%20JavaScript%20Plugin%20Guide.md) 与示例插件 `qwen-asr.js`。
+- [格式规范与 Schema](skills/)：`SKILL.md`、布局 / popup / definitions 的 JSON Schema，以及 [Foxy JavaScript 插件指南](skills/Foxy%20JavaScript%20Plugin%20Guide.md)（旧版，讲 `voice.asr`）、[插件 API 参考](skills/js-plugin-README.md)（新版，含 `foxy.app.register` 前台 App 能力）与示例插件 `qwen-asr.js`、`doubao_asr.js`、`llm-assistant.js`。这些插件由 Foxy App 的 QuickJS 运行时加载，编辑器本身不执行、也不模拟插件行为。
 
 ## 格式与范围
 
