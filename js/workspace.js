@@ -16,7 +16,7 @@ function registerPageSection(key,anchor){
 }
 ['preview-panel-title','pt-state-group','pt-theme','op-import','layout-select','json-editor',
  'keys-list','icons-list','actions-list','macros-list','popup-import','popup-preview','popup-keys','popup-json',
- 'th-import','th-validation','th-colors','th-keytypes','th-json','sym-import','sym-validation','sym-list','sym-json'
+ 'th-import','th-validation','th-colors','th-backgrounds','th-keytypes','th-json','sym-import','sym-validation','sym-list','sym-json'
 ].forEach(function(id){registerPageSection(id,$(id));});
 registerPageSection('preview-legend',document.querySelector('.preview-legend'));
 // A few sections contain only static text or a collection of import controls.
@@ -299,7 +299,9 @@ FE.renderSaveStatus=function(){
       if(parent&&parent.parentNode){element=h('div',{id:item[3],class:'file-save-status'});parent.parentNode.insertBefore(element,parent);}
     }
     if (element) {
-      var editor = fileEditor(item[0]), pending = editor.read && editor.read() !== null;
+      var editor = fileEditor(item[0]);
+      var pending = editor.id === 'sym-json' && FE.readSymbolJsonDraft
+        ? FE.readSymbolJsonDraft(item[0]) !== null : editor.read && editor.read() !== null;
       element.textContent = item[1] + ' · ' + (pending ? '有未应用 JSON 草稿 · 已应用内容：' : '') +
         (state.exportBaselines[item[0]]===item[2]?'与最近生成的下载一致':'修改尚未导出');
     }
@@ -382,7 +384,8 @@ FE.captureWorkspace=function(){
       snap.title=(d.querySelector('h3')||{}).textContent||'编辑窗口';return snap;
     }),
     auxiliaryJson:{popup:FE.readPopupJsonDraft?FE.readPopupJsonDraft():null,
-      theme:FE.readThemeJsonDraft?FE.readThemeJsonDraft():null,symbol:FE.readSymbolJsonDraft?FE.readSymbolJsonDraft():null},
+      theme:FE.readThemeJsonDraft?FE.readThemeJsonDraft():null,symbol:FE.readSymbolJsonDraft?FE.readSymbolJsonDraft():null,
+      symbols:FE.readSymbolJsonDrafts?FE.readSymbolJsonDrafts():null},
     sectionOpen:capturePageSections(),
     scrollY:typeof window.scrollY==='number'?window.scrollY:0};
 };
@@ -426,7 +429,8 @@ function recovery(){
       var aux=w.auxiliaryJson||{};
       if(FE.restorePopupJsonDraft)FE.restorePopupJsonDraft(aux.popup);
       if(FE.restoreThemeJsonDraft)FE.restoreThemeJsonDraft(aux.theme);
-      if(FE.restoreSymbolJsonDraft)FE.restoreSymbolJsonDraft(aux.symbol);
+      if(FE.restoreSymbolJsonDrafts&&FE.isPlainObject(aux.symbols))FE.restoreSymbolJsonDrafts(aux.symbols);
+      else if(FE.restoreSymbolJsonDraft)FE.restoreSymbolJsonDraft(aux.symbol);
     }
     if(state.recoveredJson!=null){$('json-editor').value=state.recoveredJson;state.jsonDirty=true;state.recoveredJson=null;}
     if(saved){

@@ -1,5 +1,5 @@
 /* 小狐狸 see me — Foxy 键盘布局可视化编辑器
- * symbol-preview.js — 符号面板预览（对照 App 端 `ly` 视图）
+ * symbol-preview.js — 符号面板预览（0.0.1-20f1709 的 ke0 / zc）
  *
  * 存在理由：符号 / emoji / 颜文字 三类 catalog 在 App 里**不是弹层**，
  * 而是一块**整屏替换键盘**的横排面板。编辑符号时看不到它长什么样，
@@ -9,9 +9,8 @@
  *   切换由 app.js 的 renderPreview() 决定（见 FE.symbolPreviewOn）；
  *   本模块只负责「把面板画进给定容器」。
  *
- * ⚠️ 全部规格来自 App 反编译逐行核对，权威依据见
- *   `foxy/foxy-render-spec.md` §8（`ly.java` / `cu.java` / `cv.java`）。
- *   改这里的几何或配色**必须先看那份规范**，别凭感觉调。
+ * 当前源码证据与差异见 docs/app-alignment-20f1709.md。
+ * 旧 ly 的源码注释保留作几何追溯；文字单行测量以新版 ke0 / zc 为准。
  */
 (function () {
 'use strict';
@@ -20,6 +19,7 @@ if (FE.renderSymbolPreview) return;
 
 var h = function () { return FE.h.apply(null, arguments); };
 var clearEl = function (el) { FE.clearEl(el); };
+function textLabel(text) { return FE.symbolTextLabel ? FE.symbolTextLabel(text) : text; }
 
 /* ================================================================
  * 一、几何换算
@@ -235,8 +235,7 @@ FE.renderSymbolPreview = function (host, opts) {
   var bgPanel = panelBgCss();
   var bgCell = themeCss('keyBackgroundColor');
   var fgCell = themeCss('candidateTextColor');
-  /* 选中分组的字色/底色已从工具栏配色里拆出（见 color-source.js 的 FE.THEME_FIELD_FALLBACK）：
-   * 未导入新字段的旧主题仍回落 toolTextColor / candidateHighlightColor，外观不变。 */
+  /* 新版 mv.c 对这两个独立字段逐个与内置主题合并，不继承用户的工具栏颜色。 */
   var bgCellSel = themeCss('symbolTabHighlightColor');
   var fgGroup = themeCss('keyHintTextColor');
   var fgGroupSel = themeCss('symbolTabHighlightTextColor');
@@ -285,9 +284,11 @@ FE.renderSymbolPreview = function (host, opts) {
       class: 'sym-pv-group' + (on ? ' sym-pv-group-sel' : ''),
       title: g.name + '（' + g.count + ' 条）',
       'data-group-index': String(g.index)
-    }, g.name || '（未命名）');
+    }, textLabel(g.name || '（未命名）'));
     el.style.height = gH + 'px';
-    el.style.lineHeight = gH + 'px';
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.justifyContent = 'center';
     el.style.fontSize = FE.symbolPreviewDp(spec.groupItemFontSp, unit) + 'px';
     el.style.padding = FE.symbolPreviewDp(spec.groupItemPadY, unit) + 'px ' +
       FE.symbolPreviewDp(spec.groupItemPadX, unit) + 'px';
@@ -295,12 +296,9 @@ FE.renderSymbolPreview = function (host, opts) {
     el.style.boxSizing = 'border-box';
     el.style.overflow = 'hidden';
     el.style.whiteSpace = 'nowrap';
-    el.style.textOverflow = 'ellipsis';
     el.style.textAlign = 'center';
     el.style.cursor = 'pointer';
-    /* 未选中：字 keyHintTextColor、底**透明**（ly.java:320-321）
-     * 已选中：字 symbolTabHighlightTextColor（回退 toolTextColor）
-     *         底 symbolTabHighlightColor（回退 candidateHighlightColor） */
+    /* 未选中透明底；选中使用独立的 symbolTabHighlight* 字段。 */
     if (on && fgGroupSel) el.style.color = fgGroupSel;
     else if (!on && fgGroup) el.style.color = fgGroup;
     if (on && bgCellSel) el.style.background = bgCellSel;
@@ -415,32 +413,21 @@ FE.renderSymbolPreview = function (host, opts) {
     rowSyms.forEach(function (sym) {
       var cell = h('div', {
         class: 'sym-pv-cell',
-        /* 提示语按 App 实际行为描述：multiLine=false 时格子固定 40dp 高，
-         * 超长条目被**等比缩小**（z9 Proportional，见下）而不是裁掉。 */
-        title: multi ? sym : (sym + '（格高固定 40dp，过长会等比缩小）')
-      }, sym === '' ? '（空）' : sym);
+        title: sym
+      }, textLabel(sym === '' ? '（空）' : sym));
       cell.style.flex = '1 1 0';
       cell.style.minWidth = '0';     /* flex 子项默认 min-width:auto 会被长内容顶宽 */
-      /* multiLine=true → 行高自适应（WRAP_CONTENT）；false → 固定 40dp */
+      /* ke0.d / zc.onMeasure：WRAP_CONTENT 按单行字高测量，不按文本宽度换行。 */
       if (multi) {
         cell.style.minHeight = cH + 'px';
-        cell.style.whiteSpace = 'pre-wrap';
-        cell.style.wordBreak = 'break-all';
-        cell.style.padding = cGap + 'px';
-        cell.style.lineHeight = '1.3';
       } else {
         cell.style.height = cH + 'px';
-        cell.style.lineHeight = cH + 'px';
-        cell.style.padding = '0 ' + cGap + 'px';
-        /* ⚠️ 这里用 nowrap + overflow hidden 作**视觉近似**：
-         * App 给格子设了 `setScaleMode(y9.a)` = Proportional（ly.java:206、y9.java:19），
-         * z9 会取 `min(1, 宽比, 高比)` 再把文字**等比缩小**画进去（z9.java:102-105、259），
-         * 即"变小"而非"裁掉"。浏览器没有等价的自动缩字，故用截断近似；
-         * 想精确复现需按 文字宽/格宽 换算 font-size。 */
-        cell.style.whiteSpace = 'nowrap';
-        cell.style.overflow = 'hidden';
-        cell.style.textOverflow = 'ellipsis';
       }
+      cell.style.display = 'flex';
+      cell.style.alignItems = 'center';
+      cell.style.justifyContent = 'center';
+      cell.style.whiteSpace = 'nowrap';
+      cell.style.overflow = 'hidden';
       cell.style.boxSizing = 'border-box';
       cell.style.marginLeft = cGap + 'px';
       cell.style.marginRight = cGap + 'px';
@@ -467,6 +454,7 @@ FE.renderSymbolPreview = function (host, opts) {
 
   /* ---- 挂上去 ---- */
   host.appendChild(panel);
+  if (FE.watchSymbolText) FE.watchSymbolText(host);
 
   /* ---- 恢复左列滚动位置（见 rememberGroupScroll） ----
    * ⚠️ **必须放在填充分组项、且挂进文档之后**，不能挪到创建时：真实浏览器里
@@ -486,7 +474,7 @@ FE.renderSymbolPreview = function (host, opts) {
     h('code', null, FE.symbolKindMeta ? FE.symbolKindMeta(data.kind).label : data.kind),
     ' · 分组 ' + groups.length + ' 个 · 当前「' + (cur.name || '（未命名）') + '」' +
     cur.count + ' 条 · 每行 ' + cols + ' 格（' +
-    (multi ? 'multiLine=true → 1 格/行、高自适应' : 'multiLine=false → 6 格/行、格高固定 40dp') + '）'));
+    (multi ? '每行一项' : '每行六项') + '，文字单行自动缩小）'));
   notes.push(h('div', null,
     '左列 ' + spec.panelLeftColDp + 'dp 为分组列表与 ⌨/⌫；格子字号 ' + spec.cellFontSp +
     'sp、圆角 ' + spec.cellCornerDp + 'dp；面板底与键盘底同色（key_border_enabled 联动）。' +

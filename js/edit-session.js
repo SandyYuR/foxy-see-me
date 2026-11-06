@@ -40,7 +40,8 @@ FE.readEditorFields = function(root) {
 FE.restoreEditorFields = function(root,fields) {
   (fields||[]).forEach(function(saved,index){
     var e=root.querySelectorAll('input,select,textarea')[index];
-    if(!e||e.tagName!==saved.tag||(e.type||'')!==saved.type||e.type==='file')return;
+    var oldTextField=e&&e.tagName==='TEXTAREA'&&e.classList.contains('action-text-input')&&saved.tag==='INPUT'&&saved.type==='text';
+    if(!e||e.type==='file'||(!oldTextField&&(e.tagName!==saved.tag||(e.type||'')!==saved.type)))return;
     if(e.value===saved.value&&!!e.checked===saved.checked)return;
     e.value=saved.value;if(e.type==='checkbox'||e.type==='radio')e.checked=saved.checked;
     e.dispatchEvent(new Event('input',{bubbles:true}));

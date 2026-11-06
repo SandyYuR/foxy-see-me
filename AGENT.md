@@ -6,6 +6,7 @@
 
 - 这是 Foxy 的纯前端、零构建、零运行时依赖编辑器；`index.html` 必须可以直接用 `file://` 打开。
 - 格式规则以 `skills/SKILL.md` 和 `skills/*.schema.json` 为准，不要凭 UI 直觉修改 Foxy 语义。
+- 当前 App 对齐版本是 `0.0.1-20f1709`。已核实的符号类型、文字缩放、原生编辑命令与主题字段差异见 [对齐记录](docs/app-alignment-20f1709.md)；这些新版差异以源码记录为准，不改写上游 Schema。
 - 不要把本工具扩展成 Foxy App 的全局设置页。主题文件可以编辑，但全局主题选择、跟随系统等设置不在范围内。
 - 不要用 f5a-see-me 的数据格式替换 Foxy 格式；只借鉴交互方式。
 - 宽松 JSON 导入是当前能力：检查、修复并提示；导出保持严格 JSON。
@@ -36,7 +37,7 @@ node test/test-core.js
 node test/test-ui.js
 ```
 
-当前基线是 core 821、UI 1668，两个套件都必须 0 失败。工作区重构将旧弹窗展示断言改为面板断言，移除了候选嵌入立即提交的旧断言；`node test/test-workspace.js` 共 40 项事务回归。Foxy 数据契约门禁：
+当前基线是 core 883、UI 1668，两个套件都必须 0 失败。工作区重构将旧弹窗展示断言改为面板断言，移除了候选嵌入立即提交的旧断言；`node test/test-workspace.js` 共 40 项事务回归。Foxy 数据契约门禁：
 
 ```bash
 node test/conformance-adapter.js   # conformance v1 共 46 项检查，必须全过
@@ -53,6 +54,8 @@ node tools/inspector-feedback-smoke.js # 45 项：常驻面板、等高、滚动
 node tools/interface-copy-smoke.js # 17 项：用户文案、主题说明与六个标签页默认展开
 node tools/editor-consistency-smoke.js # 53 项：统一提交校验、草稿移动、六类 JSON 导出、列表返回与手机当前键预览
 node tools/batch-editor-smoke.js # 33 项：多选、部分粘贴预览/取消/应用、整行复制、手机触摸与短视口
+node tools/app-alignment-smoke.js # 新版符号类型、单行缩字与响应式尺寸、背景参数、原生命令、导出和刷新恢复
+node tools/editor-review-smoke.js # 54 项：符号撤销、分类型 JSON 草稿和旧缓存、异步导入、文字空白、连续参数编辑及手机文字草稿
 ```
 
 按改动范围追加：
@@ -63,7 +66,7 @@ node test/check-real-files.js    # 改过示例、解析、导出或格式对齐
 node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 ```
 
-颜色测试当前基线为 111；真实文件体检当前覆盖 46 个文件且必须 0 错。涉及拖动、取色、对话框关闭、滚动恢复、真实触摸或视口溢出时，测试桩通过不够，还要在真实浏览器中补验。
+颜色测试当前基线为 129；真实文件体检当前覆盖 49 个文件且必须 0 错。涉及拖动、取色、对话框关闭、滚动恢复、真实触摸或视口溢出时，测试桩通过不够，还要在真实浏览器中补验。
 
 批量操作逻辑回归：`node test/test-batch.js` 共 49 项，覆盖继承字段替换、引用保留、行/网格/分体、整批撤销、过期计划与整行复制约束。
 
@@ -125,6 +128,7 @@ node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 - 新编辑类对话框接入 `FE.snapshotGuard` 和 draft 改动检测；无改动时 `onBeforeClose` 同步返回 `true`。
 - 使用 `FE.uiAlert`、`FE.uiConfirm`、`FE.uiPrompt`，不要调用浏览器原生提示框。
 - `FE.buildActionEditor(spec, opts)` 是按键、popup、动作和宏共用的动作编辑器，不重复造步骤控件。
+- `text / commit` 的 text 与 `commit_text` 的 argument 使用多行文字控件，必须保留首尾空白、纯空白和换行；未改内容保留原始 CRLF。不要对文字载荷 trim。恢复旧表单时仅允许 `action-text-input` 从原 INPUT/text 草稿迁移，保留其它字段的 tag/type 检查。
 - 控件局部修改走 `opts.commit` / `commitActionEdits()`，只静默写回、压历史、重校验和刷新 JSON；结构变化才走 `mutate()`。
 - `beginGesture()` / `endGesture()` 将连续取色合并为一次历史；颜色行的 apply 必须幂等。
 - jscolor 的 Foxy `#AARRGGBB` 写 CSS 前转为 CSS `#RRGGBBAA`；颜色控件重建后重新安装 picker。
@@ -149,7 +153,9 @@ node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 - 预览工具栏的边框、描边、滑动提示开关只影响预览，不写入主题 JSON；关闭阴影时显式写 `none`。
 - 预览第一行的 Shift / Ctrl / Alt / Meta 是修饰键模拟开关（`#pt-shift` / `#pt-ctrl` / `#pt-alt` / `#pt-meta`），只影响当前声明了同名 `modifier` 的键；新增开关要同步 `test/dom-stub.js` 的状态组桩。
 - `candidateBarColor` 按 `key_border_enabled` 决定是「候选栏/工具栏容器底色」还是「同键盘底色」；`accentColor` 是工具栏选中态。
-- 符号面板选中分组的文字/背景分别走 `symbolTabHighlightTextColor` / `symbolTabHighlightColor`，未设置时按 `FE.THEME_FIELD_FALLBACK` 回退 `toolTextColor` / `candidateHighlightColor`（不是 `THEME_ROLE_FIELD`，那是布局角色映射）。
+- 符号面板选中分组的文字/背景分别走 `symbolTabHighlightTextColor` / `symbolTabHighlightColor`；新版 `mv.c` 缺省保留独立内置默认色，不再继承用户的工具栏/候选色。`FE.THEME_FIELD_FALLBACK` 仅用于缺键时 `waterRippleColor` / `preeditHighlightColor` 继承 `accentColor`，显式 null 则保留内置默认。
+- 主题有 33 个有效颜色字段，另保留旧 `popupBorderColor`，故表单为 34 项；`FE.THEME_BACKGROUND_FIELDS` 是背景参数，不能作为未知颜色报警。三类背景配置位于 light/dark 槽，修改走 mutate，保留未知字段。
+- 背景控件在同一主题对象与配色槽内就地回填数值，不能在每次 change 时重建；否则原生方向键步进和 Tab 会失焦。切换主题对象或槽位时才重建。
 - 键盘上方工具栏预览由 `js/toolbar-preview.js` 画在 `#preview-toolbar`，而 `#preview-toolbar` **嵌在 `#preview-kb` 内部**、是键盘面板最上面那一行（实机同底色同宽度，单独成条会假造出宽度/底色差异）。它不自带宽度、圆角和底条；`renderPreview` 里 `clearEl(host)` 之后必须把它挂回首个子节点，**符号面板页同样要挂回并重画一次**（实机打开符号面板时工具栏不会消失，`app.js` 符号分支 `host.insertBefore(toolbarHost, host.firstChild)` + 再调一次 `FE.renderPreviewToolbar`，两页签用同一个 unit → 切换不跳变）。**不再有展开/收起两态**（用户口径 m08645）：`FE.toolbarAllIds(cfg)` 把 `main` + `expanded` 去重保序拼成**一条完整列表**（按 `FE.TOOLBAR_SAME_BUTTON` 的按钮身份去重：`theme` 与 `keyboard_tools` 是实机同一个按钮，同 label「主题」、同 `ic_tool_theme`、同点击 `r5.a`，见 `at0.java:1440` / `:1447-1450`；先出现者保留，默认留下主组的 `keyboard_tools`），全部按钮一次画在同一行里，**不会出现两个一模一样的主题按钮**；行尾**没有**展开/收起箭头，也不给它留 `padding-right`（留了会凭空多出可滚动量），所以工具栏高度与行数在任何操作下都不变；装不下时由轨道横向拖动查看。`keyboard_tools` 有图标（实机 `r71.f0` 复用 `ic_tool_theme`，显示名取 `tool_theme`=「主题」），不是纯文字 chip；主题包只给了「主题2.svg」时靠 `FE.TOOLBAR_ICON_ALIAS = { keyboard_tools: 'theme' }` 借用同一枚图标 —— **不允许一边主题图标一边内置调色板**，`theme` 自己有图标时别名不覆盖它。`rime_switches` 走**文字 chip**（实机 `iconRes = 0`，`at0.java:1533-1573`），文字取该 switch 的 `states` 项，**文案以 App 源码为准**：内置 `pinyin_simp.schema.yaml` / `stroke.schema.yaml` 里 `ascii_mode` 是 `reset: 0`、`states: [ 中文, 西文 ]`，故 `RIME_STATES = ['中文', '西文']`（写原字，不缩写不取首字）并按 `state.status.ascii_mode` 取值，跟着 `#pt-ascii` 复选框联动（`change` 已走 `renderPreview()`）；文字 chip 必须 `flex:0 0 auto` + `white-space:nowrap`，否则被 flex 压扁/裁切。
 - 工具栏是**横向滚动轨道**：结构 `.kbt`（= `#preview-toolbar`，宽度=键盘面板宽）> `.kbt-track`（`overflow-x:auto`，唯一滚动视口）> `.kbt-row`（`width:max-content` + `min-width:100%` + `nowrap` + `space-around`）；chip 一律 `flex:0 0 auto` **不收缩**，宽度不够就横向滚，绝不压扁。两端渐隐层挂在 `.kbt` 上（`position:absolute`，**在轨道外**），滑动带不走它。拖动/滚轮交互在 `bindTrack()`：pointerdown/move/up 改 `scrollLeft`（`setPointerCapture` 必须 `typeof … === 'function'` 守卫，DOM 桩没有），拖动后置 `suppressClick` 吞掉误触 click，滚轮只在 `scrollWidth > clientWidth` 时接管（否则不抢页面纵向滚动）；滚动位置记在标量 `scrollMemo`（只有一条工具栏）。`expanded` 组在 App 默认 4 项后追加 `voice`（用户要求），整行仍 `nowrap` 单行。尺寸常量来自 `os.java` / `w20.java` / `mf.java`，dp 换算一律走 `FE.kbDp`。
 - 工具栏按钮与主题图标用**显式文件名映射表**（`FE.toolbarIconMatch`）配对，不许按中文名模糊匹配——水彩包里有「分体 / 分体激活」这类成对图标，模糊匹配会把两态混成一张。
@@ -158,6 +164,10 @@ node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 - 符号字体预览由 `js/font-preview.js` 接管：`--kb-preview-font` 挂在 `.kb-label` / `.kb-hint` / `.kb-badge-lp` 上（App 端 KEY_MAIN 与 KEY_ALT 是两个槽，编辑器只有一个导入入口）。覆盖度按当前布局**实际用到的字符**比对并如实报告缺失（实机回退系统字体）；解析失败不能阻断渲染。
 - 工具栏图标、字体、工具栏显隐都只是预览状态（`state.previewToolbar` / `state.toolbarIcons` / `state.previewFont*`），**不写入任何 Foxy 文件**；autosave 只存图标文本与开关，不存字体二进制。
 - 符号事实来源是 `state.symbolProfiles[kind]`；snapshot、restore、autosave、boot 都处理复数槽位。
+- 新版符号 `type` 为 `foxy.symbols / foxy.emoji / foxy.kaomoji`。导入优先按显式类型分流；兼容无 type 对象和顶层数组，导出补正确类型。`serializeSymbolProfile(profile, kind)` 在处理无类型旧槽时必须传 kind，不能把颜文字误写为 symbols。
+- 符号导入、示例载入和 JSON 应用统一走 mutate，一次操作一条撤销记录，连同文件名与 legacy 标记一起恢复。异步读取无类型文件时使用选择文件当时的 kind；类型切换立即重画预览。
+- 符号未应用 JSON 保存在 `state.symbolJsonDrafts[kind]`，随 `workspace.auxiliaryJson.symbols` 缓存，兼容旧 `symbol` 单值。类别切换不清草稿，恢复不自动应用；草稿不进入文档撤销快照。
+- `multiLine` 只控制每行一格或六格，文本永远单行缩小。预览与编辑列表共用 `FE.symbolTextLabel / FE.watchSymbolText`，根据实际字体与可用空间测量，不能恢复换行或省略号截断；显示变换不修改原始文本。符号页每次按可见宽度重算 portraitW，隐藏时保留上一次有效值。
 - 符号预览替换同一个 `#preview-kb`，左右列滚动容器设置 `min-height: 0`；内容挂载后再恢复类别 scrollTop。
 - 搜索/新建工具条覆盖 keys、actions、macros、popup、symbol；重建列表时保持滚动位置。
 - 列表重建的恢复帧使用 `scrollRestoreSeq`，任何有意滚动前调用 `FE.cancelScrollRestore()`。

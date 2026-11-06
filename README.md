@@ -45,13 +45,14 @@ Android/data/com.fxliang.foxy/files/foxy/frontend/layouts/
 - 复制整行：行右侧一键在下方插入副本，保留行属性及按键配置；支持分体，使用统一撤销栈。
 - 网格与分体预览：按实际键节点渲染，适配窄屏与长文本。
 - 弹出菜单编辑：布局与 popup 分别导入、编辑和导出。
-- 动作与宏编辑：使用图形化动作控件（含 `switch_layout_once` 临时层），保留不能安全转换的原始 JSON。
+- 动作与宏编辑：使用图形化动作控件（含 `switch_layout_once` 临时层），文字动作保留多行内容与首尾空白，保留不能安全转换的原始 JSON。
 - 引用索引与使用数：查看定义被哪些键、动作和宏引用，并点击定位。
 - 多文件布局包：合并布局、`definitions.json` 和 popup，导出时恢复未改动的共享定义。
-- 主题文件编辑：支持 `foxy.keyboard-theme` 文件与预览颜色优先级；新增 `symbolTabHighlightTextColor` / `symbolTabHighlightColor`（未设置时分别回退 `toolTextColor` / `candidateHighlightColor`）。
+- 主题文件编辑：对齐 Foxy `0.0.1-20f1709` 的颜色字段，支持候选高亮文字／注释／序号、预编辑高亮及水波纹色；可编辑整张键盘、按键区、候选栏的背景图片路径、缩放、偏移和模糊参数。
 - 键盘上方工具栏预览：按 `os.java` / `w20.java` / `mf.java` 还原主/展开两种组合、chip 尺寸与配色；可导入主题自带的工具栏 svg（按文件名显式配对成对图标），自带实色的图标原样渲染、单色图标跟随 `toolTextColor` / `accentColor`。
 - 符号字体预览：导入 `.otf` / `.ttf` 后挂到键面和手势提示上，并按字体 cmap 报告当前布局的缺字（实机会回退系统字体）；字体与工具栏图标**只影响预览，不写入任何 Foxy 文件**。
-- 符号面板编辑：支持符号、emoji、颜文字数据及多行预览。
+- 符号面板编辑：支持新版 `foxy.symbols` / `foxy.emoji` / `foxy.kaomoji` 类型标记，兼容旧文件；预览和编辑列表的文字均自动缩小、单行完整显示，每行可选一项或六项。
+- 符号草稿与撤销：三类未应用 JSON 分别缓存，切换类别即时更新预览；文件导入、示例载入和 JSON 应用均可撤销与重做。
 - 宽松 JSON 导入：检查并修复注释、尾逗号等可识别问题，导出仍保持严格 JSON。
 - 响应式界面：提供手机竖屏布局、触摸拖动、浮动撤销/重做/回顶按钮。
 - 触屏拖动手柄：普通键块可以用来滚动页面，手柄负责排列；网格移动与交换在写入前检查完整占位。
@@ -59,6 +60,7 @@ Android/data/com.fxliang.foxy/files/foxy/frontend/layouts/
 ## 文档导航
 
 - [文档索引](docs/README.md)：按用户、代理和维护者列出全部入口。
+- [新版 App 对齐记录](docs/app-alignment-20f1709.md)：符号单行缩字、文件类型、编辑命令与主题新增字段的源码依据和验证。
 - [项目历史与决策记录](docs/history/project-history.md)：原始任务、长期决策、功能演进、修复背景、实测数据和测试基线。
 - [代理修改指南](AGENT.md)：代理改代码前必须遵守的硬约束和验证流程。
 - [格式规范与 Schema](skills/)：`SKILL.md`、布局 / popup / definitions 的 JSON Schema，以及 [Foxy JavaScript 插件指南](skills/Foxy%20JavaScript%20Plugin%20Guide.md) 与示例插件 `qwen-asr.js`。

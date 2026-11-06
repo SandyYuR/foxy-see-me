@@ -290,15 +290,14 @@ withTheme(makeTheme(), 'light', () => {
 });
 
 /* ---------------- 符号面板选中分组的新字段（回退链） ---------------- */
-console.log('\n== 符号面板选中分组：symbolTabHighlight* 的回退链 ==');
+console.log('\n== 新版符号面板选中分组：独立默认颜色 ==');
 withTheme(makeTheme({ light: { toolTextColor: '#FF10FF10', candidateHighlightColor: '#FF20FF20' } }), 'light', () => {
-  /* 未给新字段 → 分别回退 toolTextColor / candidateHighlightColor（旧主题外观不变） */
-  const a = FE.resolveThemeField('symbolTabHighlightTextColor', {});
-  eq(a.value, '#FF10FF10', '选中分组文字未设置时回退 toolTextColor');
-  eq(a.detail, 'toolTextColor', '回退时 detail 报告真正取色的字段名');
-  const b = FE.resolveThemeField('symbolTabHighlightColor', {});
-  eq(b.value, '#FF20FF20', '选中分组背景未设置时回退 candidateHighlightColor');
-  eq(b.detail, 'candidateHighlightColor', '背景回退的 detail 同样指向原字段');
+  const a = FE.resolveThemeField('symbolTabHighlightTextColor', { includeBuiltin: true });
+  eq(a.value, '#FF212121', '选中分组文字缺省时采用独立内置默认值');
+  eq(a.detail, 'symbolTabHighlightTextColor', '回退来源仍是当前字段');
+  const b = FE.resolveThemeField('symbolTabHighlightColor', { includeBuiltin: true });
+  eq(b.value, '#FFD2E3FC', '选中分组背景缺省时采用独立内置默认值');
+  eq(b.detail, 'symbolTabHighlightColor', '背景来源不混用候选高亮色');
 
   /* 单独设置后必须生效，且不反过来影响它们回退到的工具栏字段 */
   FE.state.themeProfile.light.symbolTabHighlightTextColor = '#FF00AAFF';
@@ -329,16 +328,36 @@ console.log('\n== 符号面板选中分组：未导入主题时的内置默认 =
     FE.state.themeProfile = null;
     const a = FE.resolveThemeField('symbolTabHighlightTextColor', { includeBuiltin: true });
     ok(a.value != null, '未导入主题也能取到选中分组文字色（内置默认兜底）');
-    eq(a.detail, 'toolTextColor', '内置默认下同样回退到 toolTextColor');
+    eq(a.detail, 'symbolTabHighlightTextColor', '内置默认包含独立的分组文字色');
     eq(a.source, FE.COLOR_SOURCES.BUILTIN, '来源标记为内置默认');
     const b = FE.resolveThemeField('symbolTabHighlightColor', { includeBuiltin: true });
     ok(b.value != null, '未导入主题也能取到选中分组背景色');
-    eq(b.detail, 'candidateHighlightColor', '内置默认下同样回退到 candidateHighlightColor');
+    eq(b.detail, 'symbolTabHighlightColor', '内置默认包含独立的分组背景色');
   } finally {
     FE.state.themeProfile = saved;
   }
 })();
 
+
+console.log('\n== 新增主题颜色与缺键 / null 语义 ==');
+withTheme(makeTheme({ light: { accentColor: '#FF123456' } }), 'light', () => {
+  for (const field of ['waterRippleColor', 'preeditHighlightColor']) {
+    eq(FE.resolveThemeField(field, { includeBuiltin: true }).value, '#FF123456', field + ' 缺键时继承强调色');
+    eq(FE.themeSlotColors()[field], '#FF123456', field + ' 两条取色路径一致');
+    FE.state.themeProfile.light[field] = null;
+    eq(FE.resolveThemeField(field, { includeBuiltin: true }).value, '#FF4285F4', field + ' 显式 null 采用内置色');
+    eq(FE.themeSlotColors()[field], '#FF4285F4', field + ' null 的两条取色路径一致');
+    FE.state.themeProfile.light[field] = '#FF654321';
+    eq(FE.resolveThemeField(field, { includeBuiltin: true }).value, '#FF654321', field + ' 显式颜色优先');
+  }
+  const values = { candidateHighlightTextColor: '#FF212121', candidateHighlightCommentColor: '#FF6E6E6E',
+    candidateLabelColor: '#FF6E6E6E', candidateHighlightLabelColor: '#FF212121' };
+  for (const field of Object.keys(values)) {
+    eq(FE.resolveThemeField(field, { includeBuiltin: true }).value, values[field], field + ' 使用新版默认值');
+    FE.state.themeProfile.light[field] = '#FF010203';
+    eq(FE.resolveThemeField(field, { includeBuiltin: true }).value, '#FF010203', field + ' 接受主题覆盖');
+  }
+});
 
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');
 process.exit(failed ? 1 : 0);

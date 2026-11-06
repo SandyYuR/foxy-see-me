@@ -321,6 +321,7 @@ button.danger:hover, .mini-button.danger:hover { background: #3a2321; }
   max-width: 100%;
 }
 .mini-input.wide, .mini-select.wide { width: min(320px, 100%); }
+.action-text-input { resize: vertical; min-height: 3.5em; }
 .mini-input:focus, .mini-select:focus, textarea:focus { outline: 1px solid var(--accent); }
 /* 高度比滑杆：跟 mini-label 一行，宽 110px 不抢位置；浅色下 track 用边框色 */
 .mini-range { width: 110px; accent-color: var(--accent); cursor: pointer; }
@@ -869,6 +870,22 @@ html.site-light .st-split { color: #2e8b57; }
 }
 .sym-pv-groups::-webkit-scrollbar,
 .sym-pv-cells-wrap::-webkit-scrollbar { display: none; }   /* WebKit / Blink */
+
+/* 颜文字中的连续空格保留；换行仅在显示节点中折成空格，原始文件保持不变。 */
+.sym-fit-label {
+  display: inline-block;
+  flex: 0 0 auto;
+  white-space: pre;
+  line-height: 1.2;
+  transform-origin: center;
+}
+
+.th-background-group { min-width: 0; margin: 12px 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+.th-background-group legend { font-size: 13px; padding: 0 6px; }
+.th-background-path { width: 100%; min-width: 0; }
+.th-background-numbers { display: flex; flex-wrap: wrap; gap: 10px; }
+.th-background-number { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.th-background-number input { width: 90px; }
 
 /* 网格横向滚动条（自绘）。
  *

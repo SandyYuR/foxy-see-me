@@ -923,6 +923,15 @@ FE.buildActionEditor = function (spec, opts) {
   root.appendChild(fields);
 
   var keySel, metaChks = [], modSel, modStateSel, textInp, textTypeSel, layoutInp, cmdSel, argInp, macroSel, refSel;
+  var argumentOriginal = '';
+
+  /* textarea 会把 CRLF 规范成 LF；未修改的载入文本仍按原始换行符写回。 */
+  function textValue(control, original) {
+    var value = control ? control.value : '';
+    if (typeof original !== 'string') return value;
+    var displayed = control.tagName === 'TEXTAREA' ? original.replace(/\r\n?/g, '\n') : original.replace(/[\r\n]/g, '');
+    return value === displayed ? original : value;
+  }
 
   function emit() { if (typeof opts.onChange === 'function') opts.onChange(); }
 
@@ -1001,7 +1010,9 @@ FE.buildActionEditor = function (spec, opts) {
       textTypeSel.appendChild(h('option', { value: 'text', selected: t !== 'commit' }, 'text（直接输入）'));
       textTypeSel.appendChild(h('option', { value: 'commit', selected: t === 'commit' }, 'commit（直接上屏）'));
       textTypeSel.addEventListener('change', function () { typeSel.value = textTypeSel.value; emit(); });
-      textInp = h('input', { type: 'text', class: 'mini-input wide', value: spec && spec.text != null ? String(spec.text) : '', placeholder: '文本内容' });
+      textInp = h('textarea', { rows: '2', class: 'mini-input wide action-text-input',
+        placeholder: '文本内容（保留空格和换行）', 'aria-label': '文本内容' });
+      textInp.value = spec && spec.text != null ? String(spec.text) : '';
       fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '方式'), textTypeSel));
       fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '内容'), textInp));
     } else if (t === 'switch_layout' || t === 'switch_layout_once') {
@@ -1022,9 +1033,23 @@ FE.buildActionEditor = function (spec, opts) {
       FE.APP_COMMANDS.forEach(function (c) {
         cmdSel.appendChild(h('option', { value: c[0], selected: spec && spec.command === c[0] }, c[0] + ' · ' + c[1]));
       });
-      argInp = h('input', { type: 'text', class: 'mini-input wide', value: spec && spec.argument != null ? String(spec.argument) : '', placeholder: '参数（仅 commit_text 等需要）' });
+      var argRow = h('div', { class: 'form-row form-inline' });
+      function renderArgument(value, bindChange) {
+        argumentOriginal = value;
+        clearEl(argRow);
+        argInp = cmdSel.value === 'commit_text'
+          ? h('textarea', { rows: '2', class: 'mini-input wide action-text-input',
+            placeholder: '上屏文字（保留空格和换行）', 'aria-label': '命令参数' })
+          : h('input', { type: 'text', class: 'mini-input wide', value: value, placeholder: '命令参数', 'aria-label': '命令参数' });
+        argInp.value = value;
+        argRow.appendChild(h('label', { class: 'mini-label' }, '参数'));
+        argRow.appendChild(argInp);
+        if (bindChange) argInp.addEventListener('change', emit);
+      }
+      renderArgument(spec && spec.argument != null ? String(spec.argument) : '', false);
+      cmdSel.addEventListener('change', function () { renderArgument(textValue(argInp, argumentOriginal), true); });
       fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '命令'), cmdSel));
-      fields.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '参数'), argInp));
+      fields.appendChild(argRow);
     } else if (t === 'macro') {
       macroSel = h('select', { class: 'mini-select wide' });
       var hasMacro = false;
@@ -1057,8 +1082,9 @@ FE.buildActionEditor = function (spec, opts) {
     }
     if (t === 'modifier') return { type: 'modifier', modifier: modSel.value, state: modStateSel.value };
     if (t === 'text' || t === 'commit') {
-      if (!textInp.value) return null;
-      return { type: textTypeSel ? textTypeSel.value : t, text: textInp.value };
+      var text = textValue(textInp, spec && spec.text);
+      if (!text) return null;
+      return { type: textTypeSel ? textTypeSel.value : t, text: text };
     }
     if (t === 'switch_layout' || t === 'switch_layout_once') {
       if (!layoutInp.value.trim()) return null;
@@ -1068,7 +1094,8 @@ FE.buildActionEditor = function (spec, opts) {
     if (t === 'app') {
       if (!cmdSel.value) return null;
       var b = { type: 'app', command: cmdSel.value };
-      if (argInp && argInp.value.trim()) b.argument = argInp.value.trim();
+      var argument = cmdSel.value === 'commit_text' ? textValue(argInp, argumentOriginal) : (argInp ? argInp.value.trim() : '');
+      if (argument) b.argument = argument;
       return b;
     }
     if (t === 'macro') {

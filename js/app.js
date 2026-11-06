@@ -158,6 +158,7 @@ var state = {
   symbolLegacy: null,     // { kind: 是否来自旧格式（顶层数组）}
   symbolProfile: null,    // 当前类别的镜像（与 symbolProfiles[kind] 同一对象）
   symbolKind: 'symbols',  // symbols / emoji / kaomoji
+  symbolJsonDrafts: null, // { kind: 未应用 JSON 文本 }，随工作区缓存保存，不写入文档或撤销快照
   openSymbolGroups: null,
   /* 符号面板预览里选中的分组下标（0 起）。仅预览用，不影响 catalog 数据。
    * 之所以存在 state 里：点预览里的分组要能保持选中（重渲染会重建 DOM）。 */
@@ -4314,8 +4315,11 @@ function renderPreview() {
   if (state.activeTab === 'tab-symbols' && FE.renderSymbolPreview) {
     /* 面板与键盘同尺度：用同一个 unit 口径（portraitW/10），
      * 保证符号格子与键盘按键的物理大小可比（见 symbol-preview.js 的 dp 换算）。 */
-    if (state.portraitW == null) state.portraitW = (host.clientWidth || 380);
     host.className = 'kb ' + (state.theme === 'light' ? 'kb-light' : 'kb-dark');
+    /* 符号页也按当前可见宽度重算单位，否则桌面缩到手机后仍沿用桌面字号和格高。 */
+    var symbolWidth = host.clientWidth;
+    if (symbolWidth > 0) state.portraitW = symbolWidth;
+    else if (state.portraitW == null) state.portraitW = 380;
     if (!kbCss) host.style.background = '';
     /* **面板尺寸强制与布局预览相同**（用户明确要求）：
      * 高度取"常规布局的总单位数 × unit × 高度系数"，正是布局预览里各区段高度之和。

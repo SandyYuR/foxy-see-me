@@ -1474,11 +1474,11 @@ eq(FE.stableJson(undefined), FE.stableJson(undefined), '裸 undefined 可比较'
  * （漏 border/shadow/hintUp/Down/Left/Right）—— 漏了就会被静默丢弃。
  * ================================================================ */
 console.log('== 主题：字段面与默认值 ==');
-eq(FE.THEME_COLOR_FIELDS.length, 28, '槽位颜色字段 28 个');
+eq(FE.THEME_COLOR_FIELDS.length, 34, '新版 33 个颜色字段及 1 个旧版兼容字段');
 eq(FE.THEME_COLOR_FIELDS[0], 'keyboardColor', '字段首位是 keyboardColor');
-eq(FE.THEME_COLOR_FIELDS[25], 'symbolTabHighlightTextColor', 'symbolTabHighlightTextColor 排在 voiceWaveColor 之后');
-eq(FE.THEME_COLOR_FIELDS[26], 'symbolTabHighlightColor', 'symbolTabHighlightColor 与之相邻');
-eq(FE.THEME_COLOR_FIELDS[27], 'accentColor', '字段末位是 accentColor');
+eq(FE.THEME_COLOR_FIELDS[31], 'symbolTabHighlightTextColor', 'symbolTabHighlightTextColor 排在 voiceWaveColor 之后');
+eq(FE.THEME_COLOR_FIELDS[32], 'symbolTabHighlightColor', 'symbolTabHighlightColor 与之相邻');
+eq(FE.THEME_COLOR_FIELDS[33], 'accentColor', '字段末位是 accentColor');
 eq(FE.THEME_KEY_TYPE_NAMES, ['LETTER', 'FUNCTION', 'ACTION'], 'keyTypes 三类含 LETTER');
 eq(FE.THEME_KEYTYPE_FIELDS.length, 10, '每类 keyType 10 个字段');
 eq(FE.THEME_KEYTYPE_FIELDS, ['text', 'background', 'pressed', 'border', 'shadow',
@@ -2234,6 +2234,59 @@ console.log('== 符号字体覆盖度 ==');
 
   FE.state.profile = savedProfile; FE.state.layoutName = savedLayout;
   FE.state.compiled = savedCompiled; FE.state.status = savedStatus;
+}
+
+console.log('== Foxy 0.0.1-20f1709：符号类型与主题背景 ==');
+{
+  const groups = [{ names: { zh: '长颜文字', en: 'Faces' }, symbols: ['(づ￣ ³￣)づ', '(╯°□°）╯︵ ┻━┻', '保留\n原文'] }];
+  for (const kind of ['symbols', 'emoji', 'kaomoji']) {
+    const raw = { type: 'foxy.' + kind, multiLine: true, groups };
+    eq(FE.symbolKindFromType(raw.type), kind, kind + ' 显式类型可识别');
+    eq(FE.validateSymbolProfile(kind, raw).errors, [], kind + ' 新格式校验通过');
+    eq(JSON.parse(FE.serializeSymbolProfile(FE.normalizeSymbolProfile(kind, raw))), raw, kind + ' 新格式完整往返');
+    const legacy = JSON.parse(FE.serializeSymbolProfile({ multiLine: true, groups }, kind));
+    eq(legacy, raw, kind + ' 无 type 的旧对象导出时补正确类型');
+    const oldArray = JSON.parse(FE.serializeSymbolProfile(groups, kind));
+    eq(oldArray.type, raw.type, kind + ' 顶层数组迁移保留目标类别');
+    eq(oldArray.multiLine, false, kind + ' 顶层数组保持旧版 multiLine=false');
+    eq(oldArray.groups, groups, kind + ' 迁移不改原始文本与空白');
+  }
+  ok(FE.validateSymbolProfile('emoji', { type: 'foxy.kaomoji', groups }).errors.length > 0, '类别错配可检测');
+  ok(FE.validateSymbolProfile('symbols', { type: null, groups }).errors.length > 0, '显式空 type 不能伪装成旧格式');
+  ok(FE.validateSymbolProfile('symbols', { type: 'foxy.keyboard-layout', groups }).errors.length > 0, '非符号类型不会被吞掉');
+  for (const pair of [['Copy', 'copy'], ['Cut', 'cut'], ['Paste', 'paste'], ['SelectAll', 'select_all']]) {
+    eq(FE.BUILTIN_KEYS['foxy.' + pair[0]].tap, { type: 'app', command: pair[1] }, pair[0] + ' 使用 App 原生编辑动作');
+    const profile = FE.normalizeProfile({ type: 'foxy.keyboard-layout', layouts: { default: { sections: [
+      { type: 'rows', rows: [[{ label: pair[0], tap: { type: 'app', command: pair[1] } }]] }
+    ] } } });
+    eq(FE.validateProfile(profile).errors, [], pair[1] + ' 可写入布局');
+  }
+  const background = {
+    wholeKeyboardImage: 'backgrounds/整张.png', wholeKeyboardImageTransform: { scale: 1.5, offsetX: -0.25, offsetY: 0.2 },
+    keyboardBackgroundImage: 'backgrounds/按键.png', keyboardBackgroundScale: 'CONTAIN',
+    keyboardBackgroundTransform: { scale: 2, offsetX: 0.3, offsetY: -0.4 },
+    candidateBarImage: 'backgrounds/候选.png', candidateBarImageScale: 'fill',
+    candidateBarImageTransform: { scale: 1, offsetX: 0, offsetY: 0 }, backgroundBlurRadius: 12.5
+  };
+  const rawTheme = { type: 'foxy.keyboard-theme', name: '新版', light: background, dark: { keyboardColor: '#FF000000' } };
+  const theme = FE.normalizeThemeProfile(JSON.parse(JSON.stringify(rawTheme)));
+  const savedTheme = JSON.parse(FE.serializeThemeProfile(theme));
+  eq(Object.keys(savedTheme.light).sort(), Object.keys(background).sort(), '背景参数没有丢失或添加');
+  for (const field of Object.keys(background)) eq(savedTheme.light[field], background[field], field + ' 完整往返');
+  const validation = FE.validateThemeProfile(theme);
+  eq(validation.errors, [], '新版背景字段校验无错误');
+  ok(!validation.warnings.some(m => /未识别字段/.test(m)), '背景参数不会误报为不支持的颜色');
+  eq(FE.themeImageTransform({ scale: 99, offsetX: -99, offsetY: '2' }), { scale: 4, offsetX: -2, offsetY: 2 }, '图片裁剪与 App 使用相同限值');
+  eq(FE.themeImageTransform({ scale: 'bad', offsetY: false }), { scale: 1, offsetX: 0, offsetY: 0 }, '无效裁剪值使用 App 默认值');
+  eq(FE.themeBackgroundBlur(null), 10, '默认模糊半径为 10');
+  eq(FE.themeBackgroundBlur(99), 25, '模糊半径上限为 25');
+  const bad = { type: 'foxy.keyboard-theme', name: '无效背景', light: { backgroundBlurRadius: -1, keyboardBackgroundScale: 'zoom',
+    wholeKeyboardImage: 1, candidateBarImageTransform: [] }, dark: {} };
+  const badValidation = FE.validateThemeProfile(bad);
+  eq(badValidation.errors, [], 'App 可回退的背景值只提示，不阻止整份主题');
+  for (const field of ['backgroundBlurRadius', 'keyboardBackgroundScale', 'wholeKeyboardImage', 'candidateBarImageTransform']) {
+    ok(badValidation.warnings.some(m => m.includes(field)), field + ' 错误有明确提示');
+  }
 }
 
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');

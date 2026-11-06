@@ -58,17 +58,12 @@ FE.KEYTYPE_ROLE_FIELD = {
   hintRight: 'hintRight'
 };
 
-/* 主题字段的「同义词回退」表：字段本身没给值时，先按这张表再查一次，**再**才走
- * 内置默认。与 FE.THEME_ROLE_FIELD 的区别：
- *   · THEME_ROLE_FIELD 是「布局角色 → 主题字段」的映射（① ② ③ 用的），
- *   · 本表是「主题字段 → 主题字段」的回退链（只服务非按键元素：符号面板等）。
- * 语义依据（App 侧拆分出的新字段）：
- *   symbolTabHighlightTextColor 缺省回退 toolTextColor（选中分组文字）
- *   symbolTabHighlightColor     缺省回退 candidateHighlightColor（选中分组背景）
- * 旧主题没有这两个字段 → 外观与拆分前完全一致。 */
+/* 0.0.1-20f1709 的 mv.c 仅对这两个缺省字段继承 accentColor。
+ * symbolTabHighlight* 已是独立颜色，缺省回落内置槽位，不再跟随工具栏颜色。
+ * 显式 null 与缺键不同：null 使用内置默认，不能走这里的回退。 */
 FE.THEME_FIELD_FALLBACK = {
-  symbolTabHighlightTextColor: 'toolTextColor',
-  symbolTabHighlightColor: 'candidateHighlightColor'
+  preeditHighlightColor: 'accentColor',
+  waterRippleColor: 'accentColor'
 };
 
 /* 方向角色是否有「基础提示色」这一层回落；值 = 基础角色名 */
@@ -346,7 +341,7 @@ FE.resolveThemeField = function (field, opts) {
   if (slot) {
     var v = normColor(slot[field]);
     if (v != null) return { value: v, source: FE.COLOR_SOURCES.THEME_GLOBAL, detail: field };
-    if (alias) {
+    if (alias && !Object.prototype.hasOwnProperty.call(slot, field)) {
       var av = normColor(slot[alias]);
       if (av != null) return { value: av, source: FE.COLOR_SOURCES.THEME_GLOBAL, detail: alias };
     }

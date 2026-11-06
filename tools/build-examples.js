@@ -35,6 +35,7 @@ function loadFE() {
   };
   f('data.js');
   f('app.js');
+  f('symbol-editor.js');
   return global.FE;
 }
 const FE = loadFE();
@@ -56,7 +57,9 @@ function parseExample(text, fileName) {
 }
 
 /* 文件名 → 符号类别。顺序有意义：先判颜文字/emoji 这类更具体的词。 */
-function symbolKindOf(fileName) {
+function symbolKindOf(fileName, parsed) {
+  var typedKind = FE.symbolKindFromType(parsed && parsed.type);
+  if (typedKind) return typedKind;
   const n = String(fileName).toLowerCase();
   if (n.indexOf('颜文字') >= 0 || n.indexOf('kaomoji') >= 0) return 'kaomoji';
   if (n.indexOf('表情') >= 0 || n.indexOf('emoji') >= 0) return 'emoji';
@@ -64,7 +67,8 @@ function symbolKindOf(fileName) {
   return 'symbols';
 }
 for (const f of names) {
-  const text = fs.readFileSync(path.join(exDir, f), 'utf8');
+  /* Embedded text is canonical LF, independent of the checkout's core.autocrlf. */
+  const text = fs.readFileSync(path.join(exDir, f), 'utf8').replace(/\r\n?/g, '\n');
   const parsed = parseExample(text, f);
   if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error(`示例 ${f} 的根节点必须是对象`);
   let kind, symKind = null;
@@ -77,7 +81,8 @@ for (const f of names) {
    * （历史上就是因为缺这条，这三个文件一入库就抛「无法判断示例类型」）。 */
   else if (Array.isArray(parsed.groups) && !parsed.layouts && !parsed.schemas) {
     kind = 'symbol';
-    symKind = symbolKindOf(f);
+    if (parsed.type != null && !FE.symbolKindFromType(parsed.type)) throw new Error(`符号示例 ${f} 的 type 无效`);
+    symKind = symbolKindOf(f, parsed);
   }
   else if (parsed.schemas && !parsed.layouts) kind = 'popup';
   else if (parsed.layouts && !parsed.schemas) kind = 'layout';
@@ -121,7 +126,7 @@ lines.push('  return out;');
 lines.push('})();');
 const outPath = path.join(__dirname, '..', 'js', 'examples-bundle.js');
 fs.writeFileSync(outPath, lines.join('\n') + '\n');
-const defaultSource = fs.readFileSync(path.join(exDir, 'layout-variant.json'), 'utf8');
+const defaultSource = fs.readFileSync(path.join(exDir, 'layout-variant.json'), 'utf8').replace(/\r\n?/g, '\n');
 const defaultPath = path.join(__dirname, '..', 'js', 'default-profile.js');
 fs.writeFileSync(defaultPath, 'window.FE = window.FE || {};\nFE.DEFAULT_PROFILE_TEXT=' + JSON.stringify(defaultSource) + ';\n');
 const layoutN = Object.values(meta).filter(m => m.kind === 'layout').length;

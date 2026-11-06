@@ -4131,7 +4131,7 @@ await sleep(350);
     void plain;
   }
 
-  console.log('== 主题页：渲染 28 色 + 3 类 keyTypes 表单 ==');
+  console.log('== 主题页：渲染新版配色 + 3 类 keyTypes 表单 ==');
   {
     tabs.find(t => t.dataset.tab === 'tab-theme')._fire('click');
     ok($('tab-theme').classList.contains('active'), '切到主题页');
@@ -4141,12 +4141,12 @@ await sleep(350);
     ok(FE.state.themeProfile != null, '内置默认模板已载入');
     FE.renderThemeTab();
 
-    eq(q('#th-colors .color-input').length, 28, '槽位全局配色渲染出 28 个颜色输入框');
+    eq(q('#th-colors .color-input').length, 34, '新版及兼容配色渲染出 34 个颜色输入框');
     /* 字段名以权威顺序出现 */
     const labels = q('#th-colors .th-field-label code').map(c => c.textContent);
-    eq(labels.length, 28, '28 个字段标签');
+    eq(labels.length, 34, '34 个字段标签');
     eq(labels[0], 'keyboardColor', '首个字段是 keyboardColor');
-    eq(labels[27], 'accentColor', '末个字段是 accentColor');
+    eq(labels[33], 'accentColor', '末个字段是 accentColor');
     ok(labels.includes('keyHintTextBottomColor'), '含四方向提示色字段');
 
     /* keyTypes：3 类分组，各自 10 个字段（内置默认只给 FUNCTION/ACTION，
@@ -4239,7 +4239,7 @@ await sleep(350);
       /* ⑤ 载入后 28 个色框都有取色器实例（否则色块预览又不显示，是上一轮修过的坑） */
       FE.renderThemeTab();
       const withPicker = q('#th-colors .color-input').filter(i => !!i.jscolor).length;
-      eq(withPicker, 28, '★ 载入预置主题后 28 个色框都有取色器实例（色块预览可见）');
+      eq(withPicker, 34, '★ 载入预置主题后 34 个色框都有取色器实例（色块预览可见）');
     } finally {
       FE.state.themeProfile = savedThemeProfile;
       FE.state.themeFileName = savedThemeFile;

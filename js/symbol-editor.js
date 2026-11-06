@@ -2,21 +2,19 @@
  * symbol-editor.js — 符号 / Emoji / 颜文字面板编辑标签页
  *
  * 数据是三类独立 JSON（<外部存储>/foxy/frontend/{symbols,emoji,kaomoji}/<名>.json），
- * 格式与 layout/popup **不同**：顶层只有两个键，**没有 type 字段**：
- *   { "multiLine": false, "groups": [ { "names": {"zh":…,"zh-Hant":…,"en":…},
+ * 0.0.1-20f1709 使用 type 区分三类 catalog；无 type 对象和顶层数组仍兼容：
+ *   { "type": "foxy.symbols", "multiLine": false, "groups": [ { "names": {"zh":…,"zh-Hant":…,"en":…},
  *                                       "symbols": ["…","…"] } ] }
  * 证据见 foxy/foxy-app-format-baseline.md §2.2（App 反编译核对）。几个必须照抄的点：
  *   · §2.3 组名语言回退链（symbolGroupLabel）；
  *   · §2.3 空 names / 空 symbols 的组会被 App **整组静默丢弃** → 校验器报警；
- *   · §2.5 multiLine 语义：true → 每行 1 格、行高 WRAP_CONTENT（自适应）；
- *                          false → 每行 6 格、**固定 40dp 高**（长条目被等比缩小到很小）；
+ *   · multiLine 只决定每行格数；所有条目均单行等比缩小（ke0 / zc / yc）。
+ *     true → 每行 1 格、最小 40dp；false → 每行 6 格、固定 40dp。
  *   · §2.5 旧格式兼容：顶层直接是数组时按 {multiLine:false, groups:[…]} 处理；
  *   · §2.1 目录里的文件**不会被自动读取**：必须在「设置 → 符号布局」里选中该 catalog
  *     才生效（内置走 APK assets，放同名文件不会覆盖内置）。
  *
- * ⚠️ 符号三文件**不能**入库 examples/（AGENT.md D8/§4.8）：顶层 {multiLine,groups}
- * 会让 build-examples.js 抛「无法判断示例类型」。所以本页的「示例」下拉用的是
- * 文件内自带的极小内置样例（FE.SYMBOL_SAMPLES），与 examples-bundle 无关。
+ * 示例优先读取 examples-bundle；FE.SYMBOL_SAMPLES 是离线兜底的小样例。
  */
 (function () {
 'use strict';
@@ -31,15 +29,15 @@ var FE = (window.FE = window.FE || {});
  * 值为准（缺省 false，见 §2.5），颜文字这类多字符条目才默认 true。 */
 FE.SYMBOL_KINDS = [
   {
-    id: 'symbols', label: '符号', dir: 'symbols', file: 'symbols.json', multiLine: false,
+    id: 'symbols', type: 'foxy.symbols', label: '符号', dir: 'symbols', file: 'symbols.json', multiLine: false,
     desc: '单字符符号（每行 6 格）'
   },
   {
-    id: 'emoji', label: 'Emoji', dir: 'emoji', file: 'emoji.json', multiLine: false,
+    id: 'emoji', type: 'foxy.emoji', label: 'Emoji', dir: 'emoji', file: 'emoji.json', multiLine: false,
     desc: 'Emoji 表情（每行 6 格）'
   },
   {
-    id: 'kaomoji', label: '颜文字', dir: 'kaomoji', file: 'kaomoji.json', multiLine: true,
+    id: 'kaomoji', type: 'foxy.kaomoji', label: '颜文字', dir: 'kaomoji', file: 'kaomoji.json', multiLine: true,
     desc: '多字符颜文字（每行 1 格，默认 multiLine）'
   }
 ];
@@ -50,6 +48,14 @@ FE.symbolKindMeta = function (kind) {
   for (var i = 0; i < list.length; i++) if (list[i].id === kind) return list[i];
   for (var j = 0; j < list.length; j++) if (kind && String(kind).toLowerCase() === list[j].id) return list[j];
   return list[0];
+};
+
+/* 显式类型优先于当前页签或文件名，避免把新版颜文字导入符号槽。 */
+FE.symbolKindFromType = function (type) {
+  for (var i = 0; i < FE.SYMBOL_KINDS.length; i++) {
+    if (FE.SYMBOL_KINDS[i].type === type) return FE.SYMBOL_KINDS[i].id;
+  }
+  return null;
 };
 
 /* 字符宽度（字形簇数）：用于 multiLine=false 的裁切判断。
@@ -112,12 +118,13 @@ function symGraphemesLite(s) {
  * 只保留 names / symbols 两个已知键（多余的键不会写回文件）；
  * names 值与 symbols 条目统一成字符串；无法识别的分组条目直接丢弃。 */
 FE.normalizeSymbolProfile = function (kind, p) {
-  var meta = FE.symbolKindMeta(kind);
-  var out = { multiLine: false, groups: [] };
+  var meta = FE.symbolKindMeta(kind || FE.symbolKindFromType(p && p.type));
+  var out = { type: meta.type, multiLine: false, groups: [] };
   var rawGroups = null;
   if (Array.isArray(p)) {
     rawGroups = p;                       /* 旧格式：顶层数组 */
   } else if (FE.isPlainObject(p)) {
+    if (Object.prototype.hasOwnProperty.call(p, 'type')) out.type = p.type;
     out.multiLine = (p.multiLine === true || p.multiLine === 'true');
     rawGroups = Array.isArray(p.groups) ? p.groups : [];
   } else {
@@ -154,10 +161,10 @@ FE.normalizeSymbolProfile = function (kind, p) {
   return out;
 };
 
-/* 序列化：顶层键序固定为 multiLine → groups（App 只认这两个键，无 type）。 */
-FE.serializeSymbolProfile = function (p) {
-  var n = FE.normalizeSymbolProfile(null, p);
-  var ordered = { multiLine: n.multiLine === true, groups: [] };
+/* 旧文件在导出时补上当前类别的 type，与新版 App 的迁移规则一致（by1.g）。 */
+FE.serializeSymbolProfile = function (p, kind) {
+  var n = FE.normalizeSymbolProfile(kind, p);
+  var ordered = { type: n.type, multiLine: n.multiLine === true, groups: [] };
   n.groups.forEach(function (g) {
     ordered.groups.push({ names: g.names, symbols: g.symbols });
   });
@@ -218,6 +225,13 @@ FE.validateSymbolProfile = function (kind, p) {
     errors.push('符号数据必须是 JSON 对象（旧格式也接受顶层数组）');
     return { errors: errors, warnings: warnings };
   }
+  if (!Array.isArray(p) && Object.prototype.hasOwnProperty.call(p, 'type')) {
+    var typedKind = FE.symbolKindFromType(p.type);
+    if (!typedKind) errors.push('type 必须为 foxy.symbols / foxy.emoji / foxy.kaomoji');
+    else if (kind && typedKind !== FE.symbolKindMeta(kind).id) {
+      errors.push('type 与当前类别不匹配：' + p.type + ' 属于' + FE.symbolKindMeta(typedKind).label);
+    }
+  }
   var groups = Array.isArray(p) ? p : p.groups;
   if (!Array.isArray(groups)) {
     errors.push('groups 必须是数组');
@@ -267,7 +281,7 @@ FE.validateSymbolProfile = function (kind, p) {
      * 基线 §2.5 的"裁切"表述与 z9 实现不符，此处按实机行为描述。 */
     warnings.push('multiLine 为 false 但有 ' + multi + ' 个多字符条目（如「' +
       symEllipsis(multiSample, 12) + '」）：App 端格子固定 40dp 高，这类条目会被**等比缩小**' +
-      '到很小（不是裁掉，只是可读性差），建议开启 multiLine（每行 1 格、高度自适应）');
+      '到很小，建议开启“每行显示一项”，增加文字可用宽度');
   }
   return { errors: errors, warnings: warnings };
 };
@@ -319,10 +333,94 @@ FE.SYMBOL_SAMPLES = {
 var state = FE.state;
 var h = FE.h, clearEl = FE.clearEl, $ = FE.$;
 
+/* App 的 zc 用完整文本宽高计算 Proportional 缩放，WRAP_CONTENT 也不换行。
+ * 预览与编辑列表共用；只改显示节点，保留原始条目的空白和换行数据。 */
+FE.symbolTextLabel = function (text) {
+  return h('span', { class: 'sym-fit-label' }, String(text).replace(/\r\n|[\r\n\u2028\u2029]/g, ' '));
+};
+FE.fitSymbolText = function (root) {
+  if (!root || typeof window.getComputedStyle !== 'function') return;
+  var labels = Array.prototype.slice.call(root.querySelectorAll('.sym-fit-label'));
+  labels.forEach(function (label) { label.style.fontSize = ''; label.style.transform = ''; });
+  var measures = labels.map(function (label) {
+    var cell = label.parentNode, style = window.getComputedStyle(cell);
+    var box = cell.getBoundingClientRect(), ink = label.getBoundingClientRect();
+    function px(name) { return parseFloat(style[name]) || 0; }
+    return { label: label, size: px('fontSize'), width: ink.width, height: ink.height,
+      availableWidth: box.width - px('paddingLeft') - px('paddingRight') - px('borderLeftWidth') - px('borderRightWidth'),
+      availableHeight: box.height - px('paddingTop') - px('paddingBottom') - px('borderTopWidth') - px('borderBottomWidth') };
+  });
+  measures.forEach(function (m) {
+    if (!(m.availableWidth > 0 && m.availableHeight > 0 && m.width > 0 && m.height > 0)) return;
+    var scale = Math.min(1, m.availableWidth / m.width, m.availableHeight / m.height);
+    if (scale < 1) m.label.style.fontSize = (m.size * scale) + 'px';
+  });
+  /* 浏览器可能设置了最小字号。最后补一次等比缩放，超长条目仍完整可见。 */
+  measures.forEach(function (m) {
+    if (!(m.availableWidth > 0 && m.availableHeight > 0)) return;
+    var ink = m.label.getBoundingClientRect();
+    var scale = Math.min(1, m.availableWidth / ink.width, m.availableHeight / ink.height);
+    if (scale > 0 && scale < 1) m.label.style.transform = 'scale(' + scale + ')';
+  });
+};
+var symbolFitRoots = [], symbolFitObserver = null, symbolFitPending = false;
+function scheduleSymbolTextFit() {
+  if (symbolFitPending) return;
+  symbolFitPending = true;
+  function fit() {
+    symbolFitPending = false;
+    symbolFitRoots.forEach(function (root) { FE.fitSymbolText(root); });
+  }
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fit);
+  else fit();
+}
+FE.watchSymbolText = function (root) {
+  if (!root || typeof window.getComputedStyle !== 'function') return;
+  if (symbolFitRoots.indexOf(root) < 0) {
+    symbolFitRoots.push(root);
+    root.addEventListener('toggle', scheduleSymbolTextFit, true);
+    if (typeof ResizeObserver === 'function') {
+      if (!symbolFitObserver) symbolFitObserver = new ResizeObserver(scheduleSymbolTextFit);
+      symbolFitObserver.observe(root);
+    }
+    if (symbolFitRoots.length === 1) {
+      window.addEventListener('resize', scheduleSymbolTextFit);
+      if (document.fonts) {
+        document.fonts.ready.then(scheduleSymbolTextFit);
+        document.fonts.addEventListener('loadingdone', scheduleSymbolTextFit);
+      }
+    }
+  }
+  FE.fitSymbolText(root);
+};
+
 var DEFAULT_FILES = { symbols: 'symbols.json', emoji: 'emoji.json', kaomoji: 'kaomoji.json' };
-var symJsonDirty = false;
-FE.readSymbolJsonDraft=function(){var e=$('sym-json');return symJsonDirty&&e?e.value:null;};
-FE.restoreSymbolJsonDraft=function(text){var e=$('sym-json');if(typeof text==='string'&&e){e.value=text;symJsonDirty=true;}};
+function symbolJsonDrafts() {
+  if (!FE.isPlainObject(state.symbolJsonDrafts)) state.symbolJsonDrafts = {};
+  return state.symbolJsonDrafts;
+}
+function setSymbolJsonDraft(text, kind) {
+  var drafts = symbolJsonDrafts(), key = kind || state.symbolKind;
+  if (typeof text === 'string') drafts[key] = text;
+  else delete drafts[key];
+}
+FE.readSymbolJsonDraft = function (kind) {
+  var text = symbolJsonDrafts()[kind || state.symbolKind];
+  return typeof text === 'string' ? text : null;
+};
+FE.readSymbolJsonDrafts = function () { return FE.deepClone(symbolJsonDrafts()); };
+FE.restoreSymbolJsonDraft = function (text) {
+  if (typeof text !== 'string') return;
+  setSymbolJsonDraft(text);
+  renderSymJson(true);
+};
+FE.restoreSymbolJsonDrafts = function (drafts) {
+  state.symbolJsonDrafts = {};
+  FE.SYMBOL_KINDS.forEach(function (meta) {
+    if (drafts && typeof drafts[meta.id] === 'string') setSymbolJsonDraft(drafts[meta.id], meta.id);
+  });
+  renderSymJson(true);
+};
 var symInited = false;
 var pathHintEl = null;
 
@@ -368,7 +466,7 @@ function switchSymbolKind(kind) {
   }
   state.symbolProfile = state.symbolProfiles[meta.id];
   state.symbolSelEntry = null;
-  symJsonDirty = false;
+  renderSymJson(true);
   return state.symbolProfile;
 }
 
@@ -424,6 +522,7 @@ function renderSymbolsTab() {
   renderSymJson();
   renderSymStatus();
   renderSymPathHint();
+  FE.watchSymbolText($('sym-list'));
 }
 
 function renderSymToolbar() {
@@ -492,6 +591,7 @@ function renderSymGroupList() {
   idx.forEach(function (gi) {
     host.appendChild(symGroupCard(gi, groups[gi], names[gi], openSet));
   });
+  FE.watchSymbolText(host);
 }
 
 function symGroupCard(gi, g, displayName, openSet) {
@@ -575,13 +675,9 @@ function buildSymGroupEditor(gi, g, displayName) {
   var selIdx = (selEntry && selEntry.group === displayName && selEntry.index < limit) ? selEntry.index : -1;
 
   function cellStyle(selected) {
-    var st = multi
-      ? { minHeight: '40px', padding: '4px 8px', border: '1px solid var(--border)',
-          borderRadius: '6px', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-          fontSize: '14px', cursor: 'pointer' }
-      : { height: '40px', lineHeight: '30px', padding: '2px 6px', border: '1px solid var(--border)',
-          borderRadius: '6px', overflow: 'hidden', whiteSpace: 'nowrap',
-          textOverflow: 'ellipsis', fontSize: '14px', cursor: 'pointer' };
+    var st = { height: '40px', minWidth: '0', padding: '4px 8px', border: '1px solid var(--border)',
+      boxSizing: 'border-box', borderRadius: '6px', overflow: 'hidden', whiteSpace: 'nowrap',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', cursor: 'pointer' };
     if (selected) { st.outline = '2px solid #4c8dff'; st.outlineOffset = '1px'; }
     return st;
   }
@@ -589,8 +685,8 @@ function buildSymGroupEditor(gi, g, displayName) {
     var cell = h('div', {
       class: 'sym-cell' + (k === selIdx ? ' sym-cell-sel' : ''),
       style: cellStyle(k === selIdx),
-      title: (multi ? '' : '长文本会缩小显示：') + text
-    }, text === '' ? '（空）' : text);
+      title: text
+    }, FE.symbolTextLabel(text === '' ? '（空）' : text));
     cell.addEventListener('click', function () { select(k); });
     cells.push(cell);
     return cell;
@@ -659,8 +755,8 @@ function buildSymGroupEditor(gi, g, displayName) {
    * 这里按实机行为表述，免得用户以为"少几个字能看到"。 */
   host.appendChild(h('div', { class: 'status dim' },
     multi
-      ? '每行显示一项，适合长文本和颜文字。'
-      : '每行显示多项，长文本会缩小。看不清时可开启“每行显示一项”。'));
+      ? '每行显示一项；文字自动缩小、保持单行，适合颜文字和长文本。'
+      : '每行显示多项；文字自动缩小、保持单行。看不清时可开启“每行显示一项”。'));
 
   editBtn.addEventListener('click', async function () {
     if (selIdx < 0) return;
@@ -734,7 +830,7 @@ function renderSymStatus() {
   if (v.warnings.length) parts.push(h('span', { class: 'st-warn' }, (parts.length ? ' ' : '') + '⚠ ' + v.warnings.length + ' 个提示'));
   if (!v.errors.length && !v.warnings.length) parts.push(h('span', { class: 'st-ok' }, '✓ 校验通过'));
   parts.push(' · ' + FE.symbolKindMeta(state.symbolKind).label + ' · ' + groups.length + ' 组 · ' + total + ' 条');
-  parts.push(' · multiLine = ' + (profile.multiLine === true ? 'true（每行 1 格 · 高度自适应）' : 'false（每行 6 格 · 固定 40dp 高）'));
+  parts.push(' · ' + (profile.multiLine === true ? '每行 1 格' : '每行 6 格') + ' · 文字单行自动缩小');
   host.appendChild(h('span', null, parts));
   if (state.symbolLegacy && state.symbolLegacy[state.symbolKind]) {
     host.appendChild(h('div', { class: 'st-warn' }, '⚠ 本文件是旧格式（顶层数组），加载时已按 multiLine=false 处理'));
@@ -750,12 +846,12 @@ function renderSymStatus() {
 }
 
 /* JSON 卡：与弹出菜单页同款（聚焦中或已改动时不回写，避免打字被覆盖） */
-function renderSymJson() {
+function renderSymJson(force) {
   var ta = $('sym-json');
   if (!ta) return;
-  if (document.activeElement === ta) return;
-  if (symJsonDirty) return;
-  ta.value = FE.serializeSymbolProfile(sp());
+  if (!force && document.activeElement === ta) return;
+  var draft = FE.readSymbolJsonDraft();
+  ta.value = draft != null ? draft : FE.serializeSymbolProfile(sp(), state.symbolKind);
 }
 
 function symFormatIssues(issues) {
@@ -767,39 +863,48 @@ function symFormatIssues(issues) {
 /* ================================================================
  * 四、导入 / 导出
  * ================================================================ */
+function applySymbolProfile(meta, profile, legacy, fileName) {
+  FE.mutate(function () {
+    state.symbolProfiles[meta.id] = profile;
+    state.symbolLegacy[meta.id] = legacy;
+    if (fileName) state.symbolFileNames[meta.id] = String(fileName);
+    setSymbolJsonDraft(null, meta.id);
+    switchSymbolKind(meta.id);
+    state.lastParseError = '';
+  });
+}
+function symbolImportError(message) {
+  state.lastParseError = message;
+  setSymStatus(message, 'error');
+  return false;
+}
 FE.loadSymbolProfileText = function (text, kind, fileName) {
   ensureSymbolState();
   var meta = FE.symbolKindMeta(kind == null ? state.symbolKind : kind);
   var raw;
   try { raw = JSON.parse(FE.sanitizeJsonText(text)); }
   catch (e) {
-    setSymStatus('JSON 解析失败: ' + e.message, 'error');
-    return false;
+    return symbolImportError('JSON 解析失败: ' + e.message);
   }
   if (!Array.isArray(raw) && !FE.isPlainObject(raw)) {
-    setSymStatus('顶层必须是对象 { multiLine, groups }（旧格式也可直接是数组）', 'error');
-    return false;
+    return symbolImportError('顶层必须是对象 { multiLine, groups }（旧格式也可直接是数组）');
   }
-  if (FE.isPlainObject(raw) && raw.type != null) {
-    /* 布局/弹出菜单文件常被误拖到这里：给出明确提示而不是默默归一化成空文档 */
-    setSymStatus('这看起来是 ' + JSON.stringify(raw.type) + ' 文件，不是符号面板数据（符号文件顶层只有 multiLine / groups，没有 type）', 'error');
-    return false;
+  if (FE.isPlainObject(raw) && Object.prototype.hasOwnProperty.call(raw, 'type')) {
+    var typedKind = FE.symbolKindFromType(raw.type);
+    if (!typedKind) {
+      return symbolImportError('无法作为符号面板导入：type 必须为 foxy.symbols / foxy.emoji / foxy.kaomoji，当前为 ' + JSON.stringify(raw.type));
+    }
+    meta = FE.symbolKindMeta(typedKind);
   }
   var legacy = Array.isArray(raw);
   var profile = FE.normalizeSymbolProfile(meta.id, raw);
-  state.symbolProfiles[meta.id] = profile;
-  state.symbolLegacy[meta.id] = legacy;
-  if (fileName) state.symbolFileNames[meta.id] = String(fileName);
-  switchSymbolKind(meta.id);
-  symJsonDirty = false;
-  if (FE.afterChange) FE.afterChange();
-  renderSymbolsTab();
+  applySymbolProfile(meta, profile, legacy, fileName);
   return true;
 };
 
 function symExport() {
   var meta = FE.symbolKindMeta(state.symbolKind);
-  var text = FE.serializeSymbolProfile(sp());
+  var text = FE.serializeSymbolProfile(sp(), state.symbolKind);
   var name = symFileName();
   if (typeof Blob !== 'function' || typeof URL === 'undefined' || !URL.createObjectURL) return;
   var blob = new Blob([text], { type: 'application/json;charset=utf-8' });
@@ -842,6 +947,7 @@ function initSymbolsTab() {
      * 点「载入」会把旧类别的样例装进当前类别（实测抓出来的）。 */
     if (ex) ex.value = state.symbolKind;
     renderSymbolsTab();
+    if (FE.renderPreviewOnly) FE.renderPreviewOnly();
     setSymStatus('已切换到 ' + FE.symbolKindMeta(state.symbolKind).label + '。', '');
   });
 
@@ -860,9 +966,10 @@ function initSymbolsTab() {
     var file = this.files && this.files[0];
     this.value = '';
     if (!file) return;
+    var importKind = state.symbolKind;
     var reader = new FileReader();
     reader.onload = function () {
-      if (FE.loadSymbolProfileText(String(reader.result), state.symbolKind, file.name)) {
+      if (FE.loadSymbolProfileText(String(reader.result), importKind, file.name)) {
         setSymStatus('已导入 ' + file.name + '（' + FE.symbolKindMeta(state.symbolKind).label + '）', 'ok');
       }
     };
@@ -932,12 +1039,8 @@ function initSymbolsTab() {
       prof = FE.normalizeSymbolProfile(kind, sample);
       srcNote = '内置样例（该类别没有示例文件）';
     }
-    state.symbolProfiles[meta.id] = prof;
-    switchSymbolKind(kind);
+    applySymbolProfile(meta, prof, false);
     if (ex) ex.value = state.symbolKind;
-    symJsonDirty = false;
-    if (FE.afterChange) FE.afterChange();
-    renderSymbolsTab();
     setSymStatus('已载入 ' + srcNote + '（' + meta.label + '，' + prof.groups.length + ' 组）。' +
       '导出时会写成 ' + symFileName() + '。', 'ok');
   });
@@ -969,12 +1072,13 @@ function initSymbolsTab() {
 
   /* JSON 卡：实时同步 + 应用 + 格式化并修复 */
   var ta = $('sym-json');
-  if (ta) ta.addEventListener('input', function () { symJsonDirty = true; });
+  if (ta) ta.addEventListener('input', function () { setSymbolJsonDraft(ta.value); });
   on('sym-json-apply', 'click', function () {
     if (!ta) return;
+    var draftKind = state.symbolKind;
     var rep = FE.inspectJsonText ? FE.inspectJsonText(ta.value) : { total: 0, issues: [] };
     if (FE.loadSymbolProfileText(ta.value, state.symbolKind)) {
-      symJsonDirty = false;
+      setSymbolJsonDraft(null, draftKind);
       setSymJsonStatus(rep.total
         ? '✓ 已应用（自动修复 ' + rep.total + ' 处问题：' + symFormatIssues(rep.issues) + '）'
         : '✓ 已应用', rep.total ? 'warn' : 'ok');
@@ -991,7 +1095,7 @@ function initSymbolsTab() {
       return;
     }
     ta.value = JSON.stringify(JSON.parse(rep.fixedText), null, 2);
-    symJsonDirty = true;
+    setSymbolJsonDraft(ta.value);
     setSymJsonStatus(rep.total ? '已格式化并修复 ' + rep.total + ' 处问题（尚未应用）' : '已格式化（尚未应用）', 'ok');
   });
 

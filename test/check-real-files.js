@@ -61,8 +61,10 @@ for (const p of files) {
     errs = r.errors; warns = r.warnings;
   } else if (parsed && isSymbol) {
     const kinds = ['symbols', 'emoji', 'kaomoji'];
-    const kind = kinds.find(k => name.toLowerCase().indexOf(k) >= 0) ||
+    const kind = FE.symbolKindFromType(parsed.type) || kinds.find(k => name.toLowerCase().indexOf(k) >= 0) ||
       (/颜文字|kaomoji/i.test(name) ? 'kaomoji' : (/表情|emoji/i.test(name) ? 'emoji' : 'symbols'));
+    const validation = FE.validateSymbolProfile(kind, parsed);
+    errs = validation.errors; warns = validation.warnings;
     const norm = FE.normalizeSymbolProfile(kind, parsed);
     /* 符号文件的校验：分组必须有可显示的名字，symbols 必须是字符串数组 */
     norm.groups.forEach((g, gi) => {

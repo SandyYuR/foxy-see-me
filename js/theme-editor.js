@@ -3,7 +3,8 @@
  *
  * 格式依据（不要照样本子集写）：
  *   主题 JSON 顶层 = type / name / light / dark；
- *   每个槽位（light、dark）= **28 个颜色字段** + `keyTypes`（3 类 × 10 字段）。
+ *   0.0.1-20f1709：每个槽位有 33 个颜色字段、背景图片参数及 keyTypes。
+ *   popupBorderColor 作为旧主题字段继续保留，但新版 App 不使用它。
  *
  * ⚠️ 两处必须记住的口径：
  *   1) `light` / `dark` 是**两套独立配色槽位**，与预览右上角的深浅开关
@@ -22,22 +23,49 @@ var FE = (window.FE = window.FE || {});
  * 一、纯逻辑部分（Node 测试可直接使用）
  * ================================================================ */
 
-/* 28 个颜色字段（顺序即导出顺序，取自 App 反编译核对结果，勿改序）。
- * 末两个 `symbolTabHighlight*` 是 App 拆分「符号/表情/颜文字面板选中分组」配色后的新字段：
- * 它们**不参与按键着色**，只用于符号面板左侧分组；缺省时分别回退 toolTextColor /
- * candidateHighlightColor（见 color-source.js 的 FE.THEME_FIELD_FALLBACK），
- * 所以旧主题外观完全不变。必须排在 accentColor 之前，保持「accentColor 收尾」的既有口径。 */
+/* 新版 mv 的 33 个颜色字段，另保留旧 popupBorderColor（新版不绘制）。
+ * 顺序沿用编辑器的配色分组，accentColor 仍收尾。
+ * symbolTabHighlight* 独立回落内置值；两条 accentColor 回退见 themeSlotColors。 */
 FE.THEME_COLOR_FIELDS = [
   'keyboardColor', 'altKeyboardColor', 'candidateBarColor', 'keyTextColor',
   'keyHintTextColor', 'keyHintTextTopColor', 'keyHintTextBottomColor',
   'keyHintTextLeftColor', 'keyHintTextRightColor', 'keyBackgroundColor',
-  'keyPressedColor', 'keyBorderColor', 'keyShadowColor', 'candidateTextColor',
+  'keyPressedColor', 'keyBorderColor', 'keyShadowColor', 'waterRippleColor', 'candidateTextColor',
   'candidateCommentColor', 'candidateBackgroundColor', 'candidatePressedColor',
-  'candidateHighlightColor', 'toolTextColor', 'preeditTextColor',
-  'preeditBackgroundColor', 'popupTextColor', 'popupBackgroundColor',
+  'candidateHighlightColor', 'candidateHighlightTextColor', 'candidateHighlightCommentColor',
+  'candidateLabelColor', 'candidateHighlightLabelColor', 'toolTextColor', 'preeditTextColor',
+  'preeditBackgroundColor', 'preeditHighlightColor', 'popupTextColor', 'popupBackgroundColor',
   'popupBorderColor', 'voiceWaveColor',
   'symbolTabHighlightTextColor', 'symbolTabHighlightColor', 'accentColor'
 ];
+
+/* mv.c / mv.e / mv.g：背景字段属于各自的 light / dark 槽位。 */
+FE.THEME_BACKGROUNDS = [
+  { label: '整张键盘', image: 'wholeKeyboardImage', transform: 'wholeKeyboardImageTransform' },
+  { label: '按键区', image: 'keyboardBackgroundImage', scale: 'keyboardBackgroundScale', transform: 'keyboardBackgroundTransform' },
+  { label: '候选栏 / 工具栏', image: 'candidateBarImage', scale: 'candidateBarImageScale', transform: 'candidateBarImageTransform' }
+];
+FE.THEME_BACKGROUND_FIELDS = ['backgroundBlurRadius'];
+FE.THEME_BACKGROUNDS.forEach(function (b) {
+  FE.THEME_BACKGROUND_FIELDS.push(b.image, b.transform);
+  if (b.scale) FE.THEME_BACKGROUND_FIELDS.push(b.scale);
+});
+FE.THEME_IMAGE_SCALES = ['cover', 'contain', 'fill'];
+FE.THEME_TRANSFORM_FIELDS = [
+  { field: 'scale', label: '缩放', min: 1, max: 4, value: 1 },
+  { field: 'offsetX', label: '水平偏移', min: -2, max: 2, value: 0 },
+  { field: 'offsetY', label: '垂直偏移', min: -2, max: 2, value: 0 }
+];
+function backgroundNumber(value, fallback, min, max) {
+  var n = (typeof value === 'number' || (typeof value === 'string' && value.trim())) ? Number(value) : NaN;
+  return isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
+}
+FE.themeImageTransform = function (value) {
+  var input = FE.isPlainObject(value) ? value : {}, out = {};
+  FE.THEME_TRANSFORM_FIELDS.forEach(function (f) { out[f.field] = backgroundNumber(input[f.field], f.value, f.min, f.max); });
+  return out;
+};
+FE.themeBackgroundBlur = function (value) { return backgroundNumber(value, 10, 0, 25); };
 
 /* keyTypes 的键名全集（大小写必须与枚举完全一致）。LETTER 常被漏掉，但它是
  * 字母键最常用的槽位，缺了它字母键就只能回落全局字段。 */
@@ -90,6 +118,10 @@ var BUILTIN_DARK = {
   keyShadowColor: '#FF252525', candidateTextColor: '#FFFAFAFA', candidateCommentColor: '#FFACACAC',
   candidateBackgroundColor: '#FF373737', candidatePressedColor: '#33FFFFFF',
   candidateHighlightColor: '#FF3D4A6B', toolTextColor: '#FFFAFAFA', preeditTextColor: '#FFFAFAFA',
+  candidateHighlightTextColor: '#FFFAFAFA', candidateHighlightCommentColor: '#FFACACAC',
+  candidateLabelColor: '#FFACACAC', candidateHighlightLabelColor: '#FFFAFAFA',
+  symbolTabHighlightTextColor: '#FFFAFAFA', symbolTabHighlightColor: '#FF3D4A6B',
+  preeditHighlightColor: '#FF5E97F6', waterRippleColor: '#FF5E97F6',
   preeditBackgroundColor: '#CC2D2D2D', popupTextColor: '#FFFAFAFA', popupBackgroundColor: '#FF373737',
   popupBorderColor: '#FF505050', voiceWaveColor: '#FF5E97F6', accentColor: '#FF5E97F6'
 };
@@ -100,6 +132,10 @@ var BUILTIN_LIGHT = {
   keyShadowColor: '#FFC2C2C2', candidateTextColor: '#FF212121', candidateCommentColor: '#FF6E6E6E',
   candidateBackgroundColor: '#FFEEEEEE', candidatePressedColor: '#1F000000',
   candidateHighlightColor: '#FFD2E3FC', toolTextColor: '#FF212121', preeditTextColor: '#FF212121',
+  candidateHighlightTextColor: '#FF212121', candidateHighlightCommentColor: '#FF6E6E6E',
+  candidateLabelColor: '#FF6E6E6E', candidateHighlightLabelColor: '#FF212121',
+  symbolTabHighlightTextColor: '#FF212121', symbolTabHighlightColor: '#FFD2E3FC',
+  preeditHighlightColor: '#FF4285F4', waterRippleColor: '#FF4285F4',
   preeditBackgroundColor: '#CCFFFFFF', popupTextColor: '#FF212121', popupBackgroundColor: '#FFEEEEEE',
   popupBorderColor: '#FFD0D0D0', voiceWaveColor: '#FF4285F4', accentColor: '#FF4285F4'
 };
@@ -294,9 +330,10 @@ FE.validateThemeProfile = function (p) {
      * （`uk.d` 以 `xw0.i()/e()` 为基逐字段合并，见 themeSlotColors）。*/
     var filled = FE.THEME_COLOR_FIELDS.filter(function (f) { return s[f] != null; });
     if (!filled.length) {
-      warn(slot + ' 槽位没有给出任何颜色字段 —— 该槽位的 28 色会全部采用 App 内置默认主题的取值');
+      warn(slot + ' 槽位没有给出任何颜色字段 —— 将采用 App 内置默认配色');
     }
     checkColorMap(s, slot, err, warn, false);
+    checkThemeBackgrounds(s, slot, warn);
     checkKeyTypes(s.keyTypes, slot + '.keyTypes', err, warn);
   });
   if (p.keyTypes != null) {
@@ -316,6 +353,7 @@ function checkColorMap(map, where, err, warn, isKeyType) {
   var known = isKeyType ? FE.THEME_KEYTYPE_FIELDS : FE.THEME_COLOR_FIELDS;
   Object.keys(map).forEach(function (k) {
     if (k === 'keyTypes') return;
+    if (!isKeyType && FE.THEME_BACKGROUND_FIELDS.indexOf(k) >= 0) return;
     if (known.indexOf(k) < 0) {
       warn(where + ' 含未识别字段 “' + k + '”（App 会忽略）');
       return;
@@ -326,6 +364,33 @@ function checkColorMap(map, where, err, warn, isKeyType) {
       err(where + '.' + k + ' 颜色值非法：' + JSON.stringify(v) +
         '（应为 #RGB / #ARGB / #RRGGBB / #AARRGGBB）');
     }
+  });
+}
+
+function checkThemeBackgrounds(slot, where, warn) {
+  function number(value, field, min, max, fallback) {
+    if (value == null) return;
+    var n = (typeof value === 'number' || (typeof value === 'string' && value.trim())) ? Number(value) : NaN;
+    if (!isFinite(n)) warn(where + '.' + field + ' 不是有效数字，App 将使用 ' + fallback);
+    else if (n < min || n > max) warn(where + '.' + field + ' 超出 ' + min + '～' + max + '，App 将限制到此范围');
+  }
+  number(slot.backgroundBlurRadius, 'backgroundBlurRadius', 0, 25, 10);
+  FE.THEME_BACKGROUNDS.forEach(function (b) {
+    if (slot[b.image] != null && typeof slot[b.image] !== 'string') {
+      warn(where + '.' + b.image + ' 应为图片路径字符串，App 将忽略此值');
+    }
+    if (b.scale && slot[b.scale] != null && FE.THEME_IMAGE_SCALES.indexOf(String(slot[b.scale]).toLowerCase()) < 0) {
+      warn(where + '.' + b.scale + ' 应为 cover / contain / fill，App 将使用 cover');
+    }
+    var transform = slot[b.transform];
+    if (transform == null) return;
+    if (!FE.isPlainObject(transform)) {
+      warn(where + '.' + b.transform + ' 应为对象，App 将使用默认裁剪参数');
+      return;
+    }
+    FE.THEME_TRANSFORM_FIELDS.forEach(function (f) {
+      number(transform[f.field], b.transform + '.' + f.field, f.min, f.max, f.value);
+    });
   });
 }
 
@@ -373,10 +438,13 @@ FE.serializeThemeProfile = function (p) {
     FE.THEME_COLOR_FIELDS.forEach(function (f) {
       if (s[f] !== undefined) o[f] = s[f];
     });
+    FE.THEME_BACKGROUND_FIELDS.forEach(function (f) {
+      if (s[f] !== undefined) o[f] = s[f];
+    });
     if (s.keyTypes != null) o.keyTypes = orderKeyTypes(s.keyTypes);
     /* 槽位内 28 色与 keyTypes 之外的字段（含未知字段）原样附后 */
     Object.keys(s).forEach(function (k) {
-      if (k === 'keyTypes' || FE.THEME_COLOR_FIELDS.indexOf(k) >= 0) return;
+      if (k === 'keyTypes' || FE.THEME_COLOR_FIELDS.indexOf(k) >= 0 || FE.THEME_BACKGROUND_FIELDS.indexOf(k) >= 0) return;
       o[k] = s[k];
     });
     out[slot] = o;
@@ -439,6 +507,10 @@ FE.themeSlotColors = function (slot) {
   FE.THEME_COLOR_FIELDS.forEach(function (f) {
     var n = FE.normalizeThemeColor(s[f]);
     out[f] = (s[f] != null && n) ? n : builtin[f];
+  });
+  /* mv.c：仅字段缺省时继承 accentColor；显式 null 仍使用内置默认值。 */
+  ['preeditHighlightColor', 'waterRippleColor'].forEach(function (f) {
+    if (!Object.prototype.hasOwnProperty.call(s, f)) out[f] = out.accentColor;
   });
   /* keyTypes：**分组级替换**再由内置补缺（`uk.java:121-137`）。
    *
@@ -552,16 +624,22 @@ var FIELD_DOC = {
   keyPressedColor: '按键按下色（默认）',
   keyBorderColor: '按键边框色（默认）',
   keyShadowColor: '按键阴影色（默认）',
+  waterRippleColor: '按键水波纹颜色（未设置时使用强调色）',
   candidateTextColor: '候选字文字',
   candidateCommentColor: '候选注释文字',
   candidateBackgroundColor: '候选背景',
   candidatePressedColor: '候选按下',
   candidateHighlightColor: '候选高亮',
+  candidateHighlightTextColor: '选中候选文字',
+  candidateHighlightCommentColor: '选中候选注释',
+  candidateLabelColor: '候选序号',
+  candidateHighlightLabelColor: '选中候选序号',
   toolTextColor: '工具栏图标与文字（未选中）',
-  symbolTabHighlightTextColor: '符号面板选中分组文字（空 = 继承 toolTextColor）',
-  symbolTabHighlightColor: '符号面板选中分组背景（空 = 继承 candidateHighlightColor）',
+  symbolTabHighlightTextColor: '符号面板选中分组文字（空 = 内置默认）',
+  symbolTabHighlightColor: '符号面板选中分组背景（空 = 内置默认）',
   preeditTextColor: '预编辑文字',
   preeditBackgroundColor: '预编辑背景',
+  preeditHighlightColor: '预编辑选中背景（未设置时使用强调色）',
   popupTextColor: '按键弹出浮层文字',
   popupBackgroundColor: '按键弹出浮层背景',
   popupBorderColor: '弹出浮层边框（当前版本不显示）',
@@ -770,6 +848,103 @@ function renderThemeColors() {
   host.appendChild(grid);
 }
 
+/* ---------------- 渲染：背景图片及裁剪参数 ---------------- */
+function renderThemeBackgrounds() {
+  var host = $('th-backgrounds');
+  if (!host) return;
+  if (!FE.isPlainObject(tp())) {
+    clearEl(host);
+    host.__backgroundProfile = null;
+    host.appendChild(h('div', { class: 'th-slot-hint' }, '导入或新建主题后，可设置背景图片。'));
+    return;
+  }
+  var slotName = state.themeSlot === 'dark' ? 'dark' : 'light';
+  var palette = slotObj(slotName);
+  /* 同一文档/槽位的局部修改只回填值，保留控件节点及原生焦点、Tab 和步进交互。 */
+  if (host.__backgroundProfile === tp() && host.__backgroundSlot === slotName) {
+    Array.prototype.forEach.call(host.querySelectorAll('[data-theme-field]'), function (input) {
+      if (input === document.activeElement) return;
+      var parts = input.getAttribute('data-theme-field').split('.');
+      var value = palette[parts[0]];
+      if (parts.length > 1) value = FE.isPlainObject(value) ? value[parts[1]] : null;
+      if (input.tagName === 'SELECT') {
+        value = value == null ? '' : String(value).toLowerCase();
+        if (value && FE.THEME_IMAGE_SCALES.indexOf(value) < 0 &&
+            !Array.prototype.some.call(input.options, function (option) { return option.value === value; })) {
+          input.appendChild(h('option', { value: value }, '未识别：' + value));
+        }
+      } else if (input.type === 'text') value = typeof value === 'string' ? value : '';
+      else value = value == null ? '' : String(value);
+      if (input.value !== value) input.value = value;
+    });
+    return;
+  }
+  clearEl(host);
+  host.__backgroundProfile = tp();
+  host.__backgroundSlot = slotName;
+  host.appendChild(h('div', { class: 'th-slot-hint' },
+    '编辑' + (slotName === 'dark' ? '深色' : '浅色') + '主题的图片路径与裁剪参数。图片路径相对于 Foxy 主题目录，图片文件需随主题一起放入该目录。'));
+  function commit(write) {
+    FE.mutate(function () { write(slotObj(slotName)); });
+  }
+  function numberInput(parent, name, label, spec, value, write) {
+    var input = h('input', { type: 'number', class: 'mini-input', step: '0.1', min: String(spec.min), max: String(spec.max),
+      value: value == null ? '' : String(value), placeholder: String(spec.value), 'data-theme-field': name });
+    input.addEventListener('change', function () {
+      var raw = input.value.trim();
+      var value = raw === '' ? null : backgroundNumber(raw, spec.value, spec.min, spec.max);
+      input.value = value == null ? '' : String(value);
+      commit(function (s) { write(s, value); });
+    });
+    parent.appendChild(h('label', { class: 'th-background-number' }, h('span', null, label), input));
+  }
+  FE.THEME_BACKGROUNDS.forEach(function (b) {
+    var group = h('fieldset', { class: 'th-background-group' }, h('legend', null, b.label));
+    var path = h('input', { type: 'text', class: 'mini-input th-background-path',
+      value: typeof palette[b.image] === 'string' ? palette[b.image] : '',
+      placeholder: 'backgrounds/paper.png', 'data-theme-field': b.image });
+    path.addEventListener('change', function () {
+      var value = path.value.trim();
+      path.value = value;
+      commit(function (s) { if (value) s[b.image] = value; else delete s[b.image]; });
+    });
+    group.appendChild(h('label', { class: 'form-row' }, h('span', { class: 'mini-label' }, '图片路径'), path));
+    if (b.scale) {
+      var scale = h('select', { class: 'mini-input', 'data-theme-field': b.scale });
+      [['', '默认（铺满裁切）'], ['cover', '铺满裁切'], ['contain', '完整显示'], ['fill', '拉伸填满']].forEach(function (o) {
+        scale.appendChild(h('option', { value: o[0] }, o[1]));
+      });
+      var current = palette[b.scale] == null ? '' : String(palette[b.scale]).toLowerCase();
+      if (current && FE.THEME_IMAGE_SCALES.indexOf(current) < 0) scale.appendChild(h('option', { value: current }, '未识别：' + current));
+      scale.value = current;
+      scale.addEventListener('change', function () {
+        var value = scale.value;
+        commit(function (s) { if (value) s[b.scale] = value; else delete s[b.scale]; });
+      });
+      group.appendChild(h('label', { class: 'form-row' }, h('span', { class: 'mini-label' }, '显示方式'), scale));
+    }
+    var row = h('div', { class: 'th-background-numbers' });
+    var transform = FE.isPlainObject(palette[b.transform]) ? palette[b.transform] : {};
+    FE.THEME_TRANSFORM_FIELDS.forEach(function (f) {
+      numberInput(row, b.transform + '.' + f.field, f.label, f, transform[f.field], function (s, value) {
+        if (value == null) {
+          if (FE.isPlainObject(s[b.transform])) {
+            delete s[b.transform][f.field];
+            if (!Object.keys(s[b.transform]).length) delete s[b.transform];
+          }
+        } else {
+          if (!FE.isPlainObject(s[b.transform])) s[b.transform] = {};
+          s[b.transform][f.field] = value;
+        }
+      });
+    });
+    group.appendChild(row);
+    host.appendChild(group);
+  });
+  numberInput(host, 'backgroundBlurRadius', '背景模糊（0～25）', { min: 0, max: 25, value: 10 }, palette.backgroundBlurRadius,
+    function (s, value) { if (value == null) delete s.backgroundBlurRadius; else s.backgroundBlurRadius = value; });
+}
+
 /* ---------------- 渲染：keyTypes ---------------- */
 function renderThemeKeyTypes() {
   var host = $('th-keytypes');
@@ -906,6 +1081,7 @@ function installThemePickers() {
 function renderThemeTab() {
   renderThemeToolbar();
   renderThemeColors();
+  renderThemeBackgrounds();
   renderThemeKeyTypes();
   /* 元素已进 DOM，补装取色器（须在 colors/keytypes 渲染之后，见上方注释） */
   installThemePickers();

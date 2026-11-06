@@ -121,12 +121,12 @@ def('foxy.LayoutDefault', {
   label: 'ABC',
   tap: { type: 'switch_layout', layout: 'default' }
 }, 'Foxy 功能');
-def('foxy.SelectAll', { label: 'Sel', tap: { type: 'key', key: 'A', meta: ['CTRL'] } }, 'Foxy 功能');
+def('foxy.SelectAll', { label: 'Sel', tap: { type: 'app', command: 'select_all' } }, 'Foxy 功能');
 def('foxy.Undo', { label: 'Undo', tap: { type: 'app', command: 'undo' } }, 'Foxy 功能');
 def('foxy.Redo', { label: 'Redo', tap: { type: 'app', command: 'redo' } }, 'Foxy 功能');
-def('foxy.Cut', { label: 'Cut', tap: { type: 'key', key: 'X', meta: ['CTRL'] } }, 'Foxy 功能');
-def('foxy.Copy', { label: 'Copy', tap: { type: 'key', key: 'C', meta: ['CTRL'] } }, 'Foxy 功能');
-def('foxy.Paste', { label: 'Paste', tap: { type: 'key', key: 'V', meta: ['CTRL'] } }, 'Foxy 功能');
+def('foxy.Cut', { label: 'Cut', tap: { type: 'app', command: 'cut' } }, 'Foxy 功能');
+def('foxy.Copy', { label: 'Copy', tap: { type: 'app', command: 'copy' } }, 'Foxy 功能');
+def('foxy.Paste', { label: 'Paste', tap: { type: 'app', command: 'paste' } }, 'Foxy 功能');
 def('foxy.KP_Enter', { label: 'Enter', keyType: 'ACTION', icon: 'enter', tap: { type: 'key', key: 'KP_ENTER' } }, 'Foxy 功能');
 def('foxy.Spacer', { label: '', spacer: true, tap: { __builtin: 'foxy.Spacer' } }, 'Foxy 功能');
 
@@ -248,6 +248,7 @@ FE.APP_COMMANDS = [
   ['split_adjust_start', '分体键盘调整'], ['candidate_previous', '候选上一页'], ['candidate_next', '候选下一页'],
   ['select_schema', '选择方案（需参数）'], ['select_switch_option', '选择开关项（需参数）'],
   ['undo', '撤销'], ['redo', '重做'],
+  ['copy', '复制'], ['cut', '剪切'], ['paste', '粘贴'], ['select_all', '全选'],
   ['hide_keyboard', '收起键盘'],
   ['text_editor', '文本编辑布局（专用命名布局）'],
   ['collapse_toolbar', '折叠工具栏'], ['expand_toolbar', '展开工具栏'],
