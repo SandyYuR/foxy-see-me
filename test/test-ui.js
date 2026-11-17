@@ -6020,6 +6020,192 @@ console.log('== 预览选项开关：无选项条件时整组隐藏 ==');
   }
 }
 
+
+console.log('== 布局包：工具栏文件与共享定义 profile ==');
+{
+  const savedProfileText = FE.serializeProfile(FE.state.profile, true);
+  const savedLayout = FE.state.layoutName;
+  const savedTab = FE.state.activeTab;
+  const savedCfg = FE.state.toolbarConfig;
+  const savedIcons = FE.state.toolbarIcons;
+  const savedLabels = FE.state.toolbarLabels;
+  const savedFolderToolbar = FE.state.folderToolbar;
+  const savedFolderPlan = FE.state.folderPlan;
+  const savedFolderLayoutPath = FE.state.folderLayoutPath;
+  const savedFolderDefsPath = FE.state.folderDefsPath;
+  try {
+    const tbDoc = {
+      type: 'foxy.toolbar', version: 1,
+      toolbars: { main: ['schema', '编辑', 'custom_13'], expanded: [] },
+      buttons: {
+        schema: { id: 'schema', label: '方案', icon: '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><path d="M1 1h10v10H1z"/></svg>' },
+        '编辑': { id: '编辑', label: '编辑', icon: 'svg:<svg xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="5" r="4"/></svg>' },
+        custom_13: { id: 'custom_13', label: '右' }
+      },
+      containers: {}
+    };
+    const plan = FE.planFolderImport([
+      { name: 'a.json', path: 'pkg/layouts/a.json', text: JSON.stringify({ type: 'foxy.keyboard-layout', keys: {}, layouts: { default: { sections: [] } } }) },
+      { name: 'default.json', path: 'pkg/definitions/default.json', text: JSON.stringify({ type: 'foxy.definitions', icons: { 'my.a': 'svg:<svg/>' } }) },
+      { name: 'alt.json', path: 'pkg/definitions/alt.json', text: JSON.stringify({ type: 'foxy.definitions', icons: { 'my.b': 'svg:<svg/>' } }) },
+      { name: 'default.json', path: 'pkg/toolbars/default.json', text: JSON.stringify(tbDoc) }
+    ]);
+
+    /* 1. 应用工具栏：配置与图标写进 state，预览立刻按主题重画 */
+    const rep = FE.applyToolbarFromPlan(plan);
+    eq(rep.count, 2, '应用工具栏后统计到 2 个带图标的按钮');
+    eq(FE.state.toolbarConfig.main, ['schema', '编辑', 'custom_13'], '按钮表写进 state.toolbarConfig');
+    eq(FE.state.toolbarLabels['custom_13'], '右', '非内置按钮的 label 进 state.toolbarLabels');
+    FE.renderPreviewOnly();
+    const chips = q('.kbt-chip', $('preview-toolbar'));
+    eq(chips.length, 3, '预览按主题配置画三枚 chip');
+    const editChip = chips.filter(function (c) { return c.getAttribute('data-toolbar-btn') === '编辑'; })[0];
+    ok(!!editChip && !!editChip.querySelectorAll('.kbt-icon')[0], '非内置按钮用主题图标');
+    ok(String(editChip.title).indexOf('编辑') === 0, '非内置按钮的 title 用主题 label');
+    const rightChip = chips.filter(function (c) { return c.getAttribute('data-toolbar-btn') === 'custom_13'; })[0];
+    const rightLabel = q('.kbt-label', rightChip)[0];
+    eq(rightLabel ? rightLabel.textContent : '', '右', '没有图标的按钮回落成文字 chip，用主题 label');
+
+    /* 2. 共享定义下拉：多份时显示，切换后重建 profile */
+    FE.state.folderPlan = plan;
+    FE.state.folderLayoutPath = 'pkg/layouts/a.json';
+    FE.state.folderDefsPath = null;
+    FE.renderFolderOps();
+    eq($('op-folder-defs-row').hidden, false, '多份共享定义时显示下拉');
+    eq(q('option', $('op-folder-defs')).length, 2, '下拉列出两份共享定义');
+    const defSel = $('op-folder-defs');
+    defSel.value = 'pkg/definitions/alt.json';
+    defSel._fire('change');
+    await sleep(10);
+    eq(FE.state.folderDefsPath, 'pkg/definitions/alt.json', '切换后记住选用的共享定义');
+    ok(String($('op-status').textContent).indexOf('已改用共享定义') >= 0, '状态行报告切换结果');
+    ok(FE.state.profile.icons['my.b'] != null, '切换后 profile 合并的是 alt.json 的图标');
+    ok(FE.state.profile.icons['my.a'] == null, '切换后不再合并 default.json 的图标');
+  } finally {
+    FE.state.toolbarConfig = savedCfg;
+    FE.state.toolbarIcons = savedIcons;
+    FE.state.toolbarLabels = savedLabels;
+    FE.state.folderToolbar = savedFolderToolbar;
+    FE.state.folderPlan = savedFolderPlan;
+    FE.state.folderLayoutPath = savedFolderLayoutPath;
+    FE.state.folderDefsPath = savedFolderDefsPath;
+    FE.applyProfileText(savedProfileText);
+    FE.state.layoutName = savedLayout;
+    FE.state.activeTab = savedTab;
+    FE.renderPreviewOnly();
+  }
+}
+
+console.log('== 修饰键状态外观：三个横向槽 ==');
+{
+  const savedProfileText = FE.serializeProfile(FE.state.profile, true);
+  const savedShift = FE.state.status.shift;
+  try {
+    FE.applyProfileText(JSON.stringify({
+      keys: {
+        'k.shift': {
+          modifier: 'SHIFT', icon: 'shift', label: '⇧',
+          tap: { type: 'modifier', modifier: 'SHIFT', state: 'ONESHOT' },
+          modifierStates: { oneshot: { icon: null, label: '⇧ON' } }
+        }
+      },
+      layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.shift' }]] }] } }
+    }));
+    FE.state.layoutName = 'default';
+    FE.renderPreviewOnly();
+    FE.openKeyInspector({ mode: 'definition', name: 'k.shift' });
+    const msHost = $('key-inspector');
+    const msCard = q('.ms-card', msHost)[0];
+    ok(!!msCard, '带 modifier 的键显示状态外观卡片');
+    const msSlots = q('.ms-slot', msCard);
+    eq(msSlots.length, 3, '三个横向外观槽');
+    eq(q('.ms-slot-title', msSlots[0])[0].textContent, 'Default', '第一槽是普通外观');
+    eq(q('.ms-slot-title', msSlots[1])[0].textContent, 'Modifier active', '第二槽是激活外观');
+    eq(q('.ms-slot-title', msSlots[2])[0].textContent, 'Modifier locked', '第三槽是锁定外观');
+    ok(!q('.ms-slot-badge', msSlots[0]).length, 'Default 槽不算覆盖');
+    ok(!!q('.ms-slot-badge', msSlots[1]).length, '已有 oneshot 覆盖的槽标「已覆盖」');
+    ok(!q('.ms-slot-badge', msSlots[2]).length, '未覆盖的 locked 槽不标');
+    msSlots[2].click();
+    const msPanel = q('.ms-panel', $('key-inspector'))[0];
+    ok(!!msPanel, '点槽展开该状态的外观面板');
+    eq(q('.ms-panel-title', msPanel)[0].textContent, 'Modifier locked 外观', '面板标题对应状态');
+    const msLbl = q('.ms-panel input', msPanel)[0];
+    msLbl.value = '⇪';
+    msLbl._fire('change');
+    ok(!(FE.state.profile.keys['k.shift'].modifierStates || {}).locked, '未点应用前不写入正式文档');
+    q('.inspector-actions .primary', $('key-inspector'))[0].click();
+    eq(FE.state.profile.keys['k.shift'].modifierStates.locked.label, '⇪', '应用后 locked 槽的标签进入文档');
+    eq(FE.state.profile.keys['k.shift'].modifierStates.oneshot.label, '⇧ON', '原有 oneshot 覆盖保留');
+    FE.state.status.modifiers.SHIFT = true;
+    FE.state.status.shift = true;
+    FE.renderPreviewOnly();
+    ok(q('.kb-label', q('.kb-key')[0])[0].textContent.indexOf('⇧ON') >= 0, '激活修饰键时预览显示 oneshot 槽的标签');
+    FE.state.status.modifiers.SHIFT = false;
+    FE.state.status.shift = false;
+    FE.renderPreviewOnly();
+    eq(q('.kb-label', q('.kb-key')[0]).length, 0, '未激活时回到普通外观（内置 Shift 图标）');
+  } finally {
+    FE.state.status.shift = savedShift;
+    FE.state.status.modifiers.SHIFT = false;
+    FE.applyProfileText(savedProfileText);
+  }
+}
+console.log('== 宏步骤：{ ref: 按键名 } ==');
+{
+  try {
+    FE.mutate(() => { FE.state.profile.macros['test.keyref'] = [{ ref: 'qwerty.q' }]; });
+    FE.state.openMacros = null;
+    FE.mutate(() => {});
+    const krItem = $('macros-list').querySelectorAll('.def-item').find(it => {
+      const n = it.querySelectorAll('.def-name')[0];
+      return n && n.textContent === 'test.keyref';
+    });
+    ok(!!krItem, '宏 test.keyref 出现在列表');
+    krItem.open = true;
+    const krRoot = krItem.querySelectorAll('.macro-steps')[0];
+    ok(!!krRoot, '展开后构建步骤编辑器');
+    let krRow = krRoot.querySelectorAll('.macro-step')[0];
+    let krSel = krRow.querySelectorAll('.action-editor select')[0];
+    eq(krSel.value, 'keyref', '按键引用步骤选中「引用按键」类型');
+    ok(krSel.querySelectorAll('option').map(o => o.getAttribute('value')).indexOf('keyref') >= 0, '类型下拉里有「引用按键」选项');
+    const krInp = krRow.querySelectorAll('.action-keyref-input')[0];
+    ok(!!krInp, '按键引用步骤有按键名输入框');
+    eq(krInp.value, 'qwerty.q', '输入框回显按键名');
+    krInp.value = 'qwerty.w';
+    krInp._fire('change');
+    eq(FE.state.profile.macros['test.keyref'][0], { ref: 'qwerty.w' }, '改按键名即写回 {ref} 写法');
+    krRow = krRoot.querySelectorAll('.macro-step')[0];
+    krSel = krRow.querySelectorAll('.action-editor select')[0];
+    eq(krSel.value, 'keyref', '重建后类型仍是「引用按键」');
+    eq(krRow.querySelectorAll('.action-keyref-input')[0].value, 'qwerty.w', '重建后按键名不丢');
+  } finally {
+    FE.mutate(() => { delete FE.state.profile.macros['test.keyref']; });
+  }
+}
+
+console.log('== 布局设置：内边距覆盖（整数 dp 0–150） ==');
+{
+  const savedLayoutName = FE.state.layoutName;
+  try {
+    FE.state.layoutName = 'default';
+    FE.renderAll();
+    const padSide = $('ls-pad-side');
+    ok(!!padSide, '布局设置里有竖屏左右内边距输入框');
+    padSide.value = '12';
+    padSide._fire('change');
+    eq(FE.state.profile.layouts.default.override.sidePaddingDp, 12, '写入 override.sidePaddingDp');
+    $('ls-pad-bottom').value = '200';
+    $('ls-pad-bottom')._fire('change');
+    eq(FE.state.profile.layouts.default.override.bottomPaddingDp, 150, '超过 150 时钳到上限');
+    $('ls-pad-side').value = '';
+    $('ls-pad-side')._fire('change');
+    ok(!('sidePaddingDp' in (FE.state.profile.layouts.default.override || {})), '清空输入框删掉该字段');
+  } finally {
+    if (FE.state.profile.layouts.default.override) delete FE.state.profile.layouts.default.override;
+    FE.state.layoutName = savedLayoutName;
+    FE.renderAll();
+  }
+}
 }   /* 结束 await sleep(350) 后的主体块 */
 
 console.log('\n结果: ' + passed + ' 通过, ' + failed + ' 失败');

@@ -238,7 +238,9 @@ FE.APP_COMMANDS = [
   ['data_directory_list', '数据目录选择'], ['data_dir_list', '数据目录选择（别名）'],
   ['deploy', '重新部署'], ['deploy_rime', '重新部署（别名）'],
   ['sync', '同步 Rime 用户数据'], ['sync_rime', '同步 Rime 用户数据（别名）'],
-  ['clipboard', '剪贴板'], ['theme', '主题'], ['theme_list', '主题列表'],
+  ['clipboard', '剪贴板'],
+  ['keyboard_layout', '布局面板'], ['layout_profile', '布局 profile 切换'], ['layout_picker', '布局选择器'],
+  ['theme', '主题'], ['theme_list', '主题列表'],
   ['voice', '语音'], ['voice_toggle', '语音切换'], ['voice_engine', '语音引擎'], ['voice_engine_list', '语音引擎列表'],
   ['ime_picker', '系统输入法选择'],
   ['floating_keyboard', '浮动键盘'], ['floating', '浮动键盘（别名）'],
@@ -288,6 +290,15 @@ FE.isInlineIcon = function (value) {
   }
   return false;
 };
+/* 无前缀的内联载荷：
+ * 规范要求内联图标写 svg:/xml: 前缀，但实际文件（例如蓝狐狸套件的 my.分词）
+ * 常直接贴 <svg …> 或 <?xml …?>。App 的图标解析会先剥前缀再规范化，
+ * 没有前缀时同样按标记本身处理，所以编辑器把这种写法认成内联载荷（并给提示），
+ * 而不是判成非法图标。 */
+FE.isBareIconMarkup = function (value) {
+  var s = String(value == null ? '' : value).trim().toLowerCase();
+  return s.indexOf('<svg') === 0 || s.indexOf('<?xml') === 0;
+};
 /* 修饰键枚举（SKILL.md「modifier actions」）：SHIFT / CTRL / ALT / META，运行时大小写不敏感。
  * 它同时是 key/override/variants 的 modifier 字段与 modifier 动作的唯一取值来源。 */
 FE.MODIFIERS = ['SHIFT', 'CTRL', 'ALT', 'META'];
@@ -320,6 +331,16 @@ FE.statusModifierOn = function (status, name) {
 };
 /* 修饰键状态：TOGGLE_LOCKED 是命令而非持久状态（未锁定→锁定，已锁定→关闭） */
 FE.MODIFIER_STATES = ['OFF', 'ONESHOT', 'LOCKED', 'TOGGLE_LOCKED'];
+/* 键的 modifierStates 外观槽（SKILL.md「Modifier State Appearance」）：
+ *   off     未激活（可选覆盖普通字段的默认外观）
+ *   oneshot 下一次输入生效（ONESHOT 状态的外观）
+ *   locked  锁定（LOCKED / TOGGLE_LOCKED 已锁定的外观）
+ * 槽里只能写 icon / label，不能改修饰键行为或手势动作。 */
+FE.MODIFIER_STATE_SLOTS = ['off', 'oneshot', 'locked'];
+FE.MODIFIER_STATE_FIELDS = ['icon', 'label'];
+/* 命名布局 override 的内边距字段（SKILL.md）：整数 dp，0–150，省略走常规设置回落。 */
+FE.LAYOUT_PADDING_FIELDS = ['sidePaddingDp', 'sidePaddingLandscapeDp', 'bottomPaddingDp', 'bottomPaddingLandscapeDp'];
+FE.LAYOUT_PADDING_MAX = 150;
 FE.GESTURE_FIELDS = ['tap', 'doubleTap', 'swipe', 'longPress', 'hold', 'drag'];
 /* 单槽手势（swipe / drag 是四方向映射，单独处理）—— 引用收集、重命名、编译都按这份清单走，
  * 免得每处各抄一遍数组、新加手势时漏改其中一处。 */
@@ -338,7 +359,7 @@ FE.STATUS_GROUPS = ['all_of', 'any_of', 'none_of'];
 FE.ALWAYS_ON_OPTIONS = ['full_shape', 'simplification', 'traditional', 'ascii_punct'];
 
 /* 键字段清单（放置/定义均可使用的补丁字段） */
-FE.KEY_FIELD_NAMES = ['label', 'shiftedLabel', 'weight', 'height', 'modifier', 'keyType', 'id',
+FE.KEY_FIELD_NAMES = ['label', 'shiftedLabel', 'weight', 'height', 'modifier', 'modifierStates', 'keyType', 'id',
   'statusLabel', 'textSize', 'hintTextSize', 'icon', 'colors',
   'tap', 'doubleTap', 'swipe', 'longPress', 'hold', 'drag', 'variants'];
 })();

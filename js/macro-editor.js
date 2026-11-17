@@ -62,6 +62,11 @@ FE.macroStepToDraft = function (step) {
     return { spec: null, form: 'raw', raw: step, readonly: true,
       reason: 'action 字段既不是动作名也不是动作对象' };
   }
+  /* 按键引用：{ "ref": "rime.a" } 是独立写法（引用按键定义，执行时才解析），
+   * 不是内联动作对象 —— 必须排在下面的 inline 分支之前，否则会被当成动作对象。 */
+  if (typeof step.ref === 'string' && step.ref) {
+    return { spec: { ref: step.ref }, form: 'keyref', raw: step };
+  }
   if (step.type != null || step.ref != null) {
     return { spec: FE.deepClone(step), form: 'inline', raw: step };
   }
@@ -73,6 +78,8 @@ FE.macroStepToDraft = function (step) {
 FE.macroValueToStep = function (value, form) {
   if (value == null || value === '') return null;
   if (typeof value === 'string') {
+    /* 按键引用形态：写回 {ref:按键名} */
+    if (form === 'keyref') return { ref: value };
     /* 引用形态：原本是裸字符串就保持裸字符串，否则用 {action:名} */
     return form === 'bare' ? value : { action: value };
   }
@@ -91,6 +98,7 @@ FE.describeMacroStep = function (step, scope) {
     if (step.macro != null) return '⚠ 宏调用 ' + step.macro;
     if (typeof step.action === 'string') return '引用 ' + step.action;
     if (isPlainObject(step.action)) return FE.actionDisplay(step.action);
+    if (typeof step.ref === 'string') return '按键 ' + step.ref;
     if (step.type != null) return FE.actionDisplay(step);
   }
   return '⚠ 无法识别';
@@ -222,9 +230,11 @@ FE.buildMacroStepEditor = function (steps, opts) {
         main.appendChild(h('code', { class: 'macro-step-raw' }, JSON.stringify(d.raw)));
       } else {
         /* 每一步就是一个 action —— 直接复用统一的动作编辑器。
-         * allowRef：宏步骤常写「引用动作名」；exclude macro：禁止嵌套宏。 */
+         * allowRef：宏步骤常写「引用动作名」；allowKeyRef：也允许引用按键定义
+         * （{ref:'rime.a'}）；exclude macro：禁止嵌套宏。 */
         var ed = FE.buildActionEditor(d.spec, {
           allowRef: true,
+          allowKeyRef: true,
           exclude: ['macro'],
           onChange: function () { commit(); }
         });

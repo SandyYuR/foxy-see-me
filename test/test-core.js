@@ -1161,13 +1161,217 @@ const planE = FE.planFolderImport([
   { name: 'p.json', path: 'pkg/popups/p.json', text: JSON.stringify(popBoth) },
   { name: 'readme.txt', path: 'pkg/readme.txt', text: 'not json' }
 ]);
-eq(planE.summary, { layouts: 1, popups: 1, definitions: 1, unknown: 0 }, '文件夹分类统计正确（非 JSON 被忽略）');
+eq(planE.summary, {
+  layouts: 1, popups: 1, definitions: 1, definitionsProfiles: 1,
+  toolbars: 0, themes: 0, symbols: 0, assets: 1, unknown: 0
+}, '文件夹分类统计正确（非 JSON 归入资源，不再直接丢弃）');
+eq(planE.assets[0].name, 'readme.txt', '非 JSON 文件被登记为资源');
 eq(planE.layouts[0].name, 'a.json', '布局文件被识别');
 ok(planE.definitions !== null, 'definitions.json 被识别');
 const builtE = FE.buildProfileFromPlan(planE, planE.layouts[0].path);
 eq(FE.validateProfile(builtE.profile).errors, [], 'buildProfileFromPlan 产出可校验通过的 profile');
 eq(builtE.popupMatch.entry.name, 'p.json', '自动关联到弹出菜单文件');
 ok(FE.planFolderImport([{ name: 'x.json', path: 'x.json', text: '{}' }]).errors.length > 0, '无布局文件时报错');
+
+/* ---- 4b. 工具栏文件、共享定义 profile 与非 JSON 资源（2026-11-16 skill） ---- */
+const tbDoc = {
+  type: 'foxy.toolbar', version: 1,
+  toolbars: { main: ['schema', '编辑', 'custom_13'], expanded: [] },
+  buttons: {
+    schema: { id: 'schema', label: '方案', icon: '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><path d="M1 1h10v10H1z"/></svg>' },
+    '编辑': { id: '编辑', label: '编辑', icon: 'svg:<svg xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="5" r="4"/></svg>' },
+    custom_13: { id: 'custom_13', label: '右' }
+  },
+  containers: {}
+};
+eq(FE.classifyFoxyFile(JSON.stringify(tbDoc), 'toolbars/default.json').kind, 'toolbar', 'foxy.toolbar 被识别为工具栏文件');
+eq(FE.classifyFoxyFile(JSON.stringify({ type: 'foxy.keyboard-theme' }), 'themes/dark.json').kind, 'theme', 'foxy.keyboard-theme 被识别为主题文件');
+eq(FE.classifyFoxyFile(JSON.stringify({ toolbars: { main: [] } }), 'toolbars/legacy.json').kind, 'toolbar', '无 type 但放在 toolbars/ 目录也认作工具栏');
+const defsA = { type: 'foxy.definitions', icons: { 'my.a': 'svg:<svg/>' } };
+const defsB = { type: 'foxy.definitions', icons: { 'my.b': 'svg:<svg/>' } };
+const planT = FE.planFolderImport([
+  { name: 'a.json', path: 'pkg/layouts/a.json', text: JSON.stringify(thinLayout) },
+  { name: 'default.json', path: 'pkg/definitions/default.json', text: JSON.stringify(defsA) },
+  { name: 'alt.json', path: 'pkg/definitions/alt.json', text: JSON.stringify(defsB) },
+  { name: 'default.json', path: 'pkg/toolbars/default.json', text: JSON.stringify(tbDoc) },
+  { name: '字体图标.otf', path: 'pkg/字体图标.otf', text: null },
+  { name: '字体图标.jpg', path: 'pkg/字体图标.jpg', text: null }
+]);
+eq(planT.summary.toolbars, 1, '工具栏文件进计划');
+eq(planT.summary.definitionsProfiles, 2, '两份共享定义各算一个 profile');
+eq(planT.definitions.path, 'pkg/definitions/default.json', '多份共享定义默认取 default.json');
+eq(planT.summary.assets, 2, '字体与图片记为资源');
+eq(planT.summary.unknown, 0, '工具栏与资源都不再算无法识别');
+const altBuilt = FE.buildProfileFromPlan(planT, 'pkg/layouts/a.json', 'pkg/definitions/alt.json');
+eq(altBuilt.definitions.path, 'pkg/definitions/alt.json', 'buildProfileFromPlan 按指定 profile 取共享定义');
+ok(altBuilt.profile.icons['my.b'] != null, '选中的共享定义图标被合并');
+const tbModel = FE.toolbarModelFromFile(tbDoc);
+eq(tbModel.config.main, ['schema', '编辑', 'custom_13'], '工具栏按钮表按原顺序读出');
+eq(Object.keys(tbModel.icons).length, 2, '有图标的按钮进 icons');
+eq(tbModel.labels['custom_13'], '右', 'label 表包含非内置按钮');
+eq(tbModel.unknownIds, ['编辑', 'custom_13'], '非内置按钮 id 单独列出');
+eq(FE.toolbarModelFromFile({ type: 'foxy.toolbar', toolbars: { main: [], expanded: [] } }), null, '没有按钮表时返回 null');
+/* 裸 <svg> 载荷：App 端容错（f52.java 先找前缀、没有就原样返回），编辑器只警告不报错 */
+const bareV = FE.validateProfile({
+  icons: { 'my.分词': '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h4v4H0z"/></svg>' },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ label: 'a', tap: { type: 'text', text: 'a' } }]] }] } }
+});
+eq(bareV.errors, [], '裸 svg 载荷不再判为错误');
+ok(bareV.warnings.some(function (w) { return String(w).indexOf('没有 svg:/xml: 前缀') >= 0; }), '裸 svg 载荷给一条补前缀的警告');
+ok(FE.isBareIconMarkup('<?xml version="1.0"?><svg/>') && FE.isBareIconMarkup('  <svg/>'), 'isBareIconMarkup 认裸 <svg> 与 <?xml>');
+ok(!FE.isBareIconMarkup('foxy.heart') && !FE.isBareIconMarkup('svg:<svg/>'), 'isBareIconMarkup 不把图标名与前缀载荷当裸标记');
+
+/* ---- 4c. 2026-11-16 skill：modifierStates、remove 掩码、宏按键引用、内边距与插件命令 ---- */
+/* 1. modifierStates：状态判定与外观覆盖（只改 icon / label，不改手势动作） */
+const msKey = {
+  modifier: 'SHIFT', icon: 'shift', label: '⇧',
+  modifierStates: { off: { label: 'S' }, oneshot: { icon: 'my.on' }, locked: { icon: null, label: '⇪' } }
+};
+eq(FE.modifierStateOf(msKey, { shift: false }), 'off', '未激活时取 off 槽');
+eq(FE.modifierStateOf(msKey, { modifiers: { SHIFT: true } }), 'oneshot', '激活时取 oneshot 槽');
+eq(FE.modifierStateOf(msKey, { modifiers: { SHIFT: true }, modifierLocks: { SHIFT: true } }), 'locked', '锁定时取 locked 槽');
+eq(FE.modifierStateOf({ modifier: 'SHIFT' }, { shift: true }), null, '没有 modifierStates 时不套用状态外观');
+eq(FE.modifierStateOf({ modifierStates: { off: { label: 'x' } } }, { shift: false }), null, '没有 modifier 的键不使用状态外观');
+eq(FE.modifierStateAppearance(msKey, { shift: false }), { state: 'off', label: 'S' }, 'off 槽只覆盖 label');
+eq(FE.modifierStateAppearance(msKey, { shift: true }), { state: 'oneshot', icon: 'my.on' }, 'oneshot 槽覆盖 icon');
+eq(FE.modifierStateAppearance(msKey, { shift: true, modifierLocks: { SHIFT: true } }), { state: 'locked', icon: null, label: '⇪' }, 'locked 槽 icon:null 保留 null，label 覆盖');
+eq(FE.modifierStateAppearance({ modifier: 'SHIFT', modifierStates: { oneshot: null } }, { shift: true }), null, '槽为 null 时不覆盖（清空继承）');
+eq(FE.modifierStateAppearance({ modifier: 'SHIFT', modifierStates: { oneshot: {} } }, { shift: true }), null, '空槽不覆盖');
+/* 编译层：状态外观在变体与 override 之后生效 */
+const msProfile = {
+  keys: { 'k.shift': msKey },
+  icons: { 'my.on': 'svg:<svg xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="5" r="4"/></svg>' },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.shift' }]] }] } }
+};
+const msComp = FE.compileLayout(msProfile, 'default', { status: { composing: false, ascii_mode: false, disabled: false } });
+eq(msComp.sections[0].rows[0].keys[0].stateLabel, 'S', '未激活时键面用 off 槽的 label');
+eq(msComp.sections[0].rows[0].keys[0].icon, 'shift', '未激活且槽没给 icon 时保留原图标');
+const msCompOn = FE.compileLayout(msProfile, 'default', { status: { modifiers: { SHIFT: true } } });
+eq(msCompOn.sections[0].rows[0].keys[0].icon, 'my.on', '激活时键面换成 oneshot 槽的图标');
+eq(msCompOn.sections[0].rows[0].keys[0].stateLabel, undefined, 'oneshot 槽没给 label 时不覆盖标签');
+const msCompLock = FE.compileLayout(msProfile, 'default', { status: { modifiers: { SHIFT: true }, modifierLocks: { SHIFT: true } } });
+eq(msCompLock.sections[0].rows[0].keys[0].icon, null, 'locked 槽 icon:null 时不画图标');
+eq(msCompLock.sections[0].rows[0].keys[0].stateLabel, '⇪', 'locked 槽的 label 覆盖键面文字');
+
+/* 2. 变体抑制 remove:true：屏蔽同结构的继承变体，不删除键 */
+const maskProfile = {
+  keys: {
+    'k.base': {
+      label: 'a', tap: { type: 'text', text: 'a' },
+      variants: [
+        { when: { rime: { composing: true } }, label: '组合' },
+        { when: { rime: { ascii_mode: true } }, label: '西文' }
+      ]
+    }
+  },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.base' }]] }] } }
+};
+const maskScope = { keys: maskProfile.keys };
+const composingStatus = { composing: true, ascii_mode: false, disabled: false };
+eq(FE.evalPlacement({ ref: 'k.base' }, composingStatus, maskScope).eff.label, '组合', '未加掩码时继承变体生效');
+const maskV = [{ when: { rime: { composing: true } }, remove: true }];
+const maskedEff = FE.evalPlacement({ ref: 'k.base', variants: maskV }, composingStatus, maskScope).eff;
+eq(maskedEff.label, 'a', 'remove:true 屏蔽同结构的继承变体');
+eq('remove' in maskedEff, false, 'remove 不会 merge 进解析结果');
+eq(FE.evalPlacement({ ref: 'k.base', variants: maskV }, { composing: false, ascii_mode: true, disabled: false }, maskScope).eff.label, '西文',
+  '掩码只屏蔽同结构的那一条，其它变体照常生效');
+eq(FE.evalPlacement({ ref: 'k.base', override: { variants: maskV } }, composingStatus, maskScope).eff.label, 'a',
+  '掩码写在 override.variants 里同样生效');
+eq(FE.structKeyOf({ a: 1, b: 2 }), FE.structKeyOf({ b: 2, a: 1 }), '结构键与键序无关');
+ok(FE.structKeyOf({ rime: { composing: true } }) !== FE.structKeyOf({ rime: { ascii_mode: true } }), '不同条件的结构键不同');
+ok(FE.isVariantMask({ when: { rime: { composing: true } } }), 'legacy「仅条件」写法也识别为掩码');
+ok(!FE.isVariantMask({ when: { rime: { composing: true } }, label: 'x' }), '带外观字段的不是掩码');
+ok(!FE.isVariantMask({ when: { rime: { composing: true } }, remove: false }), 'remove:false 不是掩码');
+eq(FE.collectVariantMasks([maskV]).hasOwnProperty(FE.structKeyOf({ rime: { composing: true } })), true, '掩码按结构键收集');
+
+/* 3. 掩码与状态外观的校验 */
+const maskInDef = vNew({
+  keys: { 'k.a': { tap: { type: 'text', text: 'a' }, variants: maskV } },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.a' }]] }] } }
+});
+ok(maskInDef.errors.some(function (m) { return String(m).indexOf('remove 只能用在布局里的按键上') >= 0; }), '按键定义里的 remove 被拒绝');
+const maskBad = vNew({
+  keys: { 'k.a': { tap: { type: 'text', text: 'a' } } },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.a', variants: [{ remove: true, label: 'x' }] }]] }] } }
+});
+ok(maskBad.errors.some(function (m) { return String(m).indexOf('必须同时给出 when 条件') >= 0; }), 'remove:true 缺 when 报错');
+const maskExtra = vNew({
+  keys: { 'k.a': { tap: { type: 'text', text: 'a' } } },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.a', variants: [{ when: { rime: { composing: true } }, remove: true, label: 'x' }] }]] }] } }
+});
+ok(maskExtra.errors.some(function (m) { return String(m).indexOf('只能包含 when 与 remove') >= 0; }), '掩码带多余字段报错');
+const msBad = vNew({
+  keys: {
+    'k.shift': {
+      modifier: 'SHIFT', tap: { type: 'modifier', modifier: 'SHIFT', state: 'ONESHOT' },
+      modifierStates: { bogus: { label: 'x' }, oneshot: { icon: 'no.such.icon' } }
+    }
+  },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.shift' }]] }] } }
+});
+ok(msBad.errors.some(function (m) { return String(m).indexOf('不是有效的状态槽') >= 0; }), '未知状态槽报错');
+ok(msBad.errors.some(function (m) { return String(m).indexOf('引用了未定义的图标') >= 0; }), '状态图标引用未定义图标报错');
+const msWarnP = vNew({
+  keys: { 'k.plain': { tap: { type: 'text', text: 'a' }, modifierStates: { off: { label: 'x' } } } },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.plain' }]] }] } }
+});
+ok(msWarnP.warnings.some(function (m) { return String(m).indexOf('只对带 modifier 的键生效') >= 0; }), '没有 modifier 的键写 modifierStates 只给警告');
+eq(vNew({
+  keys: {
+    'k.shift': {
+      modifier: 'SHIFT', icon: 'shift',
+      tap: { type: 'modifier', modifier: 'SHIFT', state: 'ONESHOT' },
+      modifierStates: { off: { label: 'S' }, oneshot: { icon: 'shift' }, locked: { icon: null, label: '⇪' } }
+    }
+  },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.shift' }]] }] } }
+}).errors, [], '合法的 modifierStates 通过校验');
+
+/* 4. 新增 app 命令与 js.<appId> 插件命令 */
+['keyboard_layout', 'layout_profile', 'layout_picker'].forEach(function (c) {
+  ok(FE.APP_COMMANDS.some(function (x) { return x[0] === c; }), '新增 app 命令 ' + c);
+});
+['paste', 'copy', 'cut', 'select_all'].forEach(function (c) {
+  eq(vNew(lay({ ref: 'rime.a', longPress: { action: { type: 'app', command: c } } })).errors, [], '直接 app 命令 ' + c + ' 可用');
+});
+ok(FE.isPluginAppCommand('js.rewrite') && FE.isPluginAppCommand('js.my_app'), 'js.<appId> 识别为插件命令');
+ok(!FE.isPluginAppCommand('js.') && !FE.isPluginAppCommand('foxy.copy'), 'js. 后必须跟 appId');
+eq(vNew(lay({ ref: 'rime.a', longPress: { action: { type: 'app', command: 'js.rewrite' } } })).errors, [], '插件 app 命令不被判为非法');
+ok(vNew(lay({ ref: 'rime.a', longPress: { action: { type: 'app', command: 'js.' } } })).errors.length > 0, '不完整的插件命令仍报错');
+
+/* 5. 命名布局 override 的内边距（整数 dp 0–150） */
+const padOk = vNew({
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ label: 'a', tap: { type: 'text', text: 'a' } }]] }],
+    override: { sidePaddingDp: 12, sidePaddingLandscapeDp: 0, bottomPaddingDp: 150, bottomPaddingLandscapeDp: 40 } } }
+});
+eq(padOk.errors, [], '布局内边距 0–150 的整数通过校验');
+const padBad = vNew({
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ label: 'a', tap: { type: 'text', text: 'a' } }]] }],
+    override: { sidePaddingDp: 200, bottomPaddingDp: 12.5 } } }
+});
+eq(padBad.errors.length, 2, '越界与非整数内边距各报一条错误');
+ok(padBad.errors.every(function (m) { return String(m).indexOf('必须是 0–150 的整数 dp') >= 0; }), '内边距错误文案可读');
+
+/* 6. 宏步骤 { ref } 直接引用按键定义 */
+const mkDraft = FE.macroStepToDraft({ ref: 'rime.a' });
+eq(mkDraft.form, 'keyref', '宏步骤 {ref} 识别为按键引用形态');
+eq(mkDraft.spec, { ref: 'rime.a' }, '按键引用形态把 ref 交给动作编辑器');
+eq(FE.macroValueToStep('rime.a', 'keyref'), { ref: 'rime.a' }, '按键引用形态回写为 {ref}');
+eq(FE.describeMacroStep({ ref: 'rime.a' }), '按键 rime.a', '按键引用步骤的摘要');
+const mkBadP = vNew({
+  keys: { 'k.a': { tap: { type: 'text', text: 'a' } } },
+  macros: { loop: [{ ref: 'no.such.key' }] },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.a' }]] }] } }
+});
+ok(mkBadP.errors.some(function (m) { return String(m).indexOf('引用的按键不存在') >= 0; }), '宏步骤引用不存在的按键报错');
+const mkOkP = vNew({
+  keys: { 'k.a': { tap: { type: 'text', text: 'a' } } },
+  macros: { pair: [{ ref: 'k.a' }, { ref: 'k.a' }] },
+  layouts: { default: { sections: [{ type: 'rows', rows: [[{ ref: 'k.a' }]] }] } }
+});
+eq(mkOkP.errors, [], '宏步骤引用已有按键通过校验');
+
+
 
 /* ---- 5. 导出还原：把未改动的共享定义剥回 definitions.json ---- */
 const splitRes = FE.splitProfileForExport(builtE.profile, sharedDefs);

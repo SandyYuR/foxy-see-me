@@ -1,13 +1,16 @@
 /* 小狐狸 see me — Foxy 键盘布局可视化编辑器
- * folder-import.js — 文件夹批量导入：识别 definitions.json 与被引用的其他文件
+ * folder-import.js — 文件夹批量导入：识别共享定义、布局、弹出菜单、工具栏与主题资源
  *
  * 背景（见 skills/SKILL.md 的 Related Foxy JSON Files / Shared Definitions）：
  *   Foxy 运行时的布局包是**跨文件**的，一个包里可能同时有
- *     <外部存储>/foxy/frontend/definitions.json          共享 keys/actions/macros
- *     <外部存储>/foxy/frontend/layouts/<profile>.json     布局文件（可只定义少量键）
- *     <外部存储>/foxy/frontend/popups/<profile>.json      弹出菜单文件
- *   布局文件里引用的名字大量来自共享 definitions.json，单文件导入必然满屏
- *   “ref 无法解析”。本模块把整个文件夹读进来，按运行时规则合并成自包含 profile。
+ *     <外部存储>/foxy/frontend/definitions/<profile>.json  共享 keys/actions/macros/icons
+ *     <外部存储>/foxy/frontend/layouts/<profile>.json       布局文件（可只定义少量键）
+ *     <外部存储>/foxy/frontend/popups/<profile>.json        弹出菜单文件
+ *     <外部存储>/foxy/frontend/toolbars/<profile>.json      工具栏按钮表（foxy.toolbar）
+ *     <外部存储>/foxy/frontend/themes/<profile>.json        主题配色（foxy.keyboard-theme）
+ *   布局文件里引用的名字大量来自共享定义，单文件导入必然满屏 “ref 无法解析”。
+ *   本模块把整个文件夹读进来，按运行时规则合并成自包含 profile，并把工具栏、主题、
+ *   符号/表情与字体图片等资源一并识别出来交给上层。
  *
  * 纯逻辑，无 DOM 依赖：Node 测试可直接加载（test-core.js / test-ui.js）。
  * 加载顺序要求：在 app.js 之后（复用 FE.sanitizeJsonText）。
@@ -42,9 +45,23 @@ function inDir(path, dir) {
  * 一、单文件分类
  * ================================================================ */
 
+/* 显式 type → 内部种类名。App 侧用同一套字符串判定文件类型
+ * （foxy_re 的 defpackage/t90.java：layout / popup / theme / definitions / toolbar / symbols / emoji / kaomoji）。 */
+var TYPE_KINDS = {
+  'foxy.keyboard-layout': 'layout',
+  'foxy.popup-profile': 'popup',
+  'foxy.definitions': 'definitions',
+  'foxy.toolbar': 'toolbar',
+  'foxy.keyboard-theme': 'theme',
+  'foxy.symbols': 'symbols',
+  'foxy.emoji': 'emoji',
+  'foxy.kaomoji': 'kaomoji'
+};
+
 /* 判定一份 JSON 文本属于哪种 Foxy 格式。
  * 依据优先级：显式 type > 目录约定 > 结构特征。
- * 返回 { kind, data, error }；kind ∈ layout / popup / definitions / unknown */
+ * 返回 { kind, data, error }；
+ * kind ∈ layout / popup / definitions / toolbar / theme / symbols / emoji / kaomoji / unknown */
 FE.classifyFoxyFile = function (text, path) {
   var parsed;
   try {
@@ -57,23 +74,19 @@ FE.classifyFoxyFile = function (text, path) {
     return { kind: 'unknown', data: null, error: '根节点必须是 JSON 对象' };
   }
   var t = parsed.type;
-  var kind;
-  if (t === 'foxy.keyboard-layout') kind = 'layout';
-  else if (t === 'foxy.popup-profile') kind = 'popup';
-  else if (t === 'foxy.definitions') kind = 'definitions';
-  else if (t != null) {
-    /* 有 type 但不认识：交给结构判断，避免误吞 */
-    kind = null;
-  } else {
-    kind = null;
-  }
+  /* 显式 type → 种类；不认识的 type 交给结构判断，避免误吞 */
+  var kind = t != null && hasOwn(TYPE_KINDS, t) ? TYPE_KINDS[t] : null;
   if (kind == null) {
     /* 无 type（向后兼容文件）或未知 type：靠目录 + 结构判别 */
     var hasLayouts = isPlainObject(parsed.layouts) && Object.keys(parsed.layouts).length > 0;
     var hasSchemas = isPlainObject(parsed.schemas);
     if (baseName(path).toLowerCase() === 'definitions.json') kind = 'definitions';
+    else if (inDir(path, 'definitions')) kind = 'definitions';
     else if (inDir(path, 'layouts')) kind = hasLayouts ? 'layout' : 'unknown';
     else if (inDir(path, 'popups')) kind = 'popup';
+    else if (inDir(path, 'toolbars')) kind = 'toolbar';
+    else if (inDir(path, 'themes')) kind = 'theme';
+    else if (inDir(path, 'symbols')) kind = 'symbols';
     else if (hasLayouts && !hasSchemas) kind = 'layout';
     else if (hasSchemas && !hasLayouts) kind = 'popup';
     else if (!hasLayouts && !hasSchemas &&
@@ -82,7 +95,7 @@ FE.classifyFoxyFile = function (text, path) {
     } else kind = 'unknown';
   }
   if (kind === 'unknown') {
-    return { kind: kind, data: parsed, error: '无法判断文件类型（缺 type，且不符合 layouts/schemas/definitions 特征）' };
+    return { kind: kind, data: parsed, error: '无法判断文件类型（缺 type，且不符合 layouts / popups / definitions / toolbars / themes 特征）' };
   }
   return { kind: kind, data: parsed, error: null };
 };
@@ -179,21 +192,36 @@ FE.matchPopupFile = function (layoutProfile, popupEntries, layoutName) {
  * ================================================================ */
 
 /* 把一批文件条目整理成导入计划。
- * entries: [{ name, path, text }]（来自 <input webkitdirectory> 的 File 列表）
+ * entries: [{ name, path, text, file }]（来自 <input webkitdirectory> 的 File 列表；
+ *          text 只有 JSON 才读，二进制资源留 file 引用给上层处理）
  * 返回 {
- *   definitions, layouts, popups, unknown, errors, warnings, summary
+ *   definitions, definitionsList, layouts, popups, toolbars, themes, symbols,
+ *   assets, unknown, errors, warnings, summary
  * }
  * 纯函数：不触碰 DOM，便于测试。 */
 FE.planFolderImport = function (entries) {
-  var plan = { definitions: null, layouts: [], popups: [], unknown: [], errors: [], warnings: [] };
+  var plan = {
+    definitions: null, definitionsList: [], layouts: [], popups: [],
+    toolbars: [], themes: [], symbols: [], assets: [],
+    unknown: [], errors: [], warnings: []
+  };
   var list = Array.isArray(entries) ? entries : [];
   for (var i = 0; i < list.length; i++) {
     var e = list[i] || {};
     var path = e.path || e.name || '';
     var bn = baseName(path);
-    if (!/\.json$/i.test(bn)) continue;   /* 只看 JSON */
+    if (!/\.json$/i.test(bn)) {
+      /* 非 JSON：主题包里的字体、图片、预览图等资源。这里只登记，
+       * 具体怎么用由上层决定（字体交给主题页的符号字体链路，图片目前只计数）。 */
+      plan.assets.push({
+        path: normPath(path), name: bn,
+        ext: (bn.match(/\.[^.]+$/) || [''])[0].toLowerCase(),
+        file: e.file || null
+      });
+      continue;
+    }
     var res = FE.classifyFoxyFile(e.text, path);
-    var item = { path: normPath(path), name: bn, data: res.data, text: e.text };
+    var item = { path: normPath(path), name: bn, data: res.data, text: e.text, file: e.file || null };
     if (res.error && res.kind === 'unknown') {
       plan.unknown.push({ path: item.path, name: bn, error: res.error });
       plan.errors.push(bn + '：' + res.error);
@@ -201,46 +229,77 @@ FE.planFolderImport = function (entries) {
     }
     if (res.kind === 'layout') plan.layouts.push(item);
     else if (res.kind === 'popup') plan.popups.push(item);
-    else if (res.kind === 'definitions') {
-      /* 多个 definitions 时以最浅路径（最接近 frontend/ 根）者为准，与运行时读取位置一致 */
-      if (!plan.definitions || item.path.split('/').length < plan.definitions.path.split('/').length) {
-        if (plan.definitions) {
-          plan.warnings.push('发现多个 definitions 文件，已采用 ' + item.name +
-            '（按路径层级判定），忽略 ' + plan.definitions.name);
-        }
-        plan.definitions = item;
-      } else {
-        plan.warnings.push('发现多个 definitions 文件，忽略 ' + item.name);
+    else if (res.kind === 'definitions') plan.definitionsList.push(item);
+    else if (res.kind === 'toolbar') plan.toolbars.push(item);
+    else if (res.kind === 'theme') plan.themes.push(item);
+    else if (res.kind === 'symbols' || res.kind === 'emoji' || res.kind === 'kaomoji') plan.symbols.push(item);
+    else plan.unknown.push({ path: item.path, name: bn, error: '未知类型 ' + res.kind });
+  }
+  function byPath(a, b) { return a.path < b.path ? -1 : a.path > b.path ? 1 : 0; }
+  ['layouts', 'popups', 'definitionsList', 'toolbars', 'themes', 'symbols', 'assets'].forEach(function (k) {
+    plan[k].sort(byPath);
+  });
+  /* 共享定义可以有多份：frontend/definitions/*.json 各自是一个 profile（见 SKILL.md）。
+   * 默认优先 default.json，其次路径最浅者（最接近 frontend/ 根，与运行时读取位置一致）；
+   * 其余留给「共享定义」下拉切换。 */
+  if (plan.definitionsList.length) {
+    var defs = plan.definitionsList, def = null;
+    for (var d = 0; d < defs.length; d++) {
+      if (/^default\.json$/i.test(defs[d].name)) { def = defs[d]; break; }
+    }
+    if (!def) {
+      def = defs[0];
+      for (var d2 = 1; d2 < defs.length; d2++) {
+        if (defs[d2].path.split('/').length < def.path.split('/').length) def = defs[d2];
       }
     }
+    plan.definitions = def;
+    if (defs.length > 1) {
+      plan.warnings.push('发现 ' + defs.length + ' 份共享定义（' +
+        defs.map(function (x) { return x.name; }).join('、') +
+        '），默认用 ' + def.name + '，可在「共享定义」下拉里切换');
+    }
   }
-  plan.layouts.sort(function (a, b) { return a.path < b.path ? -1 : a.path > b.path ? 1 : 0; });
-  plan.popups.sort(function (a, b) { return a.path < b.path ? -1 : a.path > b.path ? 1 : 0; });
   if (!plan.layouts.length) plan.errors.push('文件夹内没有找到布局文件（foxy.keyboard-layout）');
   plan.summary = {
     layouts: plan.layouts.length,
     popups: plan.popups.length,
     definitions: plan.definitions ? 1 : 0,
+    definitionsProfiles: plan.definitionsList.length,
+    toolbars: plan.toolbars.length,
+    themes: plan.themes.length,
+    symbols: plan.symbols.length,
+    assets: plan.assets.length,
     unknown: plan.unknown.length
   };
   return plan;
 };
 
 /* 选中某个布局文件，合并共享定义，产出可直接装入编辑器的 profile。
- * 返回 { profile, report, popupMatch } */
-FE.buildProfileFromPlan = function (plan, layoutPath) {
+ * defsPath 指定用哪一份共享定义（definitions/*.json 多 profile 时由 UI 选择），
+ * 省略则用计划里的默认项。
+ * 返回 { entry, profile, report, definitions, popupMatch } */
+FE.buildProfileFromPlan = function (plan, layoutPath, defsPath) {
   var target = null;
   for (var i = 0; i < plan.layouts.length; i++) {
     if (plan.layouts[i].path === layoutPath) { target = plan.layouts[i]; break; }
   }
   if (!target) target = plan.layouts[0];
   if (!target) return null;
-  var merged = FE.mergeDefinitions(target.data, plan.definitions ? plan.definitions.data : null);
+  var defsEntry = plan.definitions || null;
+  if (defsPath) {
+    var dl = plan.definitionsList || [];
+    for (var j = 0; j < dl.length; j++) {
+      if (dl[j].path === defsPath) { defsEntry = dl[j]; break; }
+    }
+  }
+  var merged = FE.mergeDefinitions(target.data, defsEntry ? defsEntry.data : null);
   merged.profile = FE.normalizeProfile ? FE.normalizeProfile(merged.profile) : merged.profile;
   return {
     entry: target,
     profile: merged.profile,
     report: merged.report,
+    definitions: defsEntry,
     popupMatch: FE.matchPopupFile(target.data, plan.popups, target.name)
   };
 };
@@ -249,14 +308,71 @@ FE.buildProfileFromPlan = function (plan, layoutPath) {
 FE.describePlan = function (plan) {
   var s = plan.summary;
   var parts = ['识别到 ' + s.layouts + ' 个布局文件'];
-  if (s.definitions) parts.push('definitions.json');
+  var defName = plan.definitions ? plan.definitions.name : '';
+  if (s.definitionsProfiles > 1) {
+    parts.push('共享定义 ' + s.definitionsProfiles + ' 份（用 ' + defName + '）');
+  } else if (s.definitions) {
+    parts.push('共享定义 ' + defName);
+  }
   if (s.popups) parts.push(s.popups + ' 个弹出菜单文件');
+  if (s.toolbars) parts.push(s.toolbars + ' 个工具栏文件');
+  if (s.themes) parts.push(s.themes + ' 个主题文件');
+  if (s.symbols) parts.push(s.symbols + ' 个符号/表情文件');
+  if (s.assets) parts.push(s.assets + ' 个资源文件');
   if (s.unknown) parts.push(s.unknown + ' 个无法识别');
   return parts.join(' · ');
 };
 
 /* ================================================================
- * 五、导出还原（把共享定义剥回 definitions.json）
+ * 五、工具栏文档（foxy.toolbar）→ 预览模型
+ * ================================================================ */
+
+/* 把 foxy.toolbar 文档解析成工具栏预览能直接用的模型。
+ * 结构（见 SKILL.md / foxy_re 的 f12.java）：
+ *   { type:'foxy.toolbar', version, toolbars:{ main:[id…], expanded:[id…] },
+ *     buttons:{ <id>: { id, label, icon, activeIcon? } }, containers:{…} }
+ * icon / activeIcon 是**与图标映射同形式**的载荷（svg: / xml: 前缀或裸标记）。
+ * 返回 { config, icons, labels, unknownIds, warnings }；没有可用的按钮表返回 null。 */
+FE.toolbarModelFromFile = function (data) {
+  if (!isPlainObject(data)) return null;
+  var bars = isPlainObject(data.toolbars) ? data.toolbars : {};
+  function idList(v) {
+    if (!Array.isArray(v)) return [];
+    return v.filter(function (x) { return typeof x === 'string' && x; });
+  }
+  var main = idList(bars.main), expanded = idList(bars.expanded);
+  if (!main.length && !expanded.length) return null;
+  var icons = {}, labels = {}, unknownIds = [], warnings = [];
+  var raw = isPlainObject(data.buttons) ? data.buttons : {};
+  /* buttons 在真实文件里是**对象**（id → 定义）；数组写法也容忍 */
+  var list = Array.isArray(raw) ? raw : Object.keys(raw).map(function (k) { return raw[k]; });
+  list.forEach(function (b) {
+    if (!isPlainObject(b)) return;
+    var id = typeof b.id === 'string' && b.id ? b.id : null;
+    if (!id) return;
+    if (typeof b.label === 'string' && b.label) labels[id] = b.label;
+    var icon = typeof b.icon === 'string' && b.icon.trim() ? b.icon.trim() : null;
+    var activeIcon = typeof b.activeIcon === 'string' && b.activeIcon.trim() ? b.activeIcon.trim() : null;
+    if (icon || activeIcon) icons[id] = { icon: icon, activeIcon: activeIcon };
+  });
+  var known = FE.TOOLBAR_BUTTONS || {};
+  main.concat(expanded).forEach(function (id) {
+    if (!hasOwn(known, id) && unknownIds.indexOf(id) < 0) unknownIds.push(id);
+  });
+  if (isPlainObject(data.containers) && Object.keys(data.containers).length) {
+    warnings.push('工具栏容器（containers）暂不参与预览，只按 main / expanded 画按钮');
+  }
+  return {
+    config: { main: main, expanded: expanded },
+    icons: icons,
+    labels: labels,
+    unknownIds: unknownIds,
+    warnings: warnings
+  };
+};
+
+/* ================================================================
+ * 六、导出还原（把共享定义剥回 definitions.json）
  * ================================================================ */
 
 /* 合并导入后编辑器持有的是自包含 profile。导出时把**未改动**的共享定义剥离，

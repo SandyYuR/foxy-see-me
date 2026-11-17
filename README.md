@@ -25,7 +25,7 @@ Android 的精确路径是：
 Android/data/com.fxliang.foxy/files/foxy/frontend/layouts/
 ```
 
-弹出菜单、共享定义、主题和符号文件分别使用 Foxy 的 `frontend/popups/`、`frontend/definitions.json`、`frontend/themes/`、`frontend/symbols/`、`frontend/emoji/`、`frontend/kaomoji/`。把布局放入对应目录后，在 Foxy 设置中选择它。
+弹出菜单、共享定义、主题、工具栏和符号文件分别使用 Foxy 的 `frontend/popups/`、`frontend/definitions/<profile>.json`、`frontend/themes/`、`frontend/toolbars/`、`frontend/symbols/`、`frontend/emoji/`、`frontend/kaomoji/`。共享定义有自己的 profile 选择器，与键盘布局 profile 相互独立；本地 profile 里的同名定义会覆盖共享定义。把布局放入对应目录后，在 Foxy 设置中选择它。
 
 标题说明右侧的绿色「草稿已保存到浏览器」表示本地缓存写入成功。刷新后会恢复文件、当前页签、按键与手势草稿，以及各文件页未应用的 JSON 文本；恢复草稿不会自动应用到导出文件。存储失败会改为错误提示。缓存属于当前浏览器和当前站点，清理浏览器数据会删除它，重要修改仍应导出。
 
@@ -38,7 +38,7 @@ Android/data/com.fxliang.foxy/files/foxy/frontend/layouts/
 ## 当前功能
 
 - 布局实时预览：支持 Shift / Ctrl / Alt / Meta 修饰键模拟、组字、ASCII、停用、选项开关、组合条件和变体切换，以及分体和横屏状态。
-- 键盘编辑：调整按键、手势（含 `drag` 连续拖动）、自定义图标、颜色、圆角、水平/垂直间距和引用关系。
+- 键盘编辑：调整按键、手势（含 `drag` 连续拖动）、自定义图标、颜色、圆角、水平/垂直间距和引用关系；修饰键还能给未激活 / 激活 / 锁定三种状态分别设置图标与标签（`modifierStates`）。
 - 分层属性面板：常用字段与四向手势优先显示，明确当前放置或共享定义的修改范围；原始 JSON、颜色与变体按需展开。
 - 草稿预览与统一应用：切换按键、布局或功能页前处理未应用修改；一次应用对应一次撤销，取消不更改独立 popup 文件。
 - 多选与部分粘贴：在预览下方进入多选，选一个键“复制外观与手势”，再选择目标“仅粘贴外观”或“仅粘贴手势”；确认前可比较效果，整批可一次撤销。外观限配色与字号，附加手势不包含点击动作。
@@ -47,9 +47,9 @@ Android/data/com.fxliang.foxy/files/foxy/frontend/layouts/
 - 弹出菜单编辑：布局与 popup 分别导入、编辑和导出。
 - 动作与宏编辑：使用图形化动作控件（含 `switch_layout_once` 临时层），文字动作保留多行内容与首尾空白，保留不能安全转换的原始 JSON。
 - 引用索引与使用数：查看定义被哪些键、动作和宏引用，并点击定位。
-- 多文件布局包：合并布局、`definitions.json` 和 popup，导出时恢复未改动的共享定义。
+- 多文件布局包：合并布局、共享定义（`definitions/<profile>.json`，多份时可在导入面板切换）、popup、工具栏与主题文件；字体、图片等非 JSON 资源单独登记，导出时恢复未改动的共享定义。
 - 主题文件编辑：对齐 Foxy `0.0.1-20f1709` 的颜色字段，支持候选高亮文字／注释／序号、预编辑高亮及水波纹色；可编辑整张键盘、按键区、候选栏的背景图片路径、缩放、偏移和模糊参数。
-- 键盘上方工具栏预览：按 `os.java` / `w20.java` / `mf.java` 还原主/展开两种组合、chip 尺寸与配色；可导入主题自带的工具栏 svg（按文件名显式配对成对图标），自带实色的图标原样渲染、单色图标跟随 `toolTextColor` / `accentColor`。
+- 键盘上方工具栏预览：按 `os.java` / `w20.java` / `mf.java` 还原主/展开两种组合、chip 尺寸与配色；可导入主题自带的工具栏 svg（按文件名显式配对成对图标），自带实色的图标原样渲染、单色图标跟随 `toolTextColor` / `accentColor`；布局包里带 `foxy.toolbar` 时直接按文件里的 `toolbars` 与 `buttons` 渲染，非内置按钮用文件里的 label。
 - 符号字体预览：导入 `.otf` / `.ttf` 后挂到键面和手势提示上，并按字体 cmap 报告当前布局的缺字（实机会回退系统字体）；字体与工具栏图标**只影响预览，不写入任何 Foxy 文件**。
 - 符号面板编辑：支持新版 `foxy.symbols` / `foxy.emoji` / `foxy.kaomoji` 类型标记，兼容旧文件；预览和编辑列表的文字均自动缩小、单行完整显示，每行可选一项或六项。
 - 符号草稿与撤销：三类未应用 JSON 分别缓存，切换类别即时更新预览；文件导入、示例载入和 JSON 应用均可撤销与重做。
@@ -71,11 +71,16 @@ Android/data/com.fxliang.foxy/files/foxy/frontend/layouts/
 - 布局颜色、主题 `keyTypes` 颜色和主题全局颜色按明确的优先级合并，布局每键颜色高于主题颜色。
 - 主题编辑只处理独立主题文件；Foxy App 的全局主题选择、跟随系统等设置不属于本工具。
 - `modifier` 取值为 SHIFT / CTRL / ALT / META（大小写不敏感），可以在键、`override` 和变体上用 `"modifier": null` 显式改回普通键；声明了 `modifier` 的键长按会隐式锁定该修饰键，写了 `hold` 手势则关闭这个回退，没有 `modifier` 的原始键长按只发本键。
-- 键的 `icon` 除内置的 backspace / shift / enter / return 外，还可以引用顶层 `icons` 映射里的名字，或直接写 `svg:` / `xml:` 内联载荷。
+- 键的 `icon` 除内置的 backspace / shift / enter / return 外，还可以引用顶层 `icons` 映射里的名字，或直接写 `svg:` / `xml:` 内联载荷；`svg:` / `xml:` 前缀可以省略（App 端也接受裸 `<svg …>` 载荷），编辑器只给一条提示。
+- `modifierStates` 只对带 `modifier` 的键生效，槽位是 `off` / `oneshot` / `locked`，每槽可写 `icon` 与 `label`；它只改外观，不改修饰键行为。图标优先于标签，`icon: null` 才显示该状态的标签，`label: null` 清成空串；`"locked": null` 移除该状态的覆盖，`"modifierStates": null` 清掉全部继承。没有这个字段时老布局的呈现不变。
+- 布局里的按键（含 `override.variants`）可以用 `{ "when": …, "remove": true }` 屏蔽一条继承来的变体而不删键；条件按结构比较，写法不同但逻辑等价的 `when` 不能互换。按键定义与命名布局变体里没有可屏蔽的继承变体，编辑器会报错。
+- 宏步骤可以写 `{ "ref": "rime.a" }` 直接引用按键定义；裸字符串仍是动作名，`{ "action": 名 }` 是动作引用。引用按名字保留、执行时解析，编辑器不会把它展平。
+- 布局 `override` 的内边距字段是 `sidePaddingDp` / `sidePaddingLandscapeDp` / `bottomPaddingDp` / `bottomPaddingLandscapeDp`，整数 dp 0–150，省略时走常规设置。
 - 变体条件支持 `option` / `value` / `options` 与 `all_of` / `any_of` / `none_of` 组合；编辑器不知道活动 schema 声明了哪些开关，只能把条件里出现过的选项名做成预览开关；条件里一个选项名都没有时（默认 profile 就是这种）整组隐藏，因为那时的勾选不影响任何渲染。
 - 符号、emoji、颜文字外部文件需要在 Foxy 设置的符号布局中显式选中，同名文件不会自动覆盖内置数据。
 - `symbols`、`emoji`、`kaomoji` 作为 `switch_layout` / `switch_layout_once` 目标时会被识别为符号面板，因此不要把这三个名字用作自定义布局名。
 - `switch_layout_once` 是临时层：切到目标布局后，下一次有效输入（按键、宏、选词或上屏文本）完成即自动回到切换前的布局；再次切换会替换返回目标，唤起键盘或回到基础布局则取消这次返回。它的字段与 `switch_layout` 相同，编辑器只负责写对类型，不模拟返回时机。
+- `app` 命令除内置清单外，还接受 `paste` / `copy` / `cut` / `select_all` 与已安装插件注册的 `js.<appId>`（例如 `js.rewrite`）。插件 ID 是运行期事实，编辑器只按格式放行，不校验插件是否安装。
 
 ## 开发与测试
 

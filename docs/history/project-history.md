@@ -58,7 +58,8 @@
 | 宏引用选取阶段 | 2026-10-25 实测 | 修复手势对话框「来源切到宏调用后不碰下拉就保存」被误判成未选宏的问题，动作名同构修正；顺手补齐 `FE.snapshotGuard` 按来源过滤快照。core 814、UI 1651。 |
 | 临时布局阶段 | 2026-10-24 skill 更新（`switch_layout_once`）实测 | 动作类型新增临时层 `switch_layout_once`：动作摘要、校验、布局重命名引用改写、动作编辑器选项与取值全部覆盖；`skills/*.schema.json` 的上游枚举未含该类型，故未改 schema。core 819、UI 1658。 |
 | 预览选项开关阶段 | 2026-10-25 实测 | 预览工具栏的选项开关组只在条件里出现选项名时显示，否则整组隐藏（默认 profile 与示例里 0 处 `option` 条件，勾选影响不到任何渲染）；勾选只写 `state.status.options`，取消勾选删键。core 821、UI 1672。 |
-| 当前阶段 | 本次文档重组前后实测 | core 821、UI 1672、颜色解析 111、主题颜色 295、真实文件体检 46 个示例且 0 错误。 |
+| 2026-11-16 skill 更新阶段 | 2026-11-16 实测 | 对齐 `modifierStates` 状态外观、变体抑制 `remove`、宏步骤 `{ref}`、布局 `override` 内边距、`keyboard_layout` 等 app 命令与 `js.<appId>`；布局包导入识别 `foxy.toolbar`、多份共享定义与非 JSON 资源，蓝狐狸套件 0 错误载入。core 957、UI 1709。 |
+| 当前阶段 | 本次实测 | core 957、UI 1709、颜色解析 129、主题颜色 325、真实文件体检 49 个示例且 0 错误。 |
 
 ## 2. 长期有效的决策记录
 
@@ -494,6 +495,22 @@ E 段是端到端导出往返：拦下 `window.Blob` 拿到「导出 JSON」按�
 **测试**：`test/test-ui.js` 的「预览选项开关：无选项条件时整组隐藏」一块 13 条断言，覆盖无选项条件时隐藏且容器清空、有选项条件时显示并列出 `zenkaku` 与四个常开选项、勾选后变体命中（标签变 `全角A`）、取消勾选删键、以及条件被移除后重新隐藏。做过变异验证：把隐藏分支临时注释掉会红 3 条。
 
 同一轮把主题页「工具栏图标与符号字体」那段约 1900 字符、含源码引用（`at0.java:1440`、`r71.f0`、`hk0.w()`、`pinyin_simp.schema.yaml`）的实现者说明改写成了面向用户的两段短说明；被删的实现细节在 `js/toolbar-preview.js`、`js/font-preview.js` 的代码注释里本来就完整保留。改动时踩了一次坑：`test/test-ui.js` 对这段文案有字面断言（要求同时出现「拖动」与「渐隐」），精简时漏掉「渐隐」二字会红一条。
+### 6.11 对齐 2026-11-16 skill：modifierStates、变体掩码与布局包
+
+上游 `D:\GitHub\foxy\.dsh\skills\SKILL.md`（2026-11-16，1754 行）相对仓库内旧版（2026-10-25，1612 行）有 8 项实质变更；三份 schema 与其它 skill 文件未变（schema 已挪到 `.dsh/skills/schemas/`，md5 与仓库内一致）。本轮只对齐编辑器能落地、且不自行扩 schema 的部分：
+
+1. **`modifierStates` 状态外观**：带 `modifier` 的键可写 `off` / `oneshot` / `locked` 三槽的 `icon` 与 `label` 覆盖，只改外观；求值入口 `FE.modifierStateOf` / `FE.modifierStateAppearance`，键面在 `compileKeyItem` 里覆盖 `item.stateLabel` 与 `icon`；键编辑器加「修饰键状态外观」卡片（三槽 + 展开面板 + 清空/删除覆盖）。App 端 1f39d84 的 dex 里没有 `modifierStates` 字符串，说明这是规范领先于该 APK 的特性，SKILL.md 也写明老版本忽略该字段。
+2. **变体抑制 `remove: true`**：placement 与 `override.variants` 里可用掩码屏蔽一条继承变体；`FE.structKeyOf` 做结构比较，`FE.isVariantMask` 兼容 legacy「只有 when」写法，`applyVariants` 跳过掩码与命中项，`mergePatch` 不把 `remove` 合进 eff；按键定义与命名布局变体里写 `remove` 报错。
+3. **宏步骤 `{ "ref": "按键名" }`**：`FE.macroStepToDraft` 新增 `keyref` 形态，动作编辑器用 `allowKeyRef` 打开「引用按键」类型（文本框 + datalist，可指向共享定义），不再把 `{ref}` 当内联动作。
+4. **布局 `override` 内边距**：四个 dp 字段 0–150，布局设置面板加四个输入框，空值删字段。
+5. **app 命令**：`keyboard_layout` / `layout_profile` / `layout_picker` 进命令表；`FE.isPluginAppCommand` 认 `js.<appId>`，`FE.appCommandExists` 统一判定。
+6. **布局包导入**：`foxy.toolbar` 不再报 unknown，`plan.assets` 收非 JSON 资源，`plan.definitionsList` 支持多份共享定义并在导入面板给下拉；`FE.toolbarModelFromFile` + `FE.applyToolbarFromPlan` 把主题自带工具栏接进预览（`state.toolbarConfig` / `toolbarIcons` / `toolbarLabels`，纯预览不写文件）；`.otf` 交给符号字体预览。
+7. **裸图标载荷**：`svg:` / `xml:` 前缀可省（App 端 `f52.java` 容错），`FE.isBareIconMarkup` 识别，校验降为 warning，图标对话框保存时补前缀。
+
+**蓝狐狸套件实测**（`D:\GitHub\foxy\布局主题等\蓝狐狸`）：`planFolderImport` 现在识别 1 个布局、1 份共享定义、1 个工具栏、2 个资源（`字体图标.otf` / `.jpg`），0 unknown、0 error；`validateProfile` 只剩 1 条 warning（`my.分词` 没有前缀，已按内联载荷处理）；工具栏 13 个按钮图标全部可解析，`编辑` / `左` / `custom_13` 用 `buttons[id].label` 显示。真实浏览器里载入同一套件：预览工具栏 14 个 chip，其中 13 个用主题自带图标（`rime_switches` 主题没给图标，回落内置「中文」），0 运行时异常。改造前 `toolbars/default.json` 报「无法判断文件类型」，`my.分词` 是硬错误。
+
+**测试**：core 从 883 增到 957（+74 条：工具栏与共享定义 profile、modifierStates 求值与校验、remove 掩码、新 app 命令、布局内边距、宏 `{ref}`、裸 svg 容错），UI 从 1668 增到 1709（+41 条：工具栏 chip 与共享定义下拉、状态外观三槽编辑与预览、宏 keyref 步骤、布局内边距输入框）。
+
 ## 7. 验证基线与文档维护记录
 
 ### 7.1 当前验证命令
@@ -507,12 +524,12 @@ node test/test-ui.js
 
 当前 AGENT 开头记录的基线是：
 
-- core：821 通过，0 失败；
-- UI：1672 通过，0 失败；
-- 颜色解析：`node test/test-color-source.js`，111 通过；
-- 主题颜色：`node test/test-theme-colors.js`，295 通过；
+- core：957 通过，0 失败；
+- UI：1709 通过，0 失败；
+- 颜色解析：`node test/test-color-source.js`，129 通过；
+- 主题颜色：`node test/test-theme-colors.js`，325 通过；
 - 数据契约：`node test/conformance-adapter.js`，46 项检查全过；
-- 真实文件：`node test/check-real-files.js`，46 个示例，0 个错误。
+- 真实文件：`node test/check-real-files.js`，49 个示例，0 个错误。
 
 如果改过 `examples/`，先运行：
 
@@ -565,6 +582,8 @@ node tools/check-agent-sync.js
 → 799 core + 1590 UI（2026-10-22 工具栏并入键盘面板、展开态返回行、keyboard_tools 图标）
 → 814 core + 1651 UI（2026-10-25 宏调用 / 动作名「显示即已选」修复与回归测试）
 → 821 core + 1672 UI（2026-10-25 预览选项开关整组隐藏、补测试与主题页说明精简后的当前基线）
+→ 883 core + 1668 UI（2026-10-27 / 11-06 工作区重构、多选与批量编辑后的基线）
+→ 957 core + 1709 UI（2026-11-16 skill 更新：modifierStates、变体掩码、宏按键引用、布局内边距与布局包导入后的当前基线）
 ```
 
 另有一段旧的 AGENT 末尾仍写着：core 531、UI 1062、示例 20（16 布局 + 4 popup）。它是文档未同步时留下的历史基线，不能覆盖文件顶部和标准工作流中的当前数字。重组文档时保留这条说明，是为了让以后看到旧提交或旧截图的人知道数字差异来自文档漂移，而不是测试随机变化。

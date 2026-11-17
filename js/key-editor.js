@@ -78,6 +78,7 @@ FE.buildKeyEditor = function (opts) {
   var activeGesture = null, gestureFlush = null, gestureEditor = null, pendingGesture = null;
   var rawEditor=null,rawBase=null;
   var formBuildSeq=0;
+  var msOpenSlot=null;   /* 修饰键状态外观：当前展开编辑的槽（oneshot / locked） */
   var formHost = h('div');
   modal.body.appendChild(formHost);
   var commitErrors = h('div', {class: 'status error key-commit-errors', role: 'alert'});
@@ -106,6 +107,122 @@ FE.buildKeyEditor = function (opts) {
   function refSummary() {
     if (isPlacement) return draft.ref ? draft.ref : '内联按键（无引用）';
     return (draft.ref ? draft.ref : '（无基础引用）');
+  }
+
+  /* ---------- 修饰键状态外观 ---------- */
+  function msSlotData(slot) {
+    var ms = FE.isPlainObject(draft.modifierStates) ? draft.modifierStates : null;
+    return (ms && FE.isPlainObject(ms[slot])) ? ms[slot] : null;
+  }
+  function msHas(obj, k) { return !!obj && Object.prototype.hasOwnProperty.call(obj, k); }
+  /* 写一个槽字段：undefined = 删除该字段，null = 显式清空（继承来的外观不再生效）。 */
+  function msWrite(slot, field, value) {
+    if (!FE.isPlainObject(draft.modifierStates)) draft.modifierStates = {};
+    if (!FE.isPlainObject(draft.modifierStates[slot])) draft.modifierStates[slot] = {};
+    if (value === undefined) delete draft.modifierStates[slot][field];
+    else draft.modifierStates[slot][field] = value;
+    if (!Object.keys(draft.modifierStates[slot]).length) delete draft.modifierStates[slot];
+    if (!Object.keys(draft.modifierStates).length) delete draft.modifierStates;
+    draftChanged();
+    buildForm();
+  }
+  function msClearSlot(slot) {
+    if (!FE.isPlainObject(draft.modifierStates)) return;
+    delete draft.modifierStates[slot];
+    if (!Object.keys(draft.modifierStates).length) delete draft.modifierStates;
+    draftChanged();
+    buildForm();
+  }
+  function buildModifierStatesCard(modName) {
+    var card = h('details', { class: 'card inner-card ms-card', open: true });
+    card.appendChild(h('summary', null, '修饰键状态外观（' + modName + '）'));
+    var body = h('div', { class: 'inner-card-body' });
+    body.appendChild(h('div', { class: 'status' },
+      '只改外观，不改修饰键行为与手势；图标优先于标签，图标清空（null）时才显示该状态的标签。'));
+    var baseIcon = draft.icon !== undefined ? draft.icon : effRaw('icon');
+    var baseLabel = draft.label !== undefined ? draft.label : FE.rawLabelOf(effObj(), FE.NEUTRAL_STATUS);
+    var strip = h('div', { class: 'ms-slots' });
+    [
+      { key: 'default', title: 'Default', hint: '普通外观' },
+      { key: 'oneshot', title: 'Modifier active', hint: '按下修饰键时' },
+      { key: 'locked', title: 'Modifier locked', hint: '锁定修饰键时' }
+    ].forEach(function (d) {
+      var slotVal = d.key === 'default' ? null : msSlotData(d.key);
+      var iconName = (slotVal && msHas(slotVal, 'icon')) ? slotVal.icon : baseIcon;
+      var labelText = (slotVal && msHas(slotVal, 'label')) ? slotVal.label : baseLabel;
+      var attrs = {
+        class: 'ms-slot' + (d.key === 'default' ? ' ms-slot-default' : '') + (msOpenSlot === d.key ? ' active' : ''),
+        title: d.key === 'default' ? '普通键外观：用上面的图标与标签编辑' : '点此编辑该状态的外观'
+      };
+      if (d.key !== 'default') attrs.type = 'button';
+      var box = h(d.key === 'default' ? 'div' : 'button', attrs);
+      var prev = h('span', { class: 'ms-slot-preview' });
+      var svg = (typeof iconName === 'string' && iconName) ? FE.iconSvgOf(iconName, { profile: state.profile }) : null;
+      if (svg) {
+        var wrap = h('span', { class: 'kb-icon-wrap' });
+        wrap.innerHTML = svg;
+        prev.appendChild(wrap);
+      } else {
+        prev.appendChild(h('span', { class: 'ms-slot-text' },
+          (labelText == null || labelText === '') ? '·' : String(labelText)));
+      }
+      box.appendChild(prev);
+      box.appendChild(h('span', { class: 'ms-slot-title' }, d.title));
+      box.appendChild(h('span', { class: 'ms-slot-hint' }, d.hint));
+      if (slotVal && (msHas(slotVal, 'icon') || msHas(slotVal, 'label'))) {
+        box.appendChild(h('span', { class: 'ms-slot-badge' }, '已覆盖'));
+      }
+      if (d.key !== 'default') {
+        box.addEventListener('click', function () {
+          msOpenSlot = (msOpenSlot === d.key) ? null : d.key;
+          buildForm();
+        });
+      }
+      strip.appendChild(box);
+    });
+    body.appendChild(strip);
+    if (msOpenSlot && msOpenSlot !== 'default') {
+      var slot = msOpenSlot;
+      var sv = msSlotData(slot) || {};
+      var panel = h('div', { class: 'ms-panel' });
+      panel.appendChild(h('div', { class: 'ms-panel-title' },
+        slot === 'oneshot' ? 'Modifier active 外观' : 'Modifier locked 外观'));
+      var picker = FE.buildIconPicker({
+        get: function () { return msHas(sv, 'icon') ? sv.icon : undefined; },
+        set: function (v) { msWrite(slot, 'icon', v); },
+        inherited: function () { return (typeof baseIcon === 'string' && baseIcon) ? baseIcon : null; },
+        scope: { profile: state.profile }
+      });
+      panel.appendChild(h('div', { class: 'form-row form-inline' },
+        h('label', { class: 'mini-label' }, '图标'), picker));
+      var lbl = h('input', {
+        type: 'text', class: 'mini-input',
+        value: msHas(sv, 'label') ? String(sv.label == null ? '' : sv.label) : '',
+        placeholder: '留空继承默认标签'
+      });
+      lbl.addEventListener('change', function () {
+        msWrite(slot, 'label', lbl.value === '' ? undefined : lbl.value);
+      });
+      panel.appendChild(h('div', { class: 'form-row form-inline' },
+        h('label', { class: 'mini-label' }, '标签'), lbl,
+        h('button', { type: 'button', class: 'mini-button', title: '显式清空（null）：该状态不显示标签',
+          onclick: function () { msWrite(slot, 'label', null); } }, '清空')));
+      panel.appendChild(h('div', { class: 'form-row form-inline' },
+        h('button', { type: 'button', class: 'mini-button',
+          onclick: function () { msClearSlot(slot); } }, '删除该状态覆盖')));
+      body.appendChild(panel);
+    }
+    if (draft.modifierStates === null) {
+      body.appendChild(h('div', { class: 'status' }, '已显式清空（modifierStates: null）：不继承任何状态外观。'));
+      body.appendChild(h('button', { type: 'button', class: 'mini-button',
+        onclick: function () { delete draft.modifierStates; draftChanged(); buildForm(); } }, '恢复继承'));
+    } else if (FE.isPlainObject(draft.modifierStates) && Object.keys(draft.modifierStates).length) {
+      body.appendChild(h('button', { type: 'button', class: 'mini-button',
+        title: '写显式 null：清掉继承来的全部状态外观',
+        onclick: function () { draft.modifierStates = null; draftChanged(); buildForm(); } }, '清空全部（null）'));
+    }
+    card.appendChild(body);
+    return card;
   }
 
   /* ---------- 表单构建 ---------- */
@@ -353,6 +470,13 @@ FE.buildKeyEditor = function (opts) {
     }
     basic.appendChild(b);
     formHost.appendChild(basic);
+
+    /* 修饰键状态外观（SKILL.md「Modifier State Appearance」）：
+     * 带 modifier 的键显示三个横向外观槽 Default / Modifier active / Modifier locked。
+     * Default 就是上面的普通图标与标签；另两槽写 modifierStates 覆盖，
+     * 只改外观，不改修饰键行为与手势动作。 */
+    var effModName = FE.canonicalModifierName(effRaw('modifier'));
+    if (effModName) formHost.appendChild(buildModifierStatesCard(effModName));
 
     /* 网格坐标 */
     if (isPlacement && opts.grid) {

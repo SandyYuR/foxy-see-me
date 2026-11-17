@@ -800,10 +800,11 @@ FE.buildIconPicker = function (opts) {
     }
     /* 当前值不在任何一组时要补一项，免得打开对话框就把它悄悄改掉 */
     if (typeof cur === 'string' && cur) {
-      if (FE.isInlineIcon(cur)) {
+      if (FE.isInlineIcon(cur) || FE.isBareIconMarkup(cur)) {
         var renderable = !!FE.iconMarkupFromPayload(cur);
+        var pref = FE.isInlineIcon(cur) ? cur.slice(0, cur.indexOf(':') + 1) : '无前缀';
         pop.appendChild(h('div', { class: 'picker-group' }, '当前值（内联载荷）'));
-        pop.appendChild(makeItem(cur, '内联 SVG（' + cur.slice(0, cur.indexOf(':') + 1) + '…）',
+        pop.appendChild(makeItem(cur, '内联 SVG（' + pref + '…）',
           renderable ? '可渲染' : '载荷无法渲染', srcExcerpt(cur)));
       } else if (FE.ICONS.indexOf(cur) < 0 && names.indexOf(cur) < 0) {
         pop.appendChild(h('div', { class: 'picker-group' }, '当前值（未匹配）'));
@@ -826,7 +827,7 @@ FE.buildIconPicker = function (opts) {
       nameText = '清除（无图标）';
       display = null;
     } else {
-      nameText = FE.isInlineIcon(cur) ? '内联 SVG' : String(cur);
+      nameText = (FE.isInlineIcon(cur) || FE.isBareIconMarkup(cur)) ? '内联 SVG' : String(cur);
     }
     trigger.appendChild(thumbOf(display));
     trigger.appendChild(h('span', { class: 'icon-pick-label' }, nameText));
@@ -834,7 +835,7 @@ FE.buildIconPicker = function (opts) {
     trigger.setAttribute('title', cur === undefined ? ('继承' + (inh ? '：' + inh : ''))
       : (cur === null ? '清除（null）' : String(cur)));
     /* 内联载荷：折叠展示完整代码，作者要能读到代码而不只是看图形 */
-    if (typeof cur === 'string' && FE.isInlineIcon(cur)) {
+    if (typeof cur === 'string' && (FE.isInlineIcon(cur) || FE.isBareIconMarkup(cur))) {
       var det = h('details', { class: 'icon-pick-code' });
       det.appendChild(h('summary', null, '当前内联 SVG 代码（' + cur.length + ' 字符）'));
       var pre = h('pre', { class: 'icon-pick-pre' });
@@ -872,6 +873,7 @@ FE.buildIconPicker = function (opts) {
  *
  * opts:
  *   allowRef  是否提供「引用动作名」这一形态（宏步骤里这是常见写法）
+ *   allowKeyRef 是否提供「引用按键」形态（写 { "ref": "rime.a" }，只有宏步骤用）
  *   exclude   要隐藏的类型，如 ['macro']（宏步骤不能调用宏，嵌套会被运行时丢弃）
  *   onChange  任一控件改动 / 切换类型后回调（调用方据此写回，不用自己找控件绑事件）
  * 返回 { el, getValue() }；getValue() 对引用形态返回字符串，其余返回对象，空则 null。
@@ -880,23 +882,29 @@ FE.buildIconPicker = function (opts) {
  * 同页可能同时存在多个动作编辑器（宏的每一步一个 + 动作定义列表 + 手势对话框），
  * 写死 id 会产生重复 id（非法 HTML，且 list= 的关联行为不可靠）。 */
 var dlLayoutSeq = 0;
+var dlKeyRefSeq = 0;
 
 FE.buildActionEditor = function (spec, opts) {
   opts = opts || {};
   var excluded = Array.isArray(opts.exclude) ? opts.exclude : [];
   var allowRef = opts.allowRef === true;
+  var allowKeyRef = opts.allowKeyRef === true;
 
-  /* 引用形态：spec 是字符串，或 { action: '名字' } */
+  /* 引用形态：spec 是字符串（引用动作名）、{ action: '名字' }，
+   * 或 { ref: '按键名' }（按键引用，只有宏步骤开启 allowKeyRef 时才有）。 */
   var refName = null;
+  var keyRefName = null;
   if (typeof spec === 'string') { refName = spec; spec = null; }
   else if (FE.isPlainObject(spec)) {
     spec = FE.deepClone(spec);
-    if (typeof spec.action === 'string') { refName = spec.action; spec = null; }
+    if (allowKeyRef && typeof spec.ref === 'string' && spec.ref) { keyRefName = spec.ref; spec = null; }
+    else if (typeof spec.action === 'string') { refName = spec.action; spec = null; }
     else if (FE.isPlainObject(spec.action)) { spec = FE.deepClone(spec.action); }
   } else spec = null;
 
-  var initType = refName != null ? 'ref'
-    : (spec ? (spec.macro != null ? 'macro' : (spec.type || '')) : '');
+  var initType = keyRefName != null ? 'keyref'
+    : (refName != null ? 'ref'
+      : (spec ? (spec.macro != null ? 'macro' : (spec.type || '')) : ''));
 
   var root = h('div', { class: 'action-editor' });
   var typeSel = h('select', { class: 'mini-select' });
@@ -909,6 +917,7 @@ FE.buildActionEditor = function (spec, opts) {
   /* 选项顺序：引用形态优先（宏步骤最常用），随后是直接动作 */
   var ordered = [];
   if (allowRef) ordered.push(['ref', '引用动作名']);
+  if (allowKeyRef) ordered.push(['keyref', '引用按键（{ref}）']);
   ordered.push(['', '（无动作）']);
   ordered.push(['key', typeLabels.key]);
   ['modifier', 'text', 'commit', 'switch_layout', 'switch_layout_once', 'app', 'macro'].forEach(function (k) {
@@ -922,7 +931,7 @@ FE.buildActionEditor = function (spec, opts) {
   root.appendChild(h('div', { class: 'form-row form-inline' }, h('label', { class: 'mini-label' }, '类型'), typeSel));
   root.appendChild(fields);
 
-  var keySel, metaChks = [], modSel, modStateSel, textInp, textTypeSel, layoutInp, cmdSel, argInp, macroSel, refSel;
+  var keySel, metaChks = [], modSel, modStateSel, textInp, textTypeSel, layoutInp, cmdSel, argInp, macroSel, refSel, keyRefInp;
   var argumentOriginal = '';
 
   /* textarea 会把 CRLF 规范成 LF；未修改的载入文本仍按原始换行符写回。 */
@@ -948,7 +957,19 @@ FE.buildActionEditor = function (spec, opts) {
     clearEl(fields);
     metaChks = [];
     var t = typeSel.value;
-    if (t === 'ref') {
+    if (t === 'keyref') {
+      /* 按键引用：{ "ref": "rime.a" } —— 指向按键定义，执行时才解析，
+       * 不会在解析布局时展平。用文本框 + datalist 而不是下拉，
+       * 因为引用可以指向共享定义里的键，本地 keys 未必列全。 */
+      keyRefInp = h('input', { type: 'text', class: 'mini-input wide action-keyref-input',
+        list: 'action-keyref-' + (++dlKeyRefSeq), placeholder: '按键名，如 rime.a', 'aria-label': '按键名' });
+      keyRefInp.value = keyRefName == null ? '' : keyRefName;
+      var krDl = h('datalist', { id: 'action-keyref-' + dlKeyRefSeq });
+      var krKeys = (state.profile && FE.isPlainObject(state.profile.keys)) ? Object.keys(state.profile.keys) : [];
+      krKeys.forEach(function (n) { krDl.appendChild(h('option', { value: n })); });
+      fields.appendChild(h('div', { class: 'form-row form-inline' },
+        h('label', { class: 'mini-label' }, '按键名'), keyRefInp, krDl));
+    } else if (t === 'ref') {
       /* 引用已命名动作：列出 actions，当前值不在表内时补一个"未定义"项 */
       refSel = h('select', { class: 'mini-select wide action-ref-select' });
       var acts = (state.profile && FE.isPlainObject(state.profile.actions)) ? state.profile.actions : {};
@@ -1068,6 +1089,10 @@ FE.buildActionEditor = function (spec, opts) {
   function getValue() {
     var t = typeSel.value;
     if (!t) return null;
+    if (t === 'keyref') {
+      var krName = keyRefInp ? keyRefInp.value.trim() : '';
+      return krName ? { ref: krName } : null;
+    }
     if (t === 'ref') {
       /* 引用形态返回字符串：actionExpression 允许字符串，宏步骤里这是常见写法 */
       if (!refSel || !refSel.value) return null;
@@ -1426,6 +1451,9 @@ FE.openIconDialog = function (opts) {
       if (!name) return fail('名字不能为空');
       if (FE.isBuiltinIcon(name)) return fail('“' + name + '” 是内置图标名，不需要自定义');
       if (taken[name] && name !== opts.name) return fail('已经有同名图标: ' + name);
+      /* 规范要求 svg: / xml: 前缀，但 App 的解析（f52.java）对裸 <svg> 也容错，
+       * 所以这里不拒绝，而是补上前缀再保存，避免把作者手上能用的载荷判成非法。 */
+      if (!FE.isInlineIcon(payload) && FE.isBareIconMarkup(payload)) payload = 'svg:' + payload;
       if (!FE.isInlineIcon(payload)) return fail('载荷必须以 svg: 或 xml: 开头');
       if (!FE.iconMarkupFromPayload(payload)) return fail('载荷清洗后没有任何标记，无法渲染');
       modal.close();

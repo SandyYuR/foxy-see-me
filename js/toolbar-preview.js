@@ -270,7 +270,11 @@
   }
 
   function chip(id, active, unit) {
-    var def = FE.TOOLBAR_BUTTONS[id] || { label: id };
+    /* 显示名优先级：App 内置表 > 主题工具栏文件里的 label > id 原文。
+     * 主题包会带非内置按钮（蓝狐狸的「编辑」「左」「custom_13」），
+     * 它们的名字只存在于 foxy.toolbar 的 buttons[id].label 里。 */
+    var def = FE.TOOLBAR_BUTTONS[id] ||
+      { label: ((st().toolbarLabels || {})[id] || id) };
     var isSwitch = (id === 'rime_switches');
     var pick = isSwitch ? null : iconOf(id, active);
     var fg = active ? css('accentColor') : css('toolTextColor');

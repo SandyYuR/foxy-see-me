@@ -544,6 +544,10 @@ function buildSkeleton() {
     el('div', { id: 'layout-settings', class: 'settings-block' },
       el('input', { id: 'ls-height-p', type: 'number' }),
       el('input', { id: 'ls-height-landscape', type: 'number' }),
+      el('input', { id: 'ls-pad-side', type: 'number' }),
+      el('input', { id: 'ls-pad-side-landscape', type: 'number' }),
+      el('input', { id: 'ls-pad-bottom', type: 'number' }),
+      el('input', { id: 'ls-pad-bottom-landscape', type: 'number' }),
       el('div', { id: 'layout-variants' })),
     el('div', { id: 'layout-sections' })
   );
@@ -572,6 +576,8 @@ function buildSkeleton() {
     el('div', { id: 'op-folder' },
       el('select', { id: 'op-folder-layout' }),
       el('button', { id: 'op-folder-load' })),
+    el('div', { id: 'op-folder-defs-row' },
+      el('select', { id: 'op-folder-defs' })),
     el('div', { id: 'op-folder-hint', class: 'form-row form-inline folder-hint' },
       el('span', { id: 'op-folder-hint-text', class: 'folder-hint-text' }),
       el('button', { id: 'op-folder-complete', class: 'mini-button attention' }, '选择文件夹…'),

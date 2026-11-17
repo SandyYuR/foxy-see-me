@@ -53,6 +53,8 @@ var state = {
   folderPlan: null,       // 「导入文件夹」的识别结果（FE.planFolderImport 产物）
   folderDefs: null,       // 该文件夹里的共享 definitions.json（导出时用于还原分包）
   folderLayoutPath: null, // 当前正在编辑的包内布局文件路径
+  folderDefsPath: null,   // 该文件夹里选用的共享定义路径（definitions/*.json 多 profile 时）
+  folderToolbar: null,    // 该文件夹里的工具栏文件（foxy.toolbar）识别结果，供预览用
   folderHint: null,       // 需补选文件夹时的提示文案（null = 不提示，由 renderFolderOps 派生渲染）
   layoutName: null,       // 当前正在编辑/预览的命名布局
   /* 预览的「键盘状态」模拟。shift 是历史字段（决定 shiftedLabel / 弹出候选），
@@ -186,6 +188,10 @@ var state = {
    *   previewFontFontFace     注册到 document.fonts 的 FontFace（清除时 unload） */
   previewToolbar: true,
   toolbarIcons: null,
+  /* 工具栏按钮表与显示名：默认走 FE.TOOLBAR_DEFAULT / FE.TOOLBAR_BUTTONS，
+   * 导入带 foxy.toolbar 的布局包后换成主题自带的（纯预览，不写进任何 Foxy 文件）。 */
+  toolbarConfig: null,
+  toolbarLabels: null,
   previewFontFamily: null,
   previewFontName: null,
   previewFontCoverage: null,
@@ -253,7 +259,9 @@ FE.lookupDef = lookupDef;
 function mergePatch(target, patch) {
   for (var k in patch) {
     if (!Object.prototype.hasOwnProperty.call(patch, k)) continue;
-    if (k === 'ref' || k === 'when' || k === 'variants') continue;
+    /* remove 只用于变体抑制掩码，不是外观字段：绝不能 merge 进 eff，
+     * 否则掩码本身会变成一个带 remove:true 的键外观。 */
+    if (k === 'ref' || k === 'when' || k === 'variants' || k === 'remove') continue;
     var v = patch[k];
     if (k === 'tap' && v === null) continue;           // tap:null 保留继承的点击动作
     /* 文档 null 语义：label 清空为空字符串；weight/height 恢复解析器默认 1 */
@@ -501,16 +509,60 @@ function variantMatches(when, status) {
 }
 FE.variantMatches = variantMatches;
 
-function applyVariants(eff, variants, status, seen, scope) {
+/* 变体条件的「结构键」：键序无关、值按 JSON 规范化。
+ * 抑制掩码（remove:true）只屏蔽**结构相同**的继承变体 —— SKILL.md 明确
+ * 「逻辑等价但写法不同不可互换」，所以这里不做任何语义归一（不排序数组、
+ * 不合并 all_of/any_of、不忽略 null）。 */
+function structKeyOf(value) {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return '[' + value.map(structKeyOf).join(',') + ']';
+  if (isPlainObject(value)) {
+    var ks = Object.keys(value).sort();
+    return '{' + ks.map(function (k) { return JSON.stringify(k) + ':' + structKeyOf(value[k]); }).join(',') + '}';
+  }
+  return JSON.stringify(value);
+}
+FE.structKeyOf = structKeyOf;
+
+/* 变体抑制掩码：显式 remove:true，或只有 when 一个键的 legacy「仅条件」写法。
+ * 它不改变键的外观，只把同结构的继承变体从匹配列表里摘掉（不删除键本身）。 */
+function isVariantMask(v) {
+  if (!isPlainObject(v)) return false;
+  if (v.remove === true) return true;
+  if (hasOwnProp(v, 'remove')) return false;
+  var ks = Object.keys(v);
+  return ks.length === 1 && ks[0] === 'when';
+}
+FE.isVariantMask = isVariantMask;
+
+/* 收集若干变体数组里的掩码结构键。放置位的直接变体与 override 变体
+ * 合并生效（掩码写在任一处都能屏蔽继承来的同结构变体）。 */
+function collectVariantMasks(lists, out) {
+  out = out || {};
+  (lists || []).forEach(function (list) {
+    if (!Array.isArray(list)) return;
+    list.forEach(function (v) {
+      if (isVariantMask(v) && isPlainObject(v.when)) out[structKeyOf(v.when)] = true;
+    });
+  });
+  return out;
+}
+FE.collectVariantMasks = collectVariantMasks;
+
+function applyVariants(eff, variants, status, seen, scope, masks) {
   if (!Array.isArray(variants) || !variants.length) return eff;
   var match = null;
   for (var i = 0; i < variants.length; i++) {
-    if (variants[i] && variantMatches(variants[i].when, status)) match = variants[i];
+    var v = variants[i];
+    if (!v || isVariantMask(v)) continue;
+    if (masks && masks[structKeyOf(v.when)]) continue;
+    if (variantMatches(v.when, status)) match = v;
   }
   if (!match) return eff;
   var patch = omit(match, ['when']);
   if (typeof match.ref === 'string' && match.ref) {
-    var sub = evalKeyRef(match.ref, status, seen, scope);
+    var sub = evalKeyRef(match.ref, status, seen, scope, masks);
     var eff2 = sub.eff;
     mergePatch(eff2, omit(patch, ['ref']));
     return eff2;
@@ -522,7 +574,7 @@ FE.applyVariants = applyVariants;
 
 /* 解析用户按键定义引用链：name → ... → 内置/终点
  * scope 可选：省略时读 state.profile（浏览器主路径），显式传入则完全独立于全局状态。 */
-function evalKeyRef(refName, status, seen, scope) {
+function evalKeyRef(refName, status, seen, scope, masks) {
   seen = seen || {};
   var node = lookupDef(refName, scope);
   var result = { eff: {}, chain: [], unresolved: null, cycle: null };
@@ -532,14 +584,14 @@ function evalKeyRef(refName, status, seen, scope) {
   result.chain.push(refName);
   if (node.ref != null) {
     if (typeof node.ref !== 'string') { result.unresolved = String(node.ref); return result; }
-    var sub = evalKeyRef(node.ref, status, seen, scope);
+    var sub = evalKeyRef(node.ref, status, seen, scope, masks);
     result.eff = sub.eff;
     result.chain = sub.chain.concat(result.chain);
     if (sub.unresolved) result.unresolved = sub.unresolved;
     if (sub.cycle) result.cycle = sub.cycle;
   }
   mergePatch(result.eff, omit(node, ['ref', 'variants']));
-  result.eff = applyVariants(result.eff, node.variants, status, seen, scope);
+  result.eff = applyVariants(result.eff, node.variants, status, seen, scope, masks);
   return result;
 }
 FE.evalKeyRef = evalKeyRef;
@@ -550,8 +602,13 @@ FE.evalKeyRef = evalKeyRef;
 FE.evalPlacement = function (placement, status, scope) {
   status = status || NEUTRAL_STATUS;
   var out = { eff: {}, chain: [], unresolved: null, cycle: null, placement: placement || {} };
+  /* 抑制掩码先收集：它要作用到**继承来的定义变体**上，所以必须在解析引用链
+   * 之前就准备好（掩码写在放置位自身或其 override 里都算）。 */
+  var masks = isPlainObject(placement)
+    ? collectVariantMasks([placement.override && placement.override.variants, placement.variants])
+    : {};
   if (isPlainObject(placement) && typeof placement.ref === 'string' && placement.ref) {
-    var sub = evalKeyRef(placement.ref, status, null, scope);
+    var sub = evalKeyRef(placement.ref, status, null, scope, masks);
     out.eff = sub.eff;
     out.chain = sub.chain;
     out.unresolved = sub.unresolved;
@@ -560,13 +617,42 @@ FE.evalPlacement = function (placement, status, scope) {
   if (isPlainObject(placement)) {
     if (isPlainObject(placement.override)) {
       mergePatch(out.eff, omit(placement.override, ['variants']));
-      out.eff = applyVariants(out.eff, placement.override.variants, status, null, scope);
+      out.eff = applyVariants(out.eff, placement.override.variants, status, null, scope, masks);
     }
     mergePatch(out.eff, omit(placement, ['ref', 'override', 'variants']));
-    out.eff = applyVariants(out.eff, placement.variants, status, null, scope);
+    out.eff = applyVariants(out.eff, placement.variants, status, null, scope, masks);
   }
   return out;
 };
+
+/* 修饰键状态外观（SKILL.md「Modifier State Appearance」）。
+ * 只对**带 modifier 的键**生效，且只改 icon / label，不改修饰键行为或手势动作。
+ * 状态判定：锁定（status.modifierLocks 模拟）> 激活（status.modifiers）> 未激活。
+ * 编辑器没有锁定态模拟入口，locked 槽只在显式传入 modifierLocks 时才用上。 */
+function modifierStateOf(eff, status) {
+  if (!isPlainObject(eff) || !isPlainObject(eff.modifierStates)) return null;
+  var name = FE.canonicalModifierName(eff.modifier);
+  if (!name) return null;            /* 没有 modifier 的键不使用这些状态外观 */
+  var locks = status && status.modifierLocks;
+  if (locks && typeof locks === 'object' && locks[name]) return 'locked';
+  return FE.statusModifierOn(status, name) ? 'oneshot' : 'off';
+}
+FE.modifierStateOf = modifierStateOf;
+
+/* 该键在当前状态下要套用的外观覆盖：{ state, icon?, label? }；无覆盖返回 null。
+ * 省略的状态保留现有呈现（槽不存在就不覆盖），所以老布局行为不变。 */
+function modifierStateAppearance(eff, status) {
+  var st = modifierStateOf(eff, status);
+  if (!st) return null;
+  var slot = eff.modifierStates[st];
+  if (!isPlainObject(slot)) return null;
+  var out = { state: st };
+  if (hasOwnProp(slot, 'icon')) out.icon = slot.icon === null ? null : slot.icon;
+  if (hasOwnProp(slot, 'label')) out.label = slot.label === null ? '' : String(slot.label);
+  if (!hasOwnProp(out, 'icon') && !hasOwnProp(out, 'label')) return null;
+  return out;
+}
+FE.modifierStateAppearance = modifierStateAppearance;
 
 /* ---------------- 动作与手势解析 ---------------- */
 FE.actionDisplay = function (a) {
@@ -1100,9 +1186,19 @@ FE.resolvePreviewLayout = function (profile, name, status, seen) {
 /* ================================================================
  * 五、校验器
  * ================================================================ */
+/* 已安装插件注册的前台 app 命令：js.<appId>。
+ * 编辑器读不到设备上装了哪些插件，所以只按命名规则放行（SKILL.md 要求
+ * 「不要臆造插件 ID 或假设插件已安装」—— 放行不等于保证能执行）。 */
+function isPluginAppCommand(command) {
+  return typeof command === 'string' && /^js\.[A-Za-z0-9_.-]+$/.test(command);
+}
+FE.isPluginAppCommand = isPluginAppCommand;
+
 function appCommandExists(command) {
+  if (isPluginAppCommand(command)) return true;
   return (FE.APP_COMMANDS || []).some(function (x) { return x[0] === command; });
 }
+FE.appCommandExists = appCommandExists;
 
 /* ---------------- 变体条件（when.rime）校验 ----------------
  * 与 FE.condResult 的求值口径严格对应：未知关键字报错（Foxy 端永远不匹配），
@@ -1212,6 +1308,80 @@ function checkKeyModifier(obj, where, err, code) {
       { code: code || 'bad-modifier' });
   }
 }
+
+/* 变体抑制掩码（SKILL.md「Suppressing an Inherited Key Variant」）：
+ * 结构是 { when, remove: true }，只屏蔽**结构相同**的继承变体，不删除键。
+ * legacy 写法「只有 when」也识别（见 isVariantMask），新 JSON 建议显式 remove:true。
+ * 返回 true 表示这是掩码 —— 调用方据此跳过外观/手势校验（掩码没有外观）。 */
+function checkVariantMask(v, where, err) {
+  if (!isVariantMask(v)) return false;
+  if (hasOwnProp(v, 'remove') && typeof v.remove !== 'boolean') {
+    err(where + ' 的 remove 必须是布尔值', { code: 'variant-mask-bad-remove' });
+  }
+  if (v.remove === true && !isPlainObject(v.when)) {
+    err(where + ' 的 remove:true 必须同时给出 when 条件', { code: 'variant-mask-no-when' });
+    return true;
+  }
+  Object.keys(v).forEach(function (k) {
+    if (k !== 'when' && k !== 'remove') {
+      err(where + ' 是变体抑制掩码，只能包含 when 与 remove，多余字段: ' + k,
+        { code: 'variant-mask-extra-fields' });
+    }
+  });
+  return true;
+}
+FE.checkVariantMask = checkVariantMask;
+
+/* 修饰键状态外观（SKILL.md「Modifier State Appearance」）：
+ * modifierStates 只对带 modifier 的键生效，槽位 off/oneshot/locked，
+ * 每槽只能写 icon / label；icon 可以是内置名、icons 映射里的名字或内联载荷。 */
+function checkModifierStates(obj, where, err, warnFn, effModifier, scope) {
+  if (!isPlainObject(obj) || !hasOwnProp(obj, 'modifierStates')) return;
+  var ms = obj.modifierStates;
+  var w = where + ' 的 modifierStates';
+  if (ms === null) return;                    /* null = 清空继承来的状态外观 */
+  if (!isPlainObject(ms)) { err(w + ' 必须是对象或 null', { code: 'bad-modifier-states' }); return; }
+  if (!FE.canonicalModifierName(effModifier)) {
+    warnFn(w + ' 只对带 modifier 的键生效；该键没有 modifier，这些外观会被忽略',
+      { code: 'modifier-states-without-modifier' });
+  }
+  Object.keys(ms).forEach(function (slot) {
+    var sw = w + '.' + slot;
+    if (FE.MODIFIER_STATE_SLOTS.indexOf(slot) < 0) {
+      err(sw + ' 不是有效的状态槽（可用 ' + FE.MODIFIER_STATE_SLOTS.join(' / ') + '）',
+        { code: 'bad-modifier-state-slot' });
+      return;
+    }
+    var val = ms[slot];
+    if (val === null) return;                 /* null = 移除该状态继承的外观 */
+    if (!isPlainObject(val)) { err(sw + ' 必须是对象或 null', { code: 'bad-modifier-state' }); return; }
+    Object.keys(val).forEach(function (f) {
+      if (FE.MODIFIER_STATE_FIELDS.indexOf(f) < 0) {
+        warnFn(sw + ' 的字段 ' + f + ' 不会被使用（只支持 ' + FE.MODIFIER_STATE_FIELDS.join(' / ') + '）',
+          { code: 'unknown-modifier-state-field' });
+      }
+    });
+    if (hasOwnProp(val, 'icon')) {
+      var ic = val.icon;
+      if (ic === null) return;                /* null = 该状态不画图标，回落到 label */
+      if (typeof ic !== 'string') { err(sw + '.icon 必须是字符串或 null', { code: 'bad-icon' }); return; }
+      if (!ic) { err(sw + '.icon 不能是空字符串（要清空图标请写 null）', { code: 'bad-icon' }); return; }
+      if (FE.ICONS.indexOf(ic) >= 0) return;
+      if (FE.isInlineIcon(ic) || FE.isBareIconMarkup(ic)) {
+        if (!FE.iconMarkupFromPayload(ic)) err(sw + '.icon 的载荷内容为空或无有效标记', { code: 'bad-icon' });
+        return;
+      }
+      if (!hasOwnProp(iconMapOf(scope), ic)) {
+        err(sw + '.icon 引用了未定义的图标: ' + ic + '（自定义图标名须在 profile 或共享 icons 映射里定义）',
+          { code: 'unknown-icon' });
+      }
+    }
+    if (hasOwnProp(val, 'label') && val.label !== null && typeof val.label !== 'string') {
+      err(sw + '.label 必须是字符串或 null', { code: 'bad-label' });
+    }
+  });
+}
+FE.checkModifierStates = checkModifierStates;
 
 function refNameOf(placement) {
   return (isPlainObject(placement) && typeof placement.ref === 'string') ? placement.ref : '内联按键';
@@ -1349,8 +1519,11 @@ FE.validateProfile = function (profile) {
           var v = profile.icons[n];
           if (!n) err('icons 含空名字');
           else if (typeof v !== 'string') err('icons.' + n + ' 必须是字符串');
-          else if (!FE.isInlineIcon(v)) err('icons.' + n + ' 必须以 svg: 或 xml: 开头（自定义图标载荷）');
+          else if (!FE.isInlineIcon(v) && !FE.isBareIconMarkup(v)) err('icons.' + n + ' 必须以 svg: 或 xml: 开头（自定义图标载荷）');
           else if (!FE.iconMarkupFromPayload(v)) err('icons.' + n + ' 的载荷内容为空或无有效标记');
+          /* 无前缀的裸标记 App 端能解析（f52.java 只在有前缀时剥），
+           * 所以按内联载荷接受，只提示补前缀，不判非法。 */
+          else if (!FE.isInlineIcon(v)) warn('icons.' + n + ' 没有 svg:/xml: 前缀，已按内联载荷处理（建议补前缀）');
         });
       }
     }
@@ -1382,10 +1555,17 @@ FE.validateProfile = function (profile) {
       if (kd.hold != null && kd.longPress != null) err('按键定义 “' + kn + '” 同时定义了 hold 与 longPress');
       checkGestureRefs(kd, '按键定义 “' + kn + '”', err, profile, scope);
       checkKeyModifier(kd, '按键定义 “' + kn + '”', err);
+      /* 状态外观只对带 modifier 的键生效：用解析后的有效 modifier 判断，
+       * 免得把从 ref 继承来的 modifier 误报成「没有 modifier」。 */
+      var kdEffMod = evalKeyRef(kn, NEUTRAL_STATUS, null, scope).eff.modifier;
+      checkModifierStates(kd, '按键定义 “' + kn + '”', err, warn, kdEffMod, scope);
       if (Array.isArray(kd.variants)) {
         kd.variants.forEach(function (v, vi) {
           if (!isPlainObject(v)) { err('按键定义 “' + kn + '” 的变体 ' + vi + ' 不是对象'); return; }
           checkKeyModifier(v, '按键定义 “' + kn + '” 变体 ' + vi, err);
+          /* 变体抑制只对「布局里的按键」有意义：按键定义没有可屏蔽的继承来源。 */
+          if (v.remove === true) err('按键定义 “' + kn + '” 变体 ' + vi + ' 的 remove 只能用在布局里的按键上（按键定义没有可屏蔽的继承变体）', { code: 'variant-mask-not-in-placement' });
+          checkModifierStates(v, '按键定义 “' + kn + '” 变体 ' + vi, err, warn, kdEffMod, scope);
           if (typeof v.ref === 'string' && !lookupDef(v.ref, scope)) err('按键定义 “' + kn + '” 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref);
           if (v.when != null && !isPlainObject(v.when)) err('按键定义 “' + kn + '” 变体 ' + vi + ' 的 when 必须是对象');
           else if (isPlainObject(v.when)) validateCondition(v.when.rime, '按键定义 “' + kn + '” 变体 ' + vi + ' 的条件', err, warn, reportOptionName);
@@ -1406,6 +1586,7 @@ FE.validateProfile = function (profile) {
       if (!isPlainObject(L)) { err('布局 “' + ln + '” 不是对象'); return; }
       if (Array.isArray(L.variants)) {
         L.variants.forEach(function (v, vi) {
+          if (isPlainObject(v) && v.remove === true) err('布局 “' + ln + '” 的变体 ' + vi + ' 不能用 remove：变体抑制只适用于布局里的按键（placement），不是命名布局变体特性', { code: 'variant-mask-not-in-layout' });
           if (!isPlainObject(v) || typeof v.layout !== 'string') err('布局 “' + ln + '” 的变体 ' + vi + ' 缺少 layout 字段');
           else if (!(v.layout in profile.layouts)) err('布局 “' + ln + '” 的变体指向不存在的布局: ' + v.layout);
           if (isPlainObject(v)) {
@@ -1434,6 +1615,16 @@ FE.validateProfile = function (profile) {
           var v = L.override[f];
           if (v != null && (typeof v !== 'number' || v < 0.1 || v > 0.9)) {
             warn('布局 “' + ln + '” 的 ' + f + ' 建议在 0.1–0.9 之间，当前为 ' + JSON.stringify(v));
+          }
+        });
+        /* 命名布局 override 的内边距（SKILL.md）：整数 dp，0–150，
+         * 竖屏/横屏各一套左右与底部间距；省略走常规设置回落。 */
+        FE.LAYOUT_PADDING_FIELDS.forEach(function (f) {
+          var v = L.override[f];
+          if (v == null) return;
+          if (typeof v !== 'number' || !isFinite(v) || Math.floor(v) !== v || v < 0 || v > FE.LAYOUT_PADDING_MAX) {
+            err('布局 “' + ln + '” 的 ' + f + ' 必须是 0–' + FE.LAYOUT_PADDING_MAX + ' 的整数 dp，当前为 ' + JSON.stringify(v),
+              { code: 'bad-layout-padding' });
           }
         });
       }
@@ -1604,9 +1795,13 @@ FE.validateProfile = function (profile) {
       if (ev.eff.hold != null && ev.eff.longPress != null) err(full + '（' + refNameOf(k) + '）同时定义了 hold 与 longPress', { code: 'hold-longpress' });
       checkGestureRefs(k, full, err, profile, scope);
       checkKeyModifier(k, full, err);
+      var placeEffMod = ev.eff.modifier;
+      checkModifierStates(k, full, err, warn, placeEffMod, scope);
       if (Array.isArray(k.variants)) k.variants.forEach(function (v, vi) {
         if (!isPlainObject(v)) { err(full + ' 的变体 ' + vi + ' 不是对象', { code: 'variant-not-object' }); return; }
         checkKeyModifier(v, full + ' 变体 ' + vi, err);
+        checkVariantMask(v, full + ' 变体 ' + vi, err);
+        checkModifierStates(v, full + ' 变体 ' + vi, err, warn, placeEffMod, scope);
         if (typeof v.ref === 'string' && !lookupDef(v.ref, scope)) err(full + ' 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref, { code: 'unresolved-ref' });
         if (v.when != null && !isPlainObject(v.when)) err(full + ' 变体 ' + vi + ' 的 when 必须是对象', { code: 'variant-not-object' });
         else if (isPlainObject(v.when)) validateCondition(v.when.rime, full + ' 变体 ' + vi + ' 的条件', err, warn, reportOptionName);
@@ -1615,9 +1810,12 @@ FE.validateProfile = function (profile) {
       if (isPlainObject(k.override)) {
         checkGestureRefs(k.override, full + ' override', err, profile, scope);
         checkKeyModifier(k.override, full + ' override', err);
+        checkModifierStates(k.override, full + ' override', err, warn, placeEffMod, scope);
         if (Array.isArray(k.override.variants)) k.override.variants.forEach(function (v, vi) {
           if (!isPlainObject(v)) { err(full + ' override 变体 ' + vi + ' 不是对象', { code: 'variant-not-object' }); return; }
           checkKeyModifier(v, full + ' override 变体 ' + vi, err);
+          checkVariantMask(v, full + ' override 变体 ' + vi, err);
+          checkModifierStates(v, full + ' override 变体 ' + vi, err, warn, placeEffMod, scope);
           if (typeof v.ref === 'string' && !lookupDef(v.ref, scope)) err(full + ' override 变体 ' + vi + ' 的 ref 无法解析: ' + v.ref, { code: 'unresolved-ref' });
           if (v.when != null && !isPlainObject(v.when)) err(full + ' override 变体 ' + vi + ' 的 when 必须是对象', { code: 'variant-not-object' });
           else if (isPlainObject(v.when)) validateCondition(v.when.rime, full + ' override 变体 ' + vi + ' 的条件', err, warn, reportOptionName);
@@ -1671,8 +1869,17 @@ FE.validateProfile = function (profile) {
       if (!Array.isArray(macros[mn2])) { err('宏 “' + mn2 + '” 必须是数组'); return; }
       macros[mn2].forEach(function (step, i) {
         var where = '宏 “' + mn2 + '” 步骤 ' + i;
+        /* 宏步骤的第四种写法：{ "ref": "rime.a" } 直接引用按键定义。
+         * 引用按名字保留、执行时才解析（不在解析布局时展平），所以这里只查名字存在。 */
+        var keyRefStep = isPlainObject(step) && typeof step.ref === 'string' && step.ref
+          && step.action == null && step.macro == null && step.type == null;
         var target = isPlainObject(step) && typeof step.action === 'string' ? step.action : (typeof step === 'string' ? step : null);
-        if (target) {
+        if (keyRefStep) {
+          if (!lookupDef(step.ref, scope)) err(where + ' 引用的按键不存在: ' + step.ref);
+          Object.keys(step).forEach(function (k) {
+            if (k !== 'ref') err(where + ' 的按键引用只能包含 ref 字段，多余字段: ' + k);
+          });
+        } else if (target) {
           if (!(isPlainObject(profile.actions) && profile.actions[target])) err(where + ' 引用动作名不存在: ' + target);
         } else if (isPlainObject(step) && isPlainObject(step.action)) {
           validateAction(step.action, where + '.action', err, profile);
@@ -2002,7 +2209,8 @@ function buildRefIndex(profile, popupProfile) {
     /* 自定义图标（顶层 icons 的名字）也是一条引用：只统计**直接写在这个节点上**的 icon。
      * 经 ref 继承来的图标不计入 —— 那属于被引用定义自己的说法，否则同一个定义
      * 会被它的每个使用者重复计一次，「使用 N」就失去意义了。 */
-    if (typeof node.icon === 'string' && node.icon && !FE.isBuiltinIcon(node.icon) && !FE.isInlineIcon(node.icon)) {
+    if (typeof node.icon === 'string' && node.icon && !FE.isBuiltinIcon(node.icon) &&
+      !FE.isInlineIcon(node.icon) && !FE.isBareIconMarkup(node.icon)) {
       push('icons', node.icon, base, loc);
     }
     GESTURES.forEach(function (slot) { gestureRefs(node[slot], base + ' · ' + slot, loc); });
@@ -2323,6 +2531,13 @@ function compileKeyItem(placement, loc, status, scope) {
   /* 主标签原始值（未应用 Shift）；渲染时按状态决定最终显示 */
   item.label = rawLabelOf(eff, status, 0, scope);
   item.shiftedLabel = (typeof eff.shiftedLabel === 'string') ? eff.shiftedLabel : null;
+  /* 修饰键状态外观在变体与 placement override **之后**生效（SKILL.md 明确顺序）。
+   * 图标优先于标签：槽里给了 icon 就走图标分支，icon:null 才回落到该状态的 label。 */
+  var msApp = modifierStateAppearance(eff, status);
+  if (msApp) {
+    if (hasOwnProp(msApp, 'icon')) { eff.icon = msApp.icon; item.icon = msApp.icon; }
+    if (hasOwnProp(msApp, 'label')) item.stateLabel = msApp.label;
+  }
 
   function summarize(g) {
     var gi = FE.gestureInfo(g, status, 0, scope);
@@ -2551,6 +2766,9 @@ function iconMarkupFromPayload(payload) {
   for (var k = 0; k < FE.INLINE_ICON_PREFIXES.length; k++) {
     if (lower.indexOf(FE.INLINE_ICON_PREFIXES[k]) === 0) { i = FE.INLINE_ICON_PREFIXES[k].length; break; }
   }
+  /* 无前缀的裸载荷（实际文件里常见，如蓝狐狸的 my.分词）：App 的解析器
+   * 先剥前缀再规范化，没有前缀时按标记本身处理，这里保持一致。 */
+  if (i < 0 && FE.isBareIconMarkup(s)) i = 0;
   if (i < 0 || !s.slice(i).trim()) return null;
   var out = s.slice(i).trim();
   out = out.replace(/<script[\s\S]*?<\/script\s*>/gi, '');
@@ -2913,7 +3131,9 @@ function autosave() {
       /* 工具栏预览（toolbar-preview.js）：开关 + 导入的图标。
        * 字体**不存**：二进制没法进 localStorage，刷新后要重新导入（状态行会提示）。 */
       previewToolbar: state.previewToolbar !== false,
-      toolbarIcons: state.toolbarIcons || null
+      toolbarIcons: state.toolbarIcons || null,
+      toolbarConfig: state.toolbarConfig || null,
+      toolbarLabels: state.toolbarLabels || null
     }));
     state.saveStatus = 'saved';
     state.savedAt = Date.now();
@@ -2941,6 +3161,8 @@ function applyProfileText(text, opts) {
    * 清掉文件夹导入上下文与补全提示，避免导出时按旧包剥离定义而错拆、提示残留。 */
   state.folderPlan = null;
   state.folderDefs = null;
+  state.folderDefsPath = null;
+  state.folderToolbar = null;
   state.folderLayoutPath = null;
   state.folderHint = null;
   state.jsonDirty = false;
@@ -3849,7 +4071,9 @@ function buildKeyEl(item, unit, opts) {  opts = opts || {};
     wrap.style.height = iw + 'px';
     el.appendChild(wrap);
   } else {
-    var label = displayLabel(eff);
+    /* 修饰键状态外观可能给了该状态的 label（如 locked 的 ⇪）：
+     * 它优先于 displayLabel 的 Shift 大写推导。 */
+    var label = item.stateLabel !== undefined ? item.stateLabel : displayLabel(eff);
     if (label !== '' && label != null) {
       el.appendChild(h('span', {
         class: 'kb-label',
@@ -4759,6 +4983,15 @@ function renderLayoutTabsPills() {
   });
 }
 
+/* 布局内边距覆盖：override 字段名 ↔ 输入框 id（与 FE.LAYOUT_PADDING_FIELDS 一一对应）。
+ * 竖屏/横屏各一套左右与底部间距；省略走常规设置回落。 */
+var LAYOUT_PADDING_INPUTS = [
+  ['sidePaddingDp', 'ls-pad-side'],
+  ['sidePaddingLandscapeDp', 'ls-pad-side-landscape'],
+  ['bottomPaddingDp', 'ls-pad-bottom'],
+  ['bottomPaddingLandscapeDp', 'ls-pad-bottom-landscape']
+];
+
 function renderLayoutSettings() {
   var L = curLayout();
   var hp = $('ls-height-p'), hl = $('ls-height-landscape');
@@ -4769,6 +5002,11 @@ function renderLayoutSettings() {
   if (hl && document.activeElement !== hl) {
     hl.value = ov.keyboardHeightPercentLandscape != null ? String(Math.round(ov.keyboardHeightPercentLandscape * 100)) : '';
   }
+  LAYOUT_PADDING_INPUTS.forEach(function (pair) {
+    var inp = $(pair[1]);
+    if (!inp || document.activeElement === inp) return;
+    inp.value = ov[pair[0]] != null ? String(ov[pair[0]]) : '';
+  });
 
   /* 布局变体 */
   var vhost = $('layout-variants');
@@ -6515,7 +6753,7 @@ function readFileText(file) {
 
 /* 把识别结果装入编辑器：合并共享定义 → 自包含 profile → 自动关联弹出菜单 */
 function loadFromFolderPlan(plan, layoutPath) {
-  var built = FE.buildProfileFromPlan(plan, layoutPath);
+  var built = FE.buildProfileFromPlan(plan, layoutPath, state.folderDefsPath);
   if (!built) { setOpStatus('该文件夹里没有可用的布局文件', 'error'); return false; }
   /* 先关联弹出菜单（它内部会渲染一次），随后用新布局再渲染一次 */
   if (built.popupMatch && built.popupMatch.covered > 0 && FE.loadPopupProfileText) {
@@ -6524,7 +6762,8 @@ function loadFromFolderPlan(plan, layoutPath) {
   state.profile = FE.normalizeProfile(built.profile);
   if (FE.resetBatchEditor) FE.resetBatchEditor();
   state.folderPlan = plan;
-  state.folderDefs = plan.definitions ? plan.definitions.data : null;
+  state.folderDefs = built.definitions ? built.definitions.data : null;
+  state.folderDefsPath = built.definitions ? built.definitions.path : null;
   state.folderLayoutPath = built.entry.path;
   state.folderHint = null;   // 整包已识别，补全提示随之失效
   state.fileName = built.entry.name;
@@ -6557,11 +6796,22 @@ function renderFolderOps() {
     sel.appendChild(h('option', { value: it.path }, it.path));
   });
   sel.value = state.folderLayoutPath || (plan.layouts[0] && plan.layouts[0].path) || '';
+  /* 共享定义多 profile 时给一个下拉：frontend/definitions/*.json 各自是一份 profile，
+   * 与布局 profile 的选择器相互独立（见 SKILL.md）。只有一份时整行隐藏。 */
+  var defsSel = $('op-folder-defs'), defsRow = $('op-folder-defs-row');
+  if (defsSel && defsRow) {
+    var dl = plan.definitionsList || [];
+    defsRow.hidden = dl.length <= 1;
+    clearEl(defsSel);
+    dl.forEach(function (it) { defsSel.appendChild(h('option', { value: it.path }, it.path)); });
+    defsSel.value = state.folderDefsPath || (plan.definitions && plan.definitions.path) || '';
+  }
   if (!rep) return;
   clearEl(rep);
   rep.className = 'status ' + (plan.errors.length ? 'warn' : 'ok');
-  var built = FE.buildProfileFromPlan(plan, state.folderLayoutPath);
+  var built = FE.buildProfileFromPlan(plan, state.folderLayoutPath, state.folderDefsPath);
   var parts = [FE.describePlan(plan)];
+  if (state.folderToolbar) parts.push('工具栏 ' + state.folderToolbar.count + ' 个图标');
   if (built && built.report.keys.length) {
     parts.push('并入共享键 ' + built.report.keys.length +
       (built.report.overridden.length ? '（本地覆盖 ' + built.report.overridden.length + '）' : ''));
@@ -6709,13 +6959,19 @@ function initToolbar() {
    *   · 单文件布局导入后若仍有 ref 无法解析 → 就地提示补全。
    * 浏览器只把「用户选中的文件」交给网页、不提供其所在目录信息，所以补全必须再取
    * 一次文件夹授权，无法仅凭文件名反推同目录。 */
+  /* 把 File 列表转成导入条目。**只有 JSON 读文本**：字体/图片是二进制，
+   * 按文本读会得到乱码；它们保留 file 引用，由上层按扩展名处理。 */
   function filesToEntries(files) {
     return Promise.all(files.map(function (f) {
+      if (!/\.json$/i.test(f.name || '')) {
+        return { name: f.name, path: f.webkitRelativePath || f.name, text: null, file: f };
+      }
       return readFileText(f).then(function (text) {
         return text == null ? null : {
           name: f.name,
           path: f.webkitRelativePath || f.name,
-          text: text
+          text: text,
+          file: f
         };
       });
     })).then(function (list) { return list.filter(Boolean); });
@@ -6743,6 +6999,58 @@ function initToolbar() {
     try { dirInput.click(); } catch (e) { /* 被拦掉则依赖提示行按钮 */ }
   }
 
+  /* 把布局包里的 foxy.toolbar 装进工具栏预览：按钮表 → state.toolbarConfig，
+   * 每个按钮的 icon / activeIcon → state.toolbarIcons（与「导入图标」同一份结构）。
+   * 纯预览：不写进布局 JSON，也不参与校验。 */
+  function applyToolbarFromPlan(plan) {
+    var list = (plan && plan.toolbars) || [];
+    if (!list.length || !FE.toolbarModelFromFile) return null;
+    var tb = list[0];
+    var model = FE.toolbarModelFromFile(tb.data);
+    if (!model) {
+      setOpStatus('工具栏文件 ' + tb.name + ' 里没有可用的按钮表（toolbars.main / expanded 均为空）', 'warn');
+      return null;
+    }
+    var bag = {};
+    Object.keys(model.icons).forEach(function (id) {
+      var it = model.icons[id];
+      var icon = it.icon && FE.iconMarkupFromPayload ? FE.iconMarkupFromPayload(it.icon) : null;
+      var activeIcon = it.activeIcon && FE.iconMarkupFromPayload ? FE.iconMarkupFromPayload(it.activeIcon) : null;
+      if (icon || activeIcon) bag[id] = { icon: icon, activeIcon: activeIcon };
+    });
+    state.toolbarConfig = model.config;
+    state.toolbarLabels = model.labels;
+    state.toolbarIcons = bag;
+    state.folderToolbar = { name: tb.name, count: Object.keys(bag).length, unknownIds: model.unknownIds };
+    model.warnings.forEach(function (w) { setOpStatus('工具栏：' + w, 'warn'); });
+    /* 工具栏在布局载入之后才应用，这里补一次渲染，否则预览停在上一个工具栏 */
+    if (FE.renderPreviewOnly) FE.renderPreviewOnly();
+    return state.folderToolbar;
+  }
+
+  FE.applyToolbarFromPlan = applyToolbarFromPlan;
+
+  /* 布局包里的非 JSON 资源：字体交给主题页的符号字体链路（.otf/.ttf/.ttc/.otc），
+   * 图片只计数（它们是主题预览图，不影响布局渲染）。 */
+  function applyAssetsFromPlan(plan) {
+    var out = { fonts: 0, images: 0, other: [] };
+    ((plan && plan.assets) || []).forEach(function (a) {
+      if (/^\.(otf|ttf|ttc|otc)$/i.test(a.ext) && a.file && FE.importSymbolFontFile) {
+        out.fonts++;
+        try {
+          FE.importSymbolFontFile(a.file).then(function (r) {
+            if (r && r.message) setOpStatus('主题字体：' + r.message, 'ok');
+          }).catch(function () { /* 字体载入失败不影响布局导入 */ });
+        } catch (e) { /* 忽略：字体是附加资源 */ }
+      } else if (/^\.(jpg|jpeg|png|webp|gif|svg)$/i.test(a.ext)) {
+        out.images++;
+      } else out.other.push(a.name);
+    });
+    return out;
+  }
+
+  FE.applyAssetsFromPlan = applyAssetsFromPlan;
+
   /* 用一整包文件装入编辑器；pickName 指定优先载入哪个布局 */
   function importPackage(entries, pickName) {
     var plan = FE.planFolderImport(entries);
@@ -6758,10 +7066,18 @@ function initToolbar() {
     if (!pick) pick = plan.layouts[0];
     if (!loadFromFolderPlan(plan, pick.path)) return false;
     hideFolderHint();
+    /* 工具栏与字体是「整包资源」，只在整包导入时应用一次；
+     * 之后用「包内布局」下拉切换布局不会重放（避免覆盖用户手选的图标）。 */
+    var tbRep = applyToolbarFromPlan(plan);
+    var assetRep = applyAssetsFromPlan(plan);
     var rep = FE.inspectJsonText(pick.text);
     var note = rep.total ? '（该文件已自动修复 ' + rep.total + ' 处语法问题）' : '';
-    setOpStatus('已识别布局包：载入 ' + pick.path + note + ' —— ' + FE.describePlan(plan), 'ok');
-    setJsonStatus('✓ 已导入 ' + pick.name + '（已合并 definitions.json 共享定义）', 'ok');
+    var extra = '';
+    if (tbRep) extra += ' · 工具栏 ' + tbRep.count + ' 个图标';
+    if (assetRep.fonts) extra += ' · 字体 ' + assetRep.fonts + ' 个';
+    setOpStatus('已识别布局包：载入 ' + pick.path + note + ' —— ' + FE.describePlan(plan) + extra, 'ok');
+    setJsonStatus('✓ 已导入 ' + pick.name + '（已合并共享定义' +
+      (state.folderDefsPath ? ' ' + state.folderDefsPath : '') + '）', 'ok');
     return true;
   }
 
@@ -6769,13 +7085,17 @@ function initToolbar() {
   function importFromDirectoryInput(input) {
     var files = input.files ? Array.prototype.slice.call(input.files) : [];
     input.value = '';
-    var jsons = files.filter(function (f) { return /\.json$/i.test(f.name || ''); });
-    if (!jsons.length) {
-      setOpStatus('所选文件夹里没有 JSON 文件', 'error');
+    if (!files.length) {
+      setOpStatus('所选文件夹里没有文件', 'error');
       return;
     }
-    setOpStatus('正在识别同文件夹的 ' + jsons.length + ' 个 JSON 文件…', '');
-    filesToEntries(jsons).then(function (entries) {
+    /* 不再预过滤 .json：主题包里的字体（.otf/.ttf）与图片要一起认出来，
+     * 否则「全部加载」永远缺资源。非 JSON 只登记不读文本。 */
+    var jsonCount = files.filter(function (f) { return /\.json$/i.test(f.name || ''); }).length;
+    var extra = files.length - jsonCount;
+    setOpStatus('正在识别文件夹里的 ' + jsonCount + ' 个 JSON 文件' +
+      (extra ? '与 ' + extra + ' 个资源文件' : '') + '…', '');
+    filesToEntries(files).then(function (entries) {
       importPackage(entries);
     }).catch(function (e) {
       setOpStatus('读取文件夹失败: ' + (e && e.message ? e.message : e), 'error');
@@ -6888,15 +7208,25 @@ function initToolbar() {
     if (!loadFromFolderPlan(state.folderPlan, sel.value)) return;
     setOpStatus('已切换到包内布局 ' + sel.value, 'ok');
   });
+  /* 切换共享定义 profile：用同一份布局重新合并，撤销栈按新文档重置 */
+  var defsSelEl = $('op-folder-defs');
+  if (defsSelEl) defsSelEl.addEventListener('change', function () {
+    if (!state.folderPlan) return;
+    state.folderDefsPath = this.value || null;
+    if (!loadFromFolderPlan(state.folderPlan, state.folderLayoutPath)) return;
+    setOpStatus('已改用共享定义 ' + (state.folderDefsPath || '（无）'), 'ok');
+  });
   $('op-export').addEventListener('click', function () {
     function run(){var res=exportLayoutText();downloadJson(res.text,state.fileName||'foxy-layout.json');if(FE.noteFileExport)FE.noteFileExport('layout');setOpStatus('已生成下载：'+(state.fileName||'foxy-layout.json'),'ok');}
     if(FE.guardLayoutExport)FE.guardLayoutExport(run);else run();
   });
   $('op-export-defs').addEventListener('click', function () {
-    if (!state.folderDefs) { setOpStatus('当前不是文件夹导入，没有可导出的 definitions.json', 'warn'); return; }
+    if (!state.folderDefs) { setOpStatus('当前不是文件夹导入，没有可导出的共享定义', 'warn'); return; }
+    /* 文件名沿用识别时那份（legacy 的 definitions.json 或 definitions/default.json） */
+    var defName = String(state.folderDefsPath || 'definitions.json').replace(/^.*[\\/]/, '') || 'definitions.json';
     var text = FE.serializeDefinitions(state.folderDefs);
-    downloadJson(text, 'definitions.json');
-    setOpStatus('已导出 definitions.json（原样保留识别时的共享定义）', 'ok');
+    downloadJson(text, defName);
+    setOpStatus('已导出 ' + defName + '（原样保留识别时的共享定义）', 'ok');
   });
 
   /* 示例（已打包进 js/examples-bundle.js，file:// 直开无需服务器）。
@@ -7038,6 +7368,30 @@ function initToolbar() {
   }
   if (hp) bindHeightInput(hp, 'keyboardHeightPercent');
   if (hl) bindHeightInput(hl, 'keyboardHeightPercentLandscape');
+
+  /* 内边距覆盖：整数 dp 0–150，空值删字段（override 空了就整个删掉）。 */
+  function bindPaddingInput(inp, field) {
+    inp.addEventListener('change', function () {
+      mutate(function () {
+        var l = curLayout();
+        if (!l) return;
+        var txt = inp.value.trim();
+        if (txt === '') {
+          if (isPlainObject(l.override)) { delete l.override[field]; if (!Object.keys(l.override).length) delete l.override; }
+          return;
+        }
+        var n = parseInt(txt, 10);
+        if (!isFinite(n)) return;
+        n = clamp(n, 0, FE.LAYOUT_PADDING_MAX);
+        if (!isPlainObject(l.override)) l.override = {};
+        l.override[field] = n;
+      });
+    });
+  }
+  LAYOUT_PADDING_INPUTS.forEach(function (pair) {
+    var inp = $(pair[1]);
+    if (inp) bindPaddingInput(inp, pair[0]);
+  });
 
   /* 「按键定义」「动作与宏」与「弹出菜单」的列表共用同一套工具条接线。
    * wireSearch 已提到模块作用域（popup-editor.js 也要复用，见其定义处注释），
@@ -7589,6 +7943,8 @@ function boot() {
         if (d2.previewToolbar === false) state.previewToolbar = false;
         else if (d2.previewToolbar === true) state.previewToolbar = true;
         if (FE.isPlainObject(d2.toolbarIcons)) state.toolbarIcons = d2.toolbarIcons;
+        if (FE.isPlainObject(d2.toolbarConfig)) state.toolbarConfig = d2.toolbarConfig;
+        if (FE.isPlainObject(d2.toolbarLabels)) state.toolbarLabels = d2.toolbarLabels;
       }
     }
   } catch (e2) { /* 忽略 */ }

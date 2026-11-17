@@ -37,7 +37,7 @@ node test/test-core.js
 node test/test-ui.js
 ```
 
-当前基线是 core 883、UI 1668，两个套件都必须 0 失败。工作区重构将旧弹窗展示断言改为面板断言，移除了候选嵌入立即提交的旧断言；`node test/test-workspace.js` 共 40 项事务回归。Foxy 数据契约门禁：
+当前基线是 core 957、UI 1709，两个套件都必须 0 失败。工作区重构将旧弹窗展示断言改为面板断言，移除了候选嵌入立即提交的旧断言；`node test/test-workspace.js` 共 40 项事务回归。Foxy 数据契约门禁：
 
 ```bash
 node test/conformance-adapter.js   # conformance v1 共 46 项检查，必须全过
@@ -105,6 +105,11 @@ node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 - 声明了 `modifier` 的键长按会隐式锁定该修饰键，不写 `longPress` 也成立；写了显式 `hold` 手势则关闭该回退。没有 `modifier` 的原始键（如 `rime.Alt_L`）长按只发本键、不参与锁定。编辑器不建模按压时长，因此这条语义不产生校验规则（`hold` 与 `longPress` 仍互斥报错），只在键对话框给提示。
 - 预览的修饰键模拟表是 `state.status.modifiers`（四值布尔）；`status.shift` 是历史字段，决定 `shiftedLabel` / 弹出候选，并作为 SHIFT 的镜像。判定某键是否进入 `modifierActive` 一律走 `FE.keyStateOpts` + `FE.statusModifierOn`，不要在任何渲染处写死 `'SHIFT'`。
 - `switch_layout_once` 与 `switch_layout` 字段完全相同（`layout`），语义是临时层：下一次有效输入后自动回到切换前的布局。凡是按 `switch_layout` 分支处理动作的地方都要同时覆盖它——`FE.actionDisplay` 摘要、`FE.validateAction` 校验（`js/app.js:1124` 内部函数，导出名是 `FE.validateAction`，不是 `checkAction`）、布局重命名时的 `walkAllActions` 引用改写、`FE.buildActionEditor` 的类型选项与 `getValue`（返回时保留原 type，不要降级成 `switch_layout`）。动作类型白名单只有 `js/app.js` 的兜底报错与 `js/key-dialog.js` 的类型选项表两处。注意 `skills/*.schema.json` 是上游产物，其 `type` enum 尚未包含 `switch_layout_once`，不要自行扩枚举。这样不会挡住保存/加载：编辑器没有 schema 驱动的校验链（不加载 `*.schema.json`、无 ajv / fetch / `$ref` 解析），校验一律走自研的 `FE.validateAction`（`js/app.js:1124`）与 `FE.validateProfile`（`js/app.js:1265`）。
+- `modifierStates` 只对带 `modifier` 的键有意义（含 `foxy.Shift`）：状态槽是 `off` / `oneshot` / `locked`（`FE.MODIFIER_STATE_SLOTS`），每槽只允许 `icon` 与 `label`（`FE.MODIFIER_STATE_FIELDS`）。它只改外观，不改修饰键行为与手势；状态外观在变体与 `override` 之后生效；`icon` 优先于 `label`，`icon: null` 才显示该状态的 label，`label: null` 清成空串；`"locked": null` 移除该状态继承的自定义，`"modifierStates": null` 清全部继承；没有这个字段时老布局行为不变（含内置 Shift 锁定图标）。求值入口是 `FE.modifierStateOf` / `FE.modifierStateAppearance`，键面覆盖在 `compileKeyItem` 里写 `item.stateLabel`（空串也算覆盖，渲染处用 `item.stateLabel !== undefined` 判断）。编辑器在键编辑器里给三个横向槽（Default / Modifier active / Modifier locked），只写草稿，点「应用」才进文档。
+- 变体抑制用 `remove: true`：只在 placement（含 `override.variants`）里有效，用来屏蔽一条**继承**变体而不删键。条件按结构比较（`FE.structKeyOf`），写法不同但逻辑等价的 `when` 不可互换；legacy「只有 `when` 一个键」的写法也按掩码处理（`FE.isVariantMask`）。掩码只能有 `when` 与 `remove`，`remove` 必须是 `true`；`FE.applyVariants` 跳过掩码项与被掩码命中的继承项，`mergePatch` 不把 `remove` 合进 eff。按键定义与命名布局变体里写 `remove` 要报错（前者没有可屏蔽的继承变体，后者不是命名布局变体特性）。
+- 宏步骤可以直接引用按键定义：`{ "ref": "rime.a" }`（`FE.macroStepToDraft` 的 `form: 'keyref'`，反向是 `FE.macroValueToStep`）。裸字符串仍是动作名、`{ "action": 名 }` 是动作引用、内联对象是动作本身；引用按名字保留、执行时解析，不要在解析布局时展平。动作编辑器的 `keyref` 形态由 `opts.allowKeyRef` 打开（只有宏步骤传），按键名用带 datalist 的文本框而不是下拉，因为引用可以指向共享定义里的键。
+- 布局 `override` 的内边距字段是 `sidePaddingDp` / `sidePaddingLandscapeDp` / `bottomPaddingDp` / `bottomPaddingLandscapeDp`（`FE.LAYOUT_PADDING_FIELDS`），整数 dp 0–150（`FE.LAYOUT_PADDING_MAX`），省略走常规设置回落；输入框清空就删字段，`override` 空了整个删掉。
+- `app` 命令除 `FE.APP_COMMANDS` 表里的名字，还接受插件注册的 `js.<appId>`（`FE.isPluginAppCommand`，形如 `js.rewrite`）与 `paste` / `copy` / `cut` / `select_all`；校验入口是 `FE.appCommandExists`，不要另写正则或白名单。`keyboard_layout` / `layout_profile` / `layout_picker` 已在命令表里。
 - 键的 `icon` 只有 backspace / shift / enter / return 是内置名；其余名字先查 profile 顶层 `icons`，再看是否 `svg:` / `xml:` 内联载荷；查不到就不画图标（回落文本），不要报错。
 - 预览工具栏的选项开关组（`#pt-options`，由 `FE.renderPreviewOptionToggles` 生成）只列「常开选项 `FE.ALWAYS_ON_OPTIONS` + `FE.validateProfile().optionNames` 里出现过的名字」。条件里一个选项名都没有时**整组隐藏**：那时勾选改的是没人读的键，摆出来只会像坏了。勾选只写 `state.status.options[n] = true`，取消勾选直接删键（不留 `false`），经 `FE.optionState` / `FE.condResult` 影响按键与布局变体；不写进导出的 JSON，也不参与校验。
 - `FE.validateProfile` 的 `errors` / `warnings` 字符串数组是兼容 API，不能删除或改类型。
@@ -139,7 +144,9 @@ node tools/build-examples.js     # 改过 examples/ 或示例打包映射
 ## 8. 文件、引用和示例
 
 - 布局、popup、definitions、theme、symbol 数据要区分文件类型；不要把 `symbols`、`emoji`、`kaomoji` 当布局名。
-- 多文件导入通过 `FE.planFolderImport(entries)` / `FE.buildProfileFromPlan(plan, layoutPath)` 规划，definitions 合并不修改输入对象。
+- 多文件导入通过 `FE.planFolderImport(entries)` / `FE.buildProfileFromPlan(plan, layoutPath, defsPath)` 规划，definitions 合并不修改输入对象。plan 识别 `foxy.toolbar` / `foxy.keyboard-theme` / `foxy.symbols` / `foxy.emoji` / `foxy.kaomoji`（类型枚举与 App 的 `t90.java` 一致），非 JSON 文件进 `plan.assets`，多份共享定义进 `plan.definitionsList`（默认 `default.json`，`defsPath` 可切换）。
+- `foxy.toolbar` 只用于预览：`FE.toolbarModelFromFile` 解析出 `toolbars.main/expanded` 与 `buttons[id].icon/activeIcon`，由 `FE.applyToolbarFromPlan` 写进 `state.toolbarConfig` / `state.toolbarIcons` / `state.toolbarLabels`，不写进任何 Foxy 文件；非内置按钮 id 的显示名来自 `buttons[id].label`。
+- 图标载荷的 `svg:` / `xml:` 前缀可有可无（App 端 `f52.java` 也是先找前缀、没有就原样用）。编辑器用 `FE.isBareIconMarkup` 认裸 `<svg …` / `<?xml …`，校验只 warn 不 err，图标对话框保存时自动补 `svg:` 前缀。
 - 单文件、示例或 JSON 导入后清空 `state.folderPlan`、`state.folderDefs`、`state.folderLayoutPath`、`state.folderHint`。
 - 导出分包使用 `FE.splitProfileForExport()`；未改共享项回到 definitions，改动项留在布局文件。
 - `FE.buildRefIndex(profile, popupProfile)` 必须覆盖 key、action、macro、icons 四类；对象就地修改后显式 `invalidateRefIndex()`。

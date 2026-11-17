@@ -180,6 +180,12 @@
               <select id="op-folder-layout" class="mini-select wide" aria-label="文件夹内的布局文件"></select>
               <button id="op-folder-load" class="mini-button">切换到所选</button>
             </div>
+            <!-- 共享定义可以有多份 profile（frontend/definitions/*.json），与布局 profile 独立选择 -->
+            <div id="op-folder-defs-row" class="form-row form-inline" hidden>
+              <label class="mini-label">共享定义</label>
+              <select id="op-folder-defs" class="mini-select wide" aria-label="文件夹内的共享定义文件"></select>
+              <span class="status dim">definitions/*.json 各自是一份 profile</span>
+            </div>
             <!-- 需要补选文件夹时的醒目提示（选中 definitions.json，或布局仍有引用解析不了） -->
             <div id="op-folder-hint" class="form-row form-inline folder-hint" hidden>
               <span id="op-folder-hint-text" class="folder-hint-text"></span>
@@ -211,6 +217,25 @@
                 <div class="form-row form-inline">
                   <label class="mini-label">横屏 %</label>
                   <input id="ls-height-landscape" type="number" min="10" max="90" step="1" class="mini-input" placeholder="空=跟随全局">
+                </div>
+              </div>
+              <div class="mini-title">布局内边距覆盖（可选，整数 dp 0–150）</div>
+              <div class="form-grid-2 height-override-grid">
+                <div class="form-row form-inline">
+                  <label class="mini-label">竖屏左右</label>
+                  <input id="ls-pad-side" type="number" min="0" max="150" step="1" class="mini-input" placeholder="空=跟随全局">
+                </div>
+                <div class="form-row form-inline">
+                  <label class="mini-label">横屏左右</label>
+                  <input id="ls-pad-side-landscape" type="number" min="0" max="150" step="1" class="mini-input" placeholder="空=跟随全局">
+                </div>
+                <div class="form-row form-inline">
+                  <label class="mini-label">竖屏底部</label>
+                  <input id="ls-pad-bottom" type="number" min="0" max="150" step="1" class="mini-input" placeholder="空=跟随全局">
+                </div>
+                <div class="form-row form-inline">
+                  <label class="mini-label">横屏底部</label>
+                  <input id="ls-pad-bottom-landscape" type="number" min="0" max="150" step="1" class="mini-input" placeholder="空=跟随全局">
                 </div>
               </div>
               <div class="mini-title">布局变体（状态条件 → 使用其他命名布局）</div>
